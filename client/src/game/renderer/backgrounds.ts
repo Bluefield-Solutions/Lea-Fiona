@@ -592,12 +592,15 @@ function drawDragonLairOverlay(this: Renderer, camera: Camera) {
   const W = this.viewportW, H = this.viewportH;
   const t = this.time;
   const rnd = pseudoRandom;
+  // Perf-Paket 3: Deko-Dichte (jedes Element = ein radialer Gradient/Frame) an
+  // die Grafikstufe koppeln — auf iPad (mid/low) deutlich weniger Gradienten.
+  const qf = this.quality === 'high' ? 1 : this.quality === 'mid' ? 0.6 : 0.4;
 
   // 0) Ferne Lava-Tümpel tief in der Höhle — warmes Glühen am Fels-Grat, gibt
   //    der Dunkelheit Wärme und Tiefe (Drachen-Lava-Lair).
   ctx.save();
   const lavaSpan = W * 1.7;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < Math.round(4 * qf); i++) {
     const bx = rnd(i * 233 + 9) * lavaSpan;
     const lx = ((bx - camera.x * 0.06) % lavaSpan + lavaSpan) % lavaSpan;
     if (lx < -70 || lx > W + 70) continue;
@@ -695,7 +698,7 @@ function drawDragonLairOverlay(this: Renderer, camera: Camera) {
   // 4) Aufsteigende Glut/Sporen — langsam schwebende Punkte, meist grün, ein
   //    paar warm-orange (Drachenfeuer-Asche). Weltverankert, vertikal umlaufend.
   ctx.save();
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < Math.round(18 * qf); i++) {
     const baseX = rnd(i * 53 + 11) * W * 2;
     const ex = ((baseX - camera.x * 0.12) % (W + 40) + (W + 40)) % (W + 40) - 20;
     const speed = 8 + rnd(i * 97 + 2) * 14;
@@ -718,7 +721,7 @@ function drawDragonLairOverlay(this: Renderer, camera: Camera) {
   //    Höhle Leben (kleine Drachen, die zusehen), ohne zu erschrecken.
   ctx.save();
   const eyeSpan = W * 1.8;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < Math.max(2, Math.round(4 * qf)); i++) {
     const bx = rnd(i * 349 + 21) * eyeSpan;
     const ex = ((bx - camera.x * 0.05) % eyeSpan + eyeSpan) % eyeSpan;
     if (ex < 40 || ex > W - 40) continue;
@@ -5473,8 +5476,10 @@ function drawDragonLairForeground(this: Renderer, camX: number, VW: number, VH: 
   ctx.fillRect(0, H * 0.5, W, H * 0.5);
 
   // B) Glühende Lava-Nähte am Boden — helle warme Flecken, Boden-Parallax.
+  // Perf-Paket 3: Anzahl (je ein radialer Gradient/Frame) an Grafikstufe koppeln.
+  const seamN = this.quality === 'high' ? 9 : this.quality === 'mid' ? 5 : 3;
   const seamSpan = W * 1.4;
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < seamN; i++) {
     const bx = pseudoRandom(i * 71 + 5) * seamSpan;
     const sx = ((bx - camX * 0.95) % seamSpan + seamSpan) % seamSpan;
     if (sx < -40 || sx > W + 40) continue;

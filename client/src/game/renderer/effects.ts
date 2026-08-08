@@ -693,6 +693,7 @@ function drawAtmosphericFog(this: Renderer, _cameraX: number, canvasW: number, c
 }
 
 function drawLightRays(this: Renderer, cameraX: number, canvasW: number, canvasH: number) {
+  if (this.quality === 'low') return;   // Perf-Paket 3: God-Rays auf 'low' aus.
   const ctx = this.ctx;
   const t = this.time;
 
@@ -730,6 +731,7 @@ function drawLightRays(this: Renderer, cameraX: number, canvasW: number, canvasH
 }
 
 function drawThemedRays(this: Renderer, cameraX: number, W: number, H: number) {
+  if (this.quality === 'low') return;   // Perf-Paket 3: God-Rays auf 'low' aus.
   // God Rays je Welt: warme Sonnenstrahlen in offenen Welten, kühle
   // Lichtschächte in Höhle/Schloss, hellblaue Kaustik unter Wasser. Vulkan
   // (zu rauchig) und Weltraum (kein Medium) erhalten bewusst keine Strahlen.
@@ -1623,7 +1625,11 @@ function drawLightPools(
   // AP 1.3 / Punkt 1: Weiche, farbige Lichtflecken auf dem Boden — gefiltertes
   // AP 1.3 / Punkt 1: Weiche, farbige Lichtflecken auf dem Boden — gefiltertes
   // Licht (Blätterdach, Höhlenöffnung, Lavaschein …). Additiv (screen), langsam
-  // driftend, mit leichter Parallaxe. Farbe pro Welt; bei 'low' nicht gerufen.
+  // driftend, mit leichter Parallaxe. Farbe pro Welt.
+  // Perf-Paket 3: nur auf 'high'. Diese 5 großflächigen Additiv-Füllungen sind
+  // auf großen Bildschirmen (iPad läuft meist auf 'mid'/'low') Füllraten-teuer —
+  // Wegfall bringt spürbar FPS, kostet nur einen dezenten Boden-Lichtschein.
+  if (this.quality !== 'high') return;
   const ctx = this.ctx;
   const t = this.time;
   ctx.save();
