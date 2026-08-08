@@ -185,7 +185,8 @@ function renderWorldLayer(engine: GameEngine): void {
   }
 
   // Glatte begehbare Hügel: gekrümmte Erd-Kurve über die flachen Boden-Tiles.
-  renderTerrainHills(engine, startCol, endCol);
+  // Perf-Paket 1: aus einem einmalig gerenderten Weltstreifen geblittet.
+  drawTerrainBand(engine, startCol, endCol);
   tintBluefieldGround(engine);
 
   // Gras-Überhang der Grundlinie liefert jetzt das Bodenband (renderTerrainHills,
@@ -1264,6 +1265,85 @@ function tintBluefieldGround(engine: GameEngine): void {
     ctx.fillStyle = fill;
     ctx.fillRect(sxp, screenY, step + 1, VH - screenY);
   }
+}
+
+// ── Terrain-Band-Cache (Perf-Paket 1) ─────────────────────────────────────
+// renderTerrainHills zeichnet das begehbare Boden-/Grasband pro Frame als feine
+// Kurve (step=5) + Grastextur → auf Gras-/Wolken-/Eiswelten ~11.000 lineTo/Frame
+// (der größte CPU-Posten auf iPad). Das Band ist STATISCH (keine Zeit-Animation)
+// und scrollt mit Weltgeschwindigkeit — also rendern wir es EINMAL pro Level in
+// einen Offscreen-Streifen (Weltkoordinaten) und blitten pro Frame nur den
+// sichtbaren Ausschnitt (1× drawImage statt Tausender Pfad-Operationen).
+let _terrainCache: HTMLCanvasElement | null = null;
+let _terrainToken = '';
+let _terrainTopY = 0;
+const TERRAIN_CACHE_THEMES = new Set(['jungle', 'beach', 'australia', 'bluefield', 'sky', 'ice']);
+
+function terrainCacheToken(engine: GameEngine): string {
+  const l = engine.level;
+  return `${l.theme}|${l.width}|${l.name}`;
+}
+
+function buildTerrainCache(engine: GameEngine): void {
+  const l = engine.level;
+  const S = TILE_SIZE;
+  const worldW = l.width * S;
+  const baseRow = groundRowOf(l);
+  const hills = l.terrainHills ?? [];
+  // Band-Oberkante = höchste Oberfläche (kleinstes y) minus Rand; Unterkante ein
+  // paar Kacheln unter der Grundlinie (dort übernehmen wieder die Tiles).
+  let minSurf = baseRow * S;
+  for (let wx = 0; wx <= worldW; wx += 8) {
+    const y = smoothGroundY(hills, wx) ?? baseRow * S;
+    if (y < minSurf) minSurf = y;
+  }
+  const topY = Math.max(0, Math.floor(minSurf - 56));
+  const botY = (baseRow + 3) * S + 6;
+  const bandH = Math.max(1, Math.ceil(botY - topY));
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, worldW);
+  cv.height = bandH;
+  const offctx = cv.getContext('2d');
+  if (!offctx) return;
+  // Kontext + Kamera temporär auf den Offscreen (Weltkoordinaten) umbiegen und
+  // das GESAMTE Band einmal zeichnen. Fake-Kamera ohne Shake → Cache ist neutral;
+  // der Shake kommt pro Frame beim Blitten dazu.
+  const realCtx = engine.renderer.ctx;
+  const realCam = engine.camera;
+  const fakeCam = {
+    x: 0, y: topY, width: worldW, height: bandH,
+    worldWidth: worldW, worldHeight: (baseRow + 8) * S,
+    lastShakeX: 0, lastShakeY: 0,
+    worldToScreenInto(wx: number, wy: number, out: { x: number; y: number }) { out.x = wx; out.y = wy - topY; return out; },
+  };
+  engine.renderer.ctx = offctx;
+  engine.camera = fakeCam as unknown as typeof realCam;
+  try { renderTerrainHills(engine, 0, l.width - 1); }
+  finally { engine.renderer.ctx = realCtx; engine.camera = realCam; }
+  _terrainCache = cv;
+  _terrainTopY = topY;
+  _terrainToken = terrainCacheToken(engine);
+}
+
+/** Ersetzt den pro-Frame-Aufruf von renderTerrainHills: baut den Cache bei Bedarf
+ *  einmalig und blittet dann nur den sichtbaren Ausschnitt. */
+function drawTerrainBand(engine: GameEngine, startCol: number, endCol: number): void {
+  if (!TERRAIN_CACHE_THEMES.has(engine.level.theme)) {
+    renderTerrainHills(engine, startCol, endCol); // Nicht-Graswelten: unverändert
+    return;
+  }
+  if (!_terrainCache || _terrainToken !== terrainCacheToken(engine)) buildTerrainCache(engine);
+  const cache = _terrainCache;
+  if (!cache) return;
+  const cam = engine.camera;
+  const vw = engine.renderer.viewportW;
+  const sx = Math.max(0, Math.min(cache.width - 1, Math.floor(cam.x)));
+  const sw = Math.min(cache.width - sx, vw + 2);
+  if (sw <= 0) return;
+  // Zielposition über die echte Kamera bestimmen (inkl. Shake + Rundung), damit
+  // das Band exakt wie zuvor sitzt.
+  const p = cam.worldToScreenInto(sx, _terrainTopY, _s);
+  engine.renderer.ctx.drawImage(cache, sx, 0, sw, cache.height, p.x, p.y, sw, cache.height);
 }
 
 function renderTerrainHills(
