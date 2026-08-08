@@ -1,6 +1,11 @@
 name: Build & Deploy (GitHub Pages)
 
-# Bei jedem Push auf main baut GitHub das Spiel selbst und veröffentlicht es.
+# Zwei Wege, beide führen zu genau EINEM automatischen Deploy:
+#  1) EIN-ZIP-ABLAUF (empfohlen): Lade EINE .zip nach `incoming/` hoch. Sie
+#     enthält geänderte Dateien mit ihren normalen Projektpfaden (z. B.
+#     client/src/pages/game.tsx). Dieser Workflow entpackt sie an die richtigen
+#     Stellen, räumt die .zip weg, committet das Ergebnis und deployt.
+#  2) Direkter Datei-Upload (wie bisher) löst ebenfalls einen Deploy aus.
 # Voraussetzung (einmalig): Settings → Pages → Source = "GitHub Actions".
 on:
   push:
@@ -8,11 +13,10 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write     # für Commit-Back nach dem Entpacken eines Bundles
   pages: write
   id-token: write
 
-# Immer nur ein Deploy gleichzeitig; laufende ältere abbrechen.
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -22,6 +26,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Bundle(s) anwenden (falls vorhanden — root bundle*.zip oder incoming/*.zip)
+        run: |
+          shopt -s nullglob
+          zips=(bundle*.zip incoming/*.zip)
+          if [ ${#zips[@]} -eq 0 ]; then
+            echo "Kein Bundle in incoming/ — normaler Build."
+          else
+            echo "Gefundene Bundles: ${zips[*]}"
+            for z in "${zips[@]}"; do
+              echo "== Entpacke $z (Pfade relativ zur Projektwurzel) =="
+              unzip -o "$z" -d .
+            done
+            # Alle angewendeten Bundles wieder entfernen (root + incoming/),
+            # damit sie nicht bei jedem weiteren Push erneut ausgepackt werden.
+            rm -f "${zips[@]}"
+            git config user.name "lea-fiona-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Bundle angewendet + aufgeräumt" || echo "Nichts zu committen."
+            # Robust pushen (Rebase falls sich main bewegt hat).
+            git pull --rebase --autostash origin main || true
+            git push origin HEAD:main
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
