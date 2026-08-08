@@ -1,4 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+
+// Build-Kennung, zur Bauzeit von Vite injiziert (define). Sichtbar im Titelbild.
+declare const __BUILD_ID__: string;
+
 import { GameEngine } from '../game/engine';
 import { GameState } from '../game/constants';
 import { LEVELS } from '../game/level';
@@ -918,6 +922,16 @@ export default function GamePage() {
             background: 'radial-gradient(80% 55% at 50% 24%, rgba(130,160,255,0.10) 0%, rgba(130,160,255,0) 60%), radial-gradient(120% 90% at 50% 6%, rgba(12,9,40,0.04) 0%, rgba(10,8,34,0.22) 55%, rgba(7,5,26,0.30) 100%), radial-gradient(150% 120% at 50% 42%, rgba(0,0,0,0) 58%, rgba(6,4,20,0.26) 100%)',
           }}
         >
+          {/* Sichtbarer Build-/Versions-Stempel (Bauzeit) — unten rechts, dezent.
+              So ist auf einen Blick prüfbar, ob die neueste Version live ist. */}
+          <div style={{
+            position: 'absolute', right: 8, bottom: 6, zIndex: 30, pointerEvents: 'none',
+            fontSize: 10, fontWeight: 600, letterSpacing: '0.02em',
+            color: 'rgba(255,255,255,0.42)', fontFamily: 'ui-monospace, Menlo, monospace',
+            textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+          }}>
+            v{typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'dev'}
+          </div>
           {/* Schwebende Deko — steigt langsam auf (rein dekorativ). */}
           <div aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
             {['🪙','⭐','🍬','✨','💛','🎈','🌟','🪙','🍬','⭐','✨','🌟','💫','🎈'].map((em, i) => {
