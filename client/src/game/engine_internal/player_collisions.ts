@@ -433,6 +433,11 @@ export function runEntityCollisions(engine: GameEngine): void {
         engine.carryStats.coins = player.coins;
         engine.carryStats.score = player.score;
         engine.spawnCoinParticles(entity.x + entity.width / 2, entity.y + entity.height / 2);
+        // Feinschliff: goldener Pop-Ring am Sammelpunkt (skaliert kurz auf).
+        // Gedeckelt, damit dichte Münzreihen die Ringe nicht überladen.
+        if (engine.coinPops.length < 24) {
+          engine.coinPops.push({ x: entity.x + entity.width / 2, y: entity.y + entity.height / 2, age: 0, max: 12 });
+        }
         engine.particles.push(engine.acquireFloatingText(entity.x, entity.y - 10, '+100'));
         // Game-Feel: schnelles Aufsammeln (Münzreihe) → steigende Tonhöhe.
         const nowF = engine.renderer.time;

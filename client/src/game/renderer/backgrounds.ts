@@ -2,7 +2,7 @@ import type { Renderer } from '../renderer.ts';
 import { Camera } from '../camera.ts';
 import { TILE_SIZE } from '../constants';
 import { pseudoRandom } from '../util/random';
-import { getGlowDisc, stampGlow } from '../gfx/glow.ts';
+import { getGlowDisc, stampGlow, drawGlowDisc } from '../gfx/glow.ts';
 
 function drawBackground(this: Renderer, camera: Camera, worldWidth: number) {
   if (!this.bgGenerated) {
@@ -473,7 +473,9 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
   ctx.fillStyle = rockGrad;
   ctx.beginPath();
   ctx.moveTo(0, H);
-  for (let x = 0; x <= W; x += 8) ctx.lineTo(x, lowerY(x));
+  // Perf-Paket 4: gröbere Schrittweite (14 statt 8) für die dunkle, weiche
+  // Fels-Silhouette — halbiert die lineTo-Last, optisch nicht unterscheidbar.
+  for (let x = 0; x <= W; x += 14) ctx.lineTo(x, lowerY(x));
   ctx.lineTo(W, H);
   ctx.closePath();
   ctx.fill();
@@ -481,7 +483,7 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
   ctx.strokeStyle = 'rgba(120,90,170,0.32)';
   ctx.lineWidth = 1.6;
   ctx.beginPath();
-  for (let x = 0; x <= W; x += 8) { const y = lowerY(x); if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+  for (let x = 0; x <= W; x += 14) { const y = lowerY(x); if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
   ctx.stroke();
   // Hängende Felsdecke oben.
   const ceilY = (x: number) => H * 0.15 + Math.sin((x + parX * 0.7) * 0.008 + 1) * 18 + Math.sin((x + parX * 0.7) * 0.024) * 9;
@@ -491,7 +493,7 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
   ctx.fillStyle = ceilGrad;
   ctx.beginPath();
   ctx.moveTo(0, 0);
-  for (let x = 0; x <= W; x += 8) ctx.lineTo(x, ceilY(x));
+  for (let x = 0; x <= W; x += 14) ctx.lineTo(x, ceilY(x));
   ctx.lineTo(W, 0);
   ctx.closePath();
   ctx.fill();
@@ -504,11 +506,8 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
     const r = 30 + pseudoRand(i * 719) * 80;
     const scrollX = (cx - camera.x * 0.05) % (W + r * 2) - r;
     const alpha = 0.02 + pseudoRand(i * 911) * 0.04;
-    const g = ctx.createRadialGradient(scrollX, cy, 0, scrollX, cy, r);
-    g.addColorStop(0, `rgba(40, 30, 50, ${alpha})`);
-    g.addColorStop(1, 'rgba(10, 10, 15, 0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(scrollX - r, cy - r, r * 2, r * 2);
+    // Perf-Paket 2: gebackene Disc statt je Frame neuer Radial-Gradient.
+    drawGlowDisc(ctx, getGlowDisc(128, 40, 30, 50, 1), scrollX, cy, r, r, alpha, false);
   }
 
   for (let i = 0; i < 25; i++) {
@@ -543,12 +542,9 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
     const hue = pseudoRand(i * 2491) > 0.5 ? 270 : 190;
     const r = 2 + pseudoRand(i * 2693) * 3;
 
-    ctx.fillStyle = `hsla(${hue}, 80%, 60%, ${0.15 * pulse})`;
-    const glow = ctx.createRadialGradient(scrollX, cy, 0, scrollX, cy, r * 6);
-    glow.addColorStop(0, `hsla(${hue}, 80%, 70%, ${0.12 * pulse})`);
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(scrollX - r * 6, cy - r * 6, r * 12, r * 12);
+    // Perf-Paket 2: gebackene Disc je Farbton statt je Frame neuer Radial-Gradient.
+    const cdisc = hue === 270 ? getGlowDisc(128, 178, 133, 235, 1) : getGlowDisc(128, 112, 214, 230, 1);
+    drawGlowDisc(ctx, cdisc, scrollX, cy, r * 6, r * 6, 0.12 * pulse, false);
     ctx.fillStyle = `hsla(${hue}, 90%, 75%, ${0.5 * pulse})`;
     ctx.beginPath();
     ctx.arc(scrollX, cy, r, 0, Math.PI * 2);
@@ -587,6 +583,91 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
 // Nahfeld-Kulisse für die Drachenhöhle (Welt 16). Wird ÜBER den normalen
 // Höhlen-Hintergrund gelegt und rahmt das Spielfeld ein, damit man sich
 // eingeschlossen fühlt. Alles ist billig (wenige Pfade + zeitbasierte Sinus).
+// Perf-Paket 4 (2. Runde): gebackener Nahfeld-Streifen (Decke + Stalaktiten) der
+// Drachenhöhle im Parallax-Raum. Einmal pro Level/Viewport gebaut, pro Frame nur
+// als Ausschnitt geblittet (analog Terrain-Cache/Paket 1).
+let _lairCeilCanvas: HTMLCanvasElement | null = null;
+let _lairCeilToken = '';
+
+function buildLairCeiling(this: Renderer, worldWidth: number): void {
+  const W = this.viewportW, H = this.viewportH;
+  const parRange = Math.ceil(Math.max(0, worldWidth) * 0.16);
+  const span = W * 1.6;
+  const stripW = Math.max(1, W + parRange + Math.ceil(span) + 80);
+  const stripH = Math.max(1, Math.ceil(H * 0.45));
+  const cv = document.createElement('canvas');
+  cv.width = stripW; cv.height = stripH;
+  const c = cv.getContext('2d');
+  if (!c) return;
+  // Parallax-Raum-Koordinate u = Bildschirm-x + camera.x*0.16. In u ist die Decke
+  // eine reine Funktion (kein parF-Term mehr) → einmal über die ganze Breite backen.
+  const ceilBase = H * 0.14;
+  const ceilYu = (u: number) =>
+    ceilBase + Math.sin(u * 0.010) * 16 + Math.sin(u * 0.031 + 1.3) * 9 + Math.sin(u * 0.07) * 4;
+  // Felsdecke (Füllung bis zur Kurve).
+  const cg = c.createLinearGradient(0, 0, 0, ceilBase + 30);
+  cg.addColorStop(0, '#060d08');
+  cg.addColorStop(1, '#0c160e');
+  c.fillStyle = cg;
+  c.beginPath();
+  c.moveTo(0, 0);
+  for (let u = 0; u <= stripW; u += 12) c.lineTo(u, ceilYu(u));
+  c.lineTo(stripW, 0);
+  c.closePath();
+  c.fill();
+  // Grüner Glut-Saum.
+  c.strokeStyle = 'rgba(120,220,140,0.20)';
+  c.lineWidth = 1.4;
+  c.beginPath();
+  for (let u = 0; u <= stripW; u += 12) { const y = ceilYu(u); if (u === 0) c.moveTo(u, y); else c.lineTo(u, y); }
+  c.stroke();
+  // Stalaktiten: im Parallax-Raum wiederholen sie sich alle `span` (u = bx − span*0.15 + k*span).
+  for (let base = -span; base <= stripW + span; base += span) {
+    for (let i = 0; i < 7; i++) {
+      const bx = pseudoRandom(i * 131 + 7) * span;
+      const u = base + bx - span * 0.15;
+      if (u < -70 || u > stripW + 70) continue;
+      const topY = ceilYu(u);
+      const len = 46 + pseudoRandom(i * 271 + 3) * 74;
+      const wdt = 14 + pseudoRandom(i * 419 + 5) * 16;
+      const grad = c.createLinearGradient(u, topY, u, topY + len);
+      grad.addColorStop(0, '#0a140c');
+      grad.addColorStop(1, '#040805');
+      c.fillStyle = grad;
+      c.beginPath();
+      c.moveTo(u - wdt / 2, topY - 4);
+      c.lineTo(u + wdt / 2, topY - 4);
+      c.lineTo(u + wdt * 0.10, topY + len);
+      c.lineTo(u - wdt * 0.10, topY + len);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = 'rgba(120,210,140,0.18)';
+      c.lineWidth = 1.2;
+      c.beginPath();
+      c.moveTo(u - wdt / 2, topY - 2);
+      c.lineTo(u - wdt * 0.10, topY + len);
+      c.stroke();
+    }
+  }
+  _lairCeilCanvas = cv;
+  _lairCeilToken = `${Math.round(worldWidth)}|${W}x${H}`;
+}
+
+function drawLairCeiling(this: Renderer, camX: number, worldWidth: number): void {
+  const token = `${Math.round(worldWidth)}|${this.viewportW}x${this.viewportH}`;
+  if (!_lairCeilCanvas || _lairCeilToken !== token) buildLairCeiling.call(this, worldWidth);
+  const cache = _lairCeilCanvas;
+  if (!cache) return;
+  const W = this.viewportW;
+  const u0 = camX * 0.16;
+  const sx = Math.max(0, Math.min(cache.width - 1, Math.floor(u0)));
+  const frac = u0 - Math.floor(u0);
+  const sw = Math.min(cache.width - sx, W + 2);
+  if (sw <= 0) return;
+  // Ausschnitt [u0, u0+W] → Bildschirm (sub-pixel per −frac für weiches Scrollen).
+  this.ctx.drawImage(cache, sx, 0, sw, cache.height, -frac, 0, sw, cache.height);
+}
+
 function drawDragonLairOverlay(this: Renderer, camera: Camera) {
   const ctx = this.ctx;
   const W = this.viewportW, H = this.viewportH;
@@ -607,72 +688,21 @@ function drawDragonLairOverlay(this: Renderer, camera: Camera) {
     const ly = H * 0.70 + rnd(i * 97 + 2) * H * 0.05;
     const pulse = 0.6 + 0.4 * Math.sin(t * 0.03 + i * 1.5);
     const rw = 44 + rnd(i * 181) * 40, rh = 9 + rnd(i * 67) * 6;
-    const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, rw);
-    g.addColorStop(0, `rgba(255,150,60,${0.26 * pulse})`);
-    g.addColorStop(0.5, `rgba(255,90,30,${0.13 * pulse})`);
-    g.addColorStop(1, 'rgba(255,60,20,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.ellipse(lx, ly, rw, rh, 0, 0, Math.PI * 2); ctx.fill();
+    // Perf-Paket 2: gebackene Glow-Disc (elliptisch geblittet) statt je Frame
+    // neuer Radial-Gradient. Optik wie zuvor (source-over, flacher Tümpel).
+    drawGlowDisc(ctx, getGlowDisc(128, 255, 140, 55, 1), lx, ly, rw, rh, 0.26 * pulse, false);
   }
   ctx.restore();
 
   // 1) Schwere Felsdecke im Vordergrund (dunkel, nah) — schnellster Parallax,
   //    schließt das Bild nach oben ab. Unregelmäßige Unterkante mit Nubben.
+  // Perf-Paket 4 (2. Runde): Nahe Felsdecke + Stalaktiten sind STATISCHE Geometrie,
+  // die nur mit dem Parallax (0.16) horizontal scrollt. Einmal in einen Welt-Streifen
+  // (Parallax-Raum) backen und pro Frame nur den sichtbaren Ausschnitt blitten —
+  // spart die ~200 lineTo + Stalaktiten-Fills/Frame. (Der seltene animierte
+  // Spitzen-Tropfen entfällt dabei, praktisch unmerklich.)
   ctx.save();
-  const parF = camera.x * 0.16;
-  const ceilBase = H * 0.14;
-  const ceilY = (x: number) =>
-    ceilBase + Math.sin((x + parF) * 0.010) * 16 + Math.sin((x + parF) * 0.031 + 1.3) * 9 + Math.sin((x + parF) * 0.07) * 4;
-  const cg = ctx.createLinearGradient(0, 0, 0, ceilBase + 30);
-  cg.addColorStop(0, '#060d08');
-  cg.addColorStop(1, '#0c160e');
-  ctx.fillStyle = cg;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  for (let x = 0; x <= W; x += 6) ctx.lineTo(x, ceilY(x));
-  ctx.lineTo(W, 0);
-  ctx.closePath();
-  ctx.fill();
-  // Schwacher grüner Glut-Saum an der Deckenkante (Dracheluft).
-  ctx.strokeStyle = 'rgba(120,220,140,0.20)';
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  for (let x = 0; x <= W; x += 6) { const y = ceilY(x); if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
-  ctx.stroke();
-
-  // 2) Große Stalaktiten aus der Vordergrund-Decke (nah, dunkel, grüner Rand).
-  const span = W * 1.6;
-  for (let i = 0; i < 7; i++) {
-    const bx = rnd(i * 131 + 7) * span;
-    const sx = ((bx - camera.x * 0.16) % span + span) % span - span * 0.15;
-    if (sx < -70 || sx > W + 70) continue;
-    const topY = ceilY(sx);
-    const len = 46 + rnd(i * 271 + 3) * 74;
-    const wdt = 14 + rnd(i * 419 + 5) * 16;
-    const tipDrip = Math.sin(t * 0.02 + i) > 0.985;
-    const grad = ctx.createLinearGradient(sx, topY, sx, topY + len);
-    grad.addColorStop(0, '#0a140c');
-    grad.addColorStop(1, '#040805');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(sx - wdt / 2, topY - 4);
-    ctx.lineTo(sx + wdt / 2, topY - 4);
-    ctx.lineTo(sx + wdt * 0.10, topY + len);
-    ctx.lineTo(sx - wdt * 0.10, topY + len);
-    ctx.closePath();
-    ctx.fill();
-    // grüner Rand links (Streiflicht) + gelegentlicher Tropfen an der Spitze.
-    ctx.strokeStyle = 'rgba(120,210,140,0.18)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(sx - wdt / 2, topY - 2);
-    ctx.lineTo(sx - wdt * 0.10, topY + len);
-    ctx.stroke();
-    if (tipDrip) {
-      ctx.fillStyle = 'rgba(150,230,170,0.5)';
-      ctx.beginPath(); ctx.arc(sx, topY + len + 3, 2, 0, Math.PI * 2); ctx.fill();
-    }
-  }
+  drawLairCeiling.call(this, camera.x, camera.worldWidth);
   ctx.restore();
 
   // 3) Untere Eck-Felsmassen — rahmen das Spielfeld links/rechts unten ein.
@@ -707,11 +737,9 @@ function drawDragonLairOverlay(this: Renderer, camera: Camera) {
     const warm = rnd(i * 143 + 4) > 0.78;
     const r = 1.2 + rnd(i * 199) * 1.8;
     const col = warm ? '255,150,60' : '150,240,160';
-    const glow = ctx.createRadialGradient(ex, ey, 0, ex, ey, r * 5);
-    glow.addColorStop(0, `rgba(${col},${0.22 * flick})`);
-    glow.addColorStop(1, `rgba(${col},0)`);
-    ctx.fillStyle = glow;
-    ctx.fillRect(ex - r * 5, ey - r * 5, r * 10, r * 10);
+    // Perf-Paket 2: gebackene Glow-Disc statt je Frame neuer Radial-Gradient.
+    const disc = warm ? getGlowDisc(128, 255, 150, 60, 1) : getGlowDisc(128, 150, 240, 160, 1);
+    drawGlowDisc(ctx, disc, ex, ey, r * 5, r * 5, 0.22 * flick, false);
     ctx.fillStyle = `rgba(${col},${0.7 * flick})`;
     ctx.beginPath(); ctx.arc(ex, ey, r, 0, Math.PI * 2); ctx.fill();
   }
@@ -734,11 +762,8 @@ function drawDragonLairOverlay(this: Renderer, camera: Camera) {
     const er = 2.2 + rnd(i * 521) * 1.2;
     for (const sgn of [-1, 1]) {
       const px = ex + sgn * gap;
-      const glow = ctx.createRadialGradient(px, ey, 0, px, ey, er * 4);
-      glow.addColorStop(0, `rgba(160,255,170,${0.5 * open})`);
-      glow.addColorStop(1, 'rgba(160,255,170,0)');
-      ctx.fillStyle = glow;
-      ctx.fillRect(px - er * 4, ey - er * 4, er * 8, er * 8);
+      // Perf-Paket 2: gebackene Glow-Disc statt je Frame neuer Radial-Gradient.
+      drawGlowDisc(ctx, getGlowDisc(128, 160, 255, 170, 1), px, ey, er * 4, er * 4, 0.5 * open, false);
       ctx.fillStyle = `rgba(200,255,205,${0.9 * open})`;
       ctx.beginPath(); ctx.ellipse(px, ey, er, er * open, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = `rgba(20,50,25,${open})`;
@@ -750,12 +775,16 @@ function drawDragonLairOverlay(this: Renderer, camera: Camera) {
   // 6) Verstärkte Umschließungs-Vignette: dunkle Ränder oben/seitlich, damit die
   //    Höhle sich eng und tief anfühlt (stärker als der normale Grade-Vignette).
   ctx.save();
-  const vg = ctx.createRadialGradient(W * 0.5, H * 0.52, H * 0.30, W * 0.5, H * 0.52, H * 0.85);
-  vg.addColorStop(0, 'rgba(0,0,0,0)');
-  vg.addColorStop(0.7, 'rgba(3,8,5,0.18)');
-  vg.addColorStop(1, 'rgba(2,6,4,0.55)');
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, W, H);
+  // Perf-Paket 2: statische Vignette einmal pro Viewport backen, dann nur blitten.
+  const vgCache = this.getBgGradCache(`dragon-vignette-${W}x${H}`, (c, w, h) => {
+    const vg = c.createRadialGradient(w * 0.5, h * 0.52, h * 0.30, w * 0.5, h * 0.52, h * 0.85);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(0.7, 'rgba(3,8,5,0.18)');
+    vg.addColorStop(1, 'rgba(2,6,4,0.55)');
+    c.fillStyle = vg;
+    c.fillRect(0, 0, w, h);
+  });
+  ctx.drawImage(vgCache, 0, 0);
   ctx.restore();
 }
 
@@ -5486,11 +5515,10 @@ function drawDragonLairForeground(this: Renderer, camX: number, VW: number, VH: 
     const sy = H * (0.9 + pseudoRandom(i * 53) * 0.06);
     const fl = 0.5 + 0.5 * Math.sin(t * 0.08 + i * 1.7);
     const r = 16 + pseudoRandom(i * 149) * 22;
-    const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-    g.addColorStop(0, `rgba(255,185,75,${0.32 * fl})`);
-    g.addColorStop(1, 'rgba(255,90,30,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+    // Perf-Paket 2: gebackene Glow-Disc statt je Frame neuer Gradient.
+    // Perf-Paket 4: additive=false — der Kontext ist bereits 'lighter' (Abschnitt A),
+    // spart den redundanten Composite-Zustandswechsel pro Naht.
+    drawGlowDisc(ctx, getGlowDisc(128, 255, 185, 75, 1), sx, sy, r, r, 0.32 * fl, false);
   }
   ctx.restore();
 
@@ -5509,12 +5537,10 @@ function drawDragonLairForeground(this: Renderer, camX: number, VW: number, VH: 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const gr = 72 + 12 * flick;
-    const glow = ctx.createRadialGradient(sx, ty, 0, sx, ty, gr);
-    glow.addColorStop(0, `rgba(255,175,75,${0.28 * flick})`);
-    glow.addColorStop(0.5, `rgba(255,120,45,${0.11 * flick})`);
-    glow.addColorStop(1, 'rgba(255,90,30,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(sx - gr, ty - gr, gr * 2, gr * 2);
+    // Perf-Paket 2: gebackene Glow-Disc statt je Frame neuer Gradient.
+    // Perf-Paket 4: additive=false — Kontext ist bereits 'lighter' (Fackel-save),
+    // spart den redundanten Composite-Zustandswechsel pro Fackel.
+    drawGlowDisc(ctx, getGlowDisc(128, 255, 165, 65, 1), sx, ty, gr, gr, 0.28 * flick, false);
     ctx.restore();
 
     ctx.save();

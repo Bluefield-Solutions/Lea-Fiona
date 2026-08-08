@@ -402,6 +402,12 @@ function renderWorldLayer(engine: GameEngine): void {
     engine.renderer.drawWingFlutter(fs.x, fs.y, f.age, f.max, f.dir);
   }
 
+  // Feinschliff: Coin-Pop-Ringe — über den Entities, am Sammelpunkt.
+  for (const c of engine.coinPops) {
+    const cs = engine.camera.worldToScreenInto(c.x, c.y, _s);
+    engine.renderer.drawCoinPop(cs.x, cs.y, c.age, c.max);
+  }
+
   {
     const flagScreen = engine.camera.worldToScreenInto(engine.level.flagPosition.x, engine.level.flagPosition.y, _s);
     const poleHeight = groundRowOf(engine.level) * TILE_SIZE - engine.level.flagPosition.y;

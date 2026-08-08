@@ -452,6 +452,17 @@ export function stepEntities(engine: GameEngine): void {
     engine.wingFlutters.length = w;
   }
 
+  // Tick Coin-Pop-Ringe (Feinschliff) analog zu den Shockwaves.
+  {
+    let w = 0;
+    for (let r = 0; r < engine.coinPops.length; r++) {
+      const c = engine.coinPops[r];
+      c.age++;
+      if (c.age < c.max) engine.coinPops[w++] = c;
+    }
+    engine.coinPops.length = w;
+  }
+
   // Off-screen entity cleanup (D1): cull enemies that fell into a pit
   // OR are far behind the camera (player has already moved past them
   // and they're not coming back). Conservative thresholds so we never

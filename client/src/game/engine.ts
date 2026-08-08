@@ -7,7 +7,7 @@ import {
   LEVEL_INTRO_FRAMES, TIME_BONUS_PER_TIME, TIME_BONUS_DURATION_FRAMES,
   STAR_TIME_THRESHOLD, SPECIAL_COINS_PER_LEVEL,
   SUPER_KILL_SCORE,
-  PLAYER_RUN_SPEED, CAMERA_SPEED_ZOOM_MAX, CAMERA_SPEED_ZOOM_SMOOTH,
+  PLAYER_SPEED, PLAYER_RUN_SPEED, CAMERA_SPEED_ZOOM_MAX, CAMERA_SPEED_ZOOM_SMOOTH,
   CAMERA_TOUCH_ZOOM, CAMERA_DESKTOP_ZOOM, SPRING_FORCE, BLOCK_COIN_VALUE,
   SWING_AMP, SWING_DRIVE, ROPE_SWING_AMP, ROPE_SWING_DRIVE,
 } from './constants';
@@ -36,7 +36,7 @@ import {
 import {
     spawnBlockParticles, spawnBrickParticles, spawnCoinParticles,
     spawnStarParticles, spawnHeartParticles, spawnStompParticles,
-    spawnDust, spawnSparks,
+    spawnDust, spawnRunDust, spawnSparks,
   } from './engine_internal/particles';
 import { installAudioBootstrap } from './engine_internal/audio_bootstrap';
 import { isCullExempt, isFreezableEnemy } from './engine_internal/blocks';
@@ -194,6 +194,8 @@ export class GameEngine {
   // Flügelschlag-Puffs beim Doppelsprung (Paket 2). Wie shockwaves entkoppelt,
   // damit sie ihr eigenes Alter/Ausblenden führen.
   wingFlutters: Array<{ x: number; y: number; age: number; max: number; dir: number }> = [];
+  // Feinschliff: Coin-Pop-Ringe beim Münzeinsammeln (eigenes Alter/Ausblenden).
+  coinPops: Array<{ x: number; y: number; age: number; max: number }> = [];
   // Aktive Note-Block-Einsack-Animationen: key `col,row` → verbleibende Frames.
   noteBounceTimers: Map<string, number> = new Map();
   // Warp-Röhren: Cooldown verhindert sofortiges Zurück-Warpen, Flash blendet
@@ -594,7 +596,34 @@ export class GameEngine {
   // Mario-feel: small puff of greyish dust kicked horizontally in `dir`.
   // Used for skid/slide/wall-jump push-offs.
   spawnDust(x: number, y: number, dir: number) {
-    spawnDust(this.particles, this.acquireParticle.bind(this), x, y, dir);
+    spawnDust(this.particles, this.acquireParticle.bind(this), x, y, dir, this.dustColors());
+  }
+  // Feinschliff: leichter Sprint-Staub-Trail hinter den Füßen.
+  spawnRunDust(x: number, y: number, dir: number) {
+    spawnRunDust(this.particles, this.acquireParticle.bind(this), x, y, dir, this.dustColors());
+  }
+  // Feinschliff: welt­getönte Staubfarben, damit aufgewirbelter Staub zum
+  // Untergrund passt (Sand am Strand, Schnee im Eis, Erde im Dschungel, dunkler
+  // Fels in der Höhle …) statt überall gleich grau zu sein.
+  dustColors(): string[] {
+    switch (this.level?.theme) {
+      case 'beach':
+      case 'australia':  return ['#e8d6a9', '#dcc596', '#efe1bd', '#cbb488'];
+      case 'ice':        return ['#e2edf5', '#f0f7fc', '#cfe0ee', '#dbe8f2'];
+      case 'cave':
+      case 'dragon':     return ['#8f8a84', '#9c958c', '#7a746c', '#a49d94'];
+      case 'volcano':    return ['#8f817a', '#a1938b', '#766a63', '#b4a49a'];
+      case 'sky':        return ['#eef2f7', '#ffffff', '#dfe7f0', '#e7edf4'];
+      case 'plush':      return ['#ecdfea', '#f4ecf2', '#ddd0db', '#f0e3ec'];
+      case 'space':      return ['#b7add0', '#cabfe0', '#9a8fbe', '#d6ccea'];
+      case 'underwater': return ['#bcd6df', '#d2e6ec', '#a6c4cf', '#c8dee5'];
+      case 'jungle':
+      case 'bluefield':
+      case 'school':
+      case 'gym':
+      case 'trampoline': return ['#bcae92', '#cbbfa5', '#a89a7e', '#d0c4ab'];
+      default:           return ['#ddd', '#ccc', '#bbb', '#e8e0d0'];
+    }
   }
 
   // Hit-Stop trigger. Uses max() so overlapping impacts in the same frame
@@ -1052,6 +1081,7 @@ export class GameEngine {
     this.superBlockPositions = new Set(this.level.superBlocks || []);
     this.shockwaves = [];
     this.wingFlutters = [];
+    this.coinPops = [];
 
     // QS sanity check: any "*Blocks" declaration that does NOT sit on an
     // actual QUESTION_BLOCK tile is a no-op (the gadget will never spawn).
@@ -1496,6 +1526,19 @@ export class GameEngine {
     // periodic gold sparks under the feet so the buff is visible.
     if (this.player.isPCharged && this.player.onGround && this.renderer.time % 4 === 0) {
       this.spawnSparks(this.player.x + this.player.width / 2, this.player.y + this.player.height);
+    }
+    // Feinschliff: kontinuierlicher Sprint-Staub-Trail hinter den Füßen — nur
+    // beim echten Rennen (nicht Gehen/Bremsen/Rutschen/Ducken) und deutlich über
+    // Gehtempo. Kleine, flache Wölkchen alle 6 Frames erden den schnellen Lauf.
+    if (this.player.isRunning && this.player.onGround
+        && !this.player.isSkidding && !this.player.isSliding && !this.player.isDucking
+        && Math.abs(this.player.velX) > PLAYER_SPEED + 1
+        && this.renderer.time % 6 === 0) {
+      this.spawnRunDust(
+        this.player.x + this.player.width / 2,
+        this.player.y + this.player.height,
+        -Math.sign(this.player.velX) || 1,
+      );
     }
 
     // Game-Feel: Beim Sprinten am Boden alle paar Frames eine kleine Staubwolke

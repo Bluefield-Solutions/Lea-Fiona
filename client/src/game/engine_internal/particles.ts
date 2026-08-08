@@ -155,8 +155,8 @@ export function spawnStompParticles(
 export function spawnDust(
   out: Entity[], acquire: AcquireParticle,
   x: number, y: number, dir: number,
+  colors: string[] = ['#ddd', '#ccc', '#bbb', '#e8e0d0'],
 ) {
-  const colors = ['#ddd', '#ccc', '#bbb', '#e8e0d0'];
   for (let i = 0; i < 5; i++) {
     out.push(acquire(
       x + (Math.random() - 0.5) * 6,
@@ -166,6 +166,28 @@ export function spawnDust(
       colors[i % colors.length],
       2 + Math.random() * 2,
       18,
+    ));
+  }
+}
+
+// Feinschliff: leichter, bodennaher Staub-Kick beim vollen Sprint. Bewusst
+// dezenter als spawnDust (Skid/Landung) — nur 2 kleine, flache, schnell
+// verwehende Wölkchen hinter den Füßen, damit der Renn-Trail lebendig wirkt,
+// ohne die Szene zuzustauben.
+export function spawnRunDust(
+  out: Entity[], acquire: AcquireParticle,
+  x: number, y: number, dir: number,
+  colors: string[] = ['#e8e0d0', '#dddddd', '#cfc8ba'],
+) {
+  for (let i = 0; i < 2; i++) {
+    out.push(acquire(
+      x + (Math.random() - 0.5) * 4,
+      y - Math.random() * 2,
+      dir * (0.5 + Math.random() * 0.8),
+      -0.15 - Math.random() * 0.5,
+      colors[i % colors.length],
+      1.3 + Math.random() * 1.1,
+      12,
     ));
   }
 }

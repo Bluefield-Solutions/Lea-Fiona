@@ -1000,6 +1000,34 @@ function drawShockwave(this: Renderer, x: number, y: number, age: number, maxAge
   ctx.restore();
 }
 
+// Feinschliff: Coin-Pop — ein kleiner, symmetrischer goldener Ring, der beim
+// Einsammeln kurz aufploppt (skaliert nach außen + blendet schnell aus), plus
+// ein winziger Kern-Blitz am Anfang. Additiv ('lighter'), damit er auf jedem
+// Untergrund glänzt. Bewusst klein/kurz, ergänzt die vorhandenen Funken.
+function drawCoinPop(this: Renderer, x: number, y: number, age: number, maxAge: number) {
+  const ctx = this.ctx;
+  const t = Math.min(1, age / maxAge);
+  const ease = 1 - (1 - t) * (1 - t);       // ease-out: schnell auf, dann sanft
+  const r = 4 + ease * 15;
+  const alpha = (1 - t) * (1 - t) * 0.9;     // schnelles Ausblenden
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = '#ffe89a';
+  ctx.lineWidth = 2.2 * (1 - t) + 0.6;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = alpha * 0.6;
+  ctx.strokeStyle = '#fffbe0';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(x, y, r * 0.6, 0, Math.PI * 2); ctx.stroke();
+  if (t < 0.35) {
+    ctx.globalAlpha = (1 - t / 0.35) * 0.7;
+    ctx.fillStyle = '#fffdf2';
+    ctx.beginPath(); ctx.arc(x, y, 3.5 * (1 - t / 0.35) + 1, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
 // Flügelschlag-Puff beim Doppelsprung (Paket 2): ein Paar weiß-goldene
 // Flügel-Bögen, die seitlich nach oben ausschlagen und ausblenden, plus ein
 // weicher Auftriebs-Ring — signalisiert die Flügel-Fähigkeit im Moment des
@@ -1900,6 +1928,7 @@ export const effectsMethods = {
   drawJungleFireflies,
   drawAustraliaAmbient,
   drawShockwave,
+  drawCoinPop,
   drawWingFlutter,
   drawStarAura,
   drawGroundShadow,

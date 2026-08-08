@@ -47,3 +47,26 @@ export function stampGlow(ctx: CanvasRenderingContext2D, disc: HTMLCanvasElement
   ctx.drawImage(disc, cx - s / 2, cy - s / 2, s, s);
   ctx.globalCompositeOperation = prev;
 }
+
+/** Perf-Paket 2 · Budget-freier Glow-Stempel mit RADIUS-Semantik (rx/ry statt
+ *  Scale), per-Frame-Helligkeit `alpha` und wählbarem Blend. Ersetzt pro-Frame
+ *  `createRadialGradient`-Allokationen (Höhlen-Deko: Lava, Glut, Augen, Fackeln):
+ *  die Disc wird EINMAL gebacken und hier nur noch skaliert geblittet.
+ *  - rx/ry erlauben elliptische Glows (z. B. flache Lava-Tümpel).
+ *  - `alpha` moduliert das Flackern/Pulsieren (Disc mit Referenz-Alpha gebacken).
+ *  - `additive`=true → 'lighter' (Vordergrund-Feuer), false → source-over
+ *    (Hintergrund-Deko, exakt wie zuvor auf dunklem Fels). Nicht budgetiert,
+ *    da die Höhlen-Atmosphäre bewusst gezeichnet wird (Dichte regelt `qf`). */
+export function drawGlowDisc(
+  ctx: CanvasRenderingContext2D, disc: HTMLCanvasElement | null,
+  cx: number, cy: number, rx: number, ry = rx, alpha = 1, additive = false,
+) {
+  if (!disc || alpha <= 0.003) return;
+  const pc = ctx.globalCompositeOperation;
+  const pa = ctx.globalAlpha;
+  if (additive) ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = pa * (alpha > 1 ? 1 : alpha);
+  ctx.drawImage(disc, cx - rx, cy - ry, rx * 2, ry * 2);
+  ctx.globalAlpha = pa;
+  ctx.globalCompositeOperation = pc;
+}
