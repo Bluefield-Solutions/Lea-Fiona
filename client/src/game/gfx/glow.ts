@@ -1,0 +1,49 @@
+// Grafik-Umbau W2.1 · Gebackene additive Glow-Discs.
+//
+// Safari-sicherer Ersatz für den Vollbild-Bloom: Statt das Canvas auf sich
+// selbst zu zeichnen (iPhone-Falle → schwarzes Bild), werden hier einmalig
+// Radial-Gradient-Discs in kleine Offscreen-Canvases gebacken und dann additiv
+// (globalCompositeOperation='lighter') um Leuchtelemente gestempelt. Kein
+// shadowBlur, kein ctx.filter, kein Self-Draw.
+
+const cache = new Map<string, HTMLCanvasElement>();
+
+// W2.1-Perf · Frame-Budget: begrenzt die Zahl der additiven Glow-Stempel pro
+// Bild (verhindert Overdraw-Explosion, wenn viele Leuchtelemente sichtbar sind
+// — vor allem auf dem Desktop mit größerem Sichtfeld). Wird zu Frame-Beginn
+// zurückgesetzt.
+let glowBudget = 999;
+export function beginGlowFrame(max: number) { glowBudget = max; }
+
+/** Liefert (gecacht) eine gebackene Glow-Disc der Größe `size` in der Farbe. */
+export function getGlowDisc(size: number, r: number, g: number, b: number, coreAlpha: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const key = `${size}:${r},${g},${b}:${coreAlpha}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const cx = c.getContext('2d');
+  if (!cx) return null;
+  const grad = cx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, `rgba(${r},${g},${b},${coreAlpha})`);
+  grad.addColorStop(0.45, `rgba(${r},${g},${b},${coreAlpha * 0.4})`);
+  grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  cx.fillStyle = grad;
+  cx.fillRect(0, 0, size, size);
+  cache.set(key, c);
+  return c;
+}
+
+/** Stempelt eine Glow-Disc additiv, zentriert auf (cx, cy). Bewusst schlank
+ *  gehalten (kein save/restore, kein imageSmoothing-Wechsel): bei vielen
+ *  Stempeln pro Frame summieren sich Zustandswechsel spürbar. */
+export function stampGlow(ctx: CanvasRenderingContext2D, disc: HTMLCanvasElement | null, cx: number, cy: number, scale = 1) {
+  if (!disc || glowBudget <= 0) return;
+  glowBudget--;
+  const s = disc.width * scale;
+  const prev = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.drawImage(disc, cx - s / 2, cy - s / 2, s, s);
+  ctx.globalCompositeOperation = prev;
+}

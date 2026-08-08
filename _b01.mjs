@@ -1,0 +1,21 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch({ executablePath:'/opt/pw-browsers/chromium', args:['--no-sandbox','--use-gl=swiftshader'] });
+const p = await b.newPage({ viewport:{width:900,height:520} });
+await p.addInitScript(()=>{ localStorage.setItem('lea_fiona_v2', JSON.stringify({version:2,profiles:[{id:'p_t',name:'Fiona',unlockedLevels:13,bestScores:[],bestTimes:[],totalCoins:0,stickers:[],settings:{unlockAllWorlds:true,assistInvincible:true,musicVolume:0,sfxVolume:0,quality:'high',screenShake:true}}],activeProfileId:'p_t'})); });
+await p.goto('file:///tmp/real.html'); await p.waitForTimeout(1000);
+const c = await p.$('[aria-label="Figur Fiona"]'); if (c) await c.click();
+await p.waitForTimeout(200);
+const lvl = await p.$(`[aria-label^="Level 1:"]`); if (lvl) await lvl.click();
+await p.waitForTimeout(1600);
+const canvas = await p.$('canvas'); if(canvas) await canvas.click({position:{x:450,y:400}});
+await p.waitForTimeout(100);
+const s0 = await p.evaluate(()=>({state:window.__game?.state, x:Math.round(window.__game?.player?.x||0)}));
+await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+const s1 = await p.evaluate(()=>({state:window.__game?.state, resumeBtn:!!document.querySelector('[data-testid="button-resume"]'), levelSelBtn:!!document.querySelector('[data-testid="button-pause-levelselect"]'), levelCards:!!document.querySelector('[data-testid="button-level-0"]')}));
+await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+const s2 = await p.evaluate(()=>({state:window.__game?.state, x:Math.round(window.__game?.player?.x||0), resumeBtn:!!document.querySelector('[data-testid="button-resume"]'), levelCards:!!document.querySelector('[data-testid="button-level-0"]'), title:document.querySelector('h1,h2')?.textContent||''}));
+console.log('after start   :', JSON.stringify(s0));
+console.log('after 1x Esc  :', JSON.stringify(s1));
+console.log('after 2x Esc  :', JSON.stringify(s2));
+// also test P key path fresh
+await b.close();

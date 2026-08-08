@@ -1,0 +1,27 @@
+node_modules/
+dist/
+dist-standalone/
+*.mts
+node_modules
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+# Playwright test artifacts
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+playtest/
+playtest2/
+inspect/
+
+# iPhone-Paket: Build-Artefakte (nur Quelle/Assets versionieren)
+iphone-app/index.html
+lea-fiona-iphone.zip
+lea-fiona-iphone-github.zip
+
+# iPhone-Webapp Build-Artefakte (via tools/build-webapp.mjs)
+webapp/
+lea-fiona-webapp.zip
