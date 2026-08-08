@@ -253,6 +253,9 @@ export class GameEngine {
   private autoTier: 'low' | 'mid' | 'high' = 'high';
   private autoBadEvals = 0;
   private autoGoodEvals = 0;
+  // Auto-Startstufe einmalig anhand der Bildschirmgröße wählen (großer iPad →
+  // gleich niedriger starten statt sich erst sekundenlang herunterzuruckeln).
+  private autoStarted = false;
   // Gecachte Maße der letzten resize() — erlauben das erneute Anwenden des
   // Backing-Stores (dpr-Cap) bei einer Auto-Stufen-Änderung ohne volle resize.
   private lastDisplayW = 0;
@@ -2100,10 +2103,21 @@ export class GameEngine {
   private lightGrad: CanvasGradient | null = null;
   private lightGradKey = '';
 
-  private currentDpr(): number {
+  private currentDpr(displayW = this.lastDisplayW, displayH = this.lastDisplayH): number {
     const dprCap = this.effectiveQuality === 'low' ? 1 : this.effectiveQuality === 'mid' ? 1.5 : 2;
     const rawDpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
-    return Math.min(rawDpr, dprCap);
+    let dpr = Math.min(rawDpr, dprCap);
+    // Füllraten-Deckel: das Backing-Canvas nie über ein Pixel-Budget wachsen
+    // lassen. Auf großen, hochauflösenden Bildschirmen (iPad: Display × DPR =
+    // 3–5 Megapixel) killt die reine Füllrate die FPS — obwohl das iPhone mit
+    // ~1,3 MP flüssig läuft. Der Deckel bindet die Kosten an ein festes Budget
+    // je Grafikstufe (Canvas wird per CSS auf Displaygröße hochskaliert).
+    const budget = this.effectiveQuality === 'low' ? 1.05e6 : this.effectiveQuality === 'mid' ? 1.6e6 : 2.2e6;
+    if (displayW && displayH) {
+      const maxDpr = Math.sqrt(budget / (displayW * displayH));
+      if (maxDpr < dpr) dpr = maxDpr;
+    }
+    return dpr;
   }
 
   /** Bindet das WebGL-Overlay-Canvas (einmalig, lazy). Schlägt der WebGL2-
@@ -2189,6 +2203,14 @@ export class GameEngine {
     this.lastLogicalH = logicalH;
     this.lastDisplayW = displayWidth;
     this.lastDisplayH = displayHeight;
+    // Auto-Startstufe an die Bildschirmgröße koppeln (einmalig): auf großen
+    // Displays (iPad) gleich mit 'mid'/'low' starten, damit es von der ersten
+    // Sekunde flüssig ist — die Auto-Logik stuft bei Headroom wieder hoch.
+    if (getSettings().quality === 'auto' && !this.autoStarted) {
+      this.autoStarted = true;
+      const projMP = (displayWidth * displayHeight * 4) / 1e6; // 'high' ≈ DPR 2
+      this.autoTier = projMP > 4 ? 'low' : projMP > 2.5 ? 'mid' : 'high';
+    }
     this.refreshEffectiveQuality();
     this.applyBackingStore();
   }
