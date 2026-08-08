@@ -1109,7 +1109,7 @@ export default function GamePage() {
                 color: 'rgba(255,255,255,0.78)', letterSpacing: '0.02em',
                 background: 'rgba(16,12,34,0.5)', padding: '3px 14px', borderRadius: 999,
               }}>
-                🏃 Renne, hüpfe &amp; sammle durch 15 bunte Welten
+                🏃 Renne, hüpfe &amp; sammle durch 16 bunte Welten
               </div>
             </div>
           )}
@@ -1140,6 +1140,35 @@ export default function GamePage() {
                   </span>
                 );
               })()}
+            </div>
+            {/* Modus-Umschalter: „Alle Level" (Default, nichts gesperrt) vs.
+                „Kampagne" (nach und nach freispielen). Gebunden an unlockAllWorlds. */}
+            <div
+              role="radiogroup"
+              aria-label="Spielmodus"
+              style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 999, background: 'rgba(16,12,34,0.55)', border: '1px solid rgba(255,255,255,0.18)', pointerEvents: 'auto' }}
+            >
+              {([['all', '🎮 Alle Level'], ['campaign', '🏰 Kampagne']] as const).map(([mode, label]) => {
+                const active = (mode === 'all') === settings.unlockAllWorlds;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    data-testid={`mode-${mode}`}
+                    onClick={() => applySettingsPatch({ unlockAllWorlds: mode === 'all' })}
+                    style={{
+                      padding: '6px 16px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                      fontSize: 12.5, fontWeight: 800, letterSpacing: '0.02em',
+                      background: active ? 'linear-gradient(90deg,#ffe27a,#ff9f5a)' : 'transparent',
+                      color: active ? '#5a3a12' : 'rgba(255,255,255,0.82)',
+                      boxShadow: active ? '0 2px 10px rgba(255,159,90,0.45)' : 'none',
+                      transition: 'background 120ms, color 120ms',
+                    }}
+                  >{label}</button>
+                );
+              })}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13 }}>Du spielst als <b style={{ color: '#fff' }}>{character === 'fiona' ? 'Fiona' : 'Lea'}</b></span>
