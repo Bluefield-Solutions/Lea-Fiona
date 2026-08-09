@@ -102,7 +102,12 @@ function drawPlayer(
   // alpha. Skipped while dead so the death tumble doesn't drag a shadow
   // around the screen.
   if (!isDead) {
-    drawGroundShadow(ctx, x + width / 2, y + height, width, isJumping, velY);
+    // Grafik-Feinschliff: Spieler-Schatten in der Weltfarbe tönen (wie die
+    // Gegner-Schatten) statt neutral-schwarz — erdet die Figur in der Szene.
+    const accShadow = this.getThemeAccent().shadow;
+    const mm = accShadow.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    const shadowRGB = mm ? `${mm[1]},${mm[2]},${mm[3]}` : '0,0,0';
+    drawGroundShadow(ctx, x + width / 2, y + height, width, isJumping, velY, shadowRGB);
   }
 
   // Star aura — drawn UNDER the sprite so it reads as a halo.
@@ -281,7 +286,7 @@ function drawPMeterShimmer(ctx: CanvasRenderingContext2D, cx: number, footY: num
   ctx.restore();
 }
 
-function drawGroundShadow(ctx: CanvasRenderingContext2D, cx: number, footY: number, w: number, isJumping: boolean, velY: number) {
+function drawGroundShadow(ctx: CanvasRenderingContext2D, cx: number, footY: number, w: number, isJumping: boolean, velY: number, rgb = '0,0,0') {
   // Airborne → smaller and fainter; grounded → full size for solid anchor.
   let scale = 1;
   let alpha = 0.32;
@@ -299,9 +304,9 @@ function drawGroundShadow(ctx: CanvasRenderingContext2D, cx: number, footY: numb
   ctx.translate(cx, footY - 1);
   ctx.scale(1, ry / rx);
   const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
-  grad.addColorStop(0, `rgba(0, 0, 0, ${alpha.toFixed(3)})`);
-  grad.addColorStop(0.55, `rgba(0, 0, 0, ${(alpha * 0.45).toFixed(3)})`);
-  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  grad.addColorStop(0, `rgba(${rgb}, ${alpha.toFixed(3)})`);
+  grad.addColorStop(0.55, `rgba(${rgb}, ${(alpha * 0.45).toFixed(3)})`);
+  grad.addColorStop(1, `rgba(${rgb}, 0)`);
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(0, 0, rx, 0, Math.PI * 2);
@@ -746,6 +751,37 @@ function drawPlayerSprite(
     const prevQuality = ctx.imageSmoothingQuality;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+
+    // ── Rim-Light / Umriss (Grafik-Feinschliff) ─────────────────────────────
+    // Die Figur bekommt eine dezente, getönte Silhouette knapp HINTER dem Sprite
+    // (leicht vergrößert), damit sie sich vor unruhigen Hintergründen (Dschungel-
+    // Blätterdach, dunkler Fels) klar abhebt — so wie die Gegner ihr Rim schon
+    // haben. Umriss = alpha-eingefärbte Kopie des fertigen Sprites; nur EINE
+    // Figur pro Frame, also praktisch kostenlos.
+    if (!this.playerRimOffscreen || this.playerRimOffscreen.width < oc.width || this.playerRimOffscreen.height < oc.height) {
+      this.playerRimOffscreen = document.createElement('canvas');
+      this.playerRimOffscreen.width = oc.width;
+      this.playerRimOffscreen.height = oc.height;
+      this.playerRimCtx = this.playerRimOffscreen.getContext('2d');
+    }
+    const rc = this.playerRimCtx;
+    if (rc) {
+      rc.setTransform(1, 0, 0, 1, 0, 0);
+      rc.globalCompositeOperation = 'source-over';
+      rc.clearRect(0, 0, this.playerRimOffscreen.width, this.playerRimOffscreen.height);
+      rc.drawImage(oc, 0, 0);                       // fertige Sprite-Silhouette (Alpha)
+      rc.globalCompositeOperation = 'source-in';     // Alpha einfärben → Umriss-Ton
+      rc.fillStyle = 'rgba(18,22,30,1)';             // weiches Dunkel (universell trennend)
+      rc.fillRect(0, 0, this.playerRimOffscreen.width, this.playerRimOffscreen.height);
+      rc.globalCompositeOperation = 'source-over';
+      const grow = 3;                                // px Umriss-Breite (logisch)
+      const prevA = ctx.globalAlpha;
+      ctx.globalAlpha = 0.30;
+      ctx.drawImage(this.playerRimOffscreen, 0, 0, srcW * dpr, srcH2 * dpr,
+        dx - pad - grow / 2, dy - pad - grow / 2, srcW + grow, srcH2 + grow);
+      ctx.globalAlpha = prevA;
+    }
+
     ctx.drawImage(oc, 0, 0, srcW * dpr, srcH2 * dpr, dx - pad, dy - pad, srcW, srcH2);
     ctx.imageSmoothingEnabled = prevSmoothing;
     ctx.imageSmoothingQuality = prevQuality;
@@ -962,8 +998,9 @@ function plushSquash(o: PlushOpts): { sx: number; sy: number } {
 // Blittet ein Plüsch-Tier-Sprite-Set (Affe/Panda): Größe an der vollen Stand-Höhe
 // ausgerichtet (wie Fiona), Füße unten am Boden (H). Duck staucht statt schrumpft.
 function blitPlushSprite(ctx: CanvasRenderingContext2D, W: number, H: number,
-                         frames: (HTMLImageElement | null)[], fullH: number, o: PlushOpts): boolean {
-  const img = frames[pickMonkeyFrame(o)] || frames[0];
+                         frames: (HTMLImageElement | null)[], fullH: number, o: PlushOpts,
+                         walkCycle?: number[]): boolean {
+  const img = frames[pickMonkeyFrame(o, walkCycle)] || frames[0];
   if (!img || !img.width) return false;
   const SPRITE_SCALE = 1.12;
   const drawH = fullH * SPRITE_SCALE;
@@ -984,7 +1021,11 @@ function blitPlushSprite(ctx: CanvasRenderingContext2D, W: number, H: number,
 }
 
 // Zustand → Äffchen-Sprite-Index (0 idle · 1-4 laufen · 5 auf · 6 apex · 7 fall · 8 duck).
-function pickMonkeyFrame(o: PlushOpts): number {
+// `walkCycle` erlaubt figurspezifische Lauf-Sequenzen: manche Sprite-Sets haben
+// ihre echten Schritt-Posen an anderen Indizes (z. B. der Elefant), sodass die
+// Standard-Folge [1,2,3,4] Idle-Frames einmischen würde und die Beine nicht
+// sauber vorne/hinten wechseln.
+function pickMonkeyFrame(o: PlushOpts, walkCycle: number[] = [1, 2, 3, 4]): number {
   if (o.isDucking) return 8;
   if (o.isJumping) {
     if (o.velY < -1.5) return 5;
@@ -995,7 +1036,7 @@ function pickMonkeyFrame(o: PlushOpts): number {
   // nicht nur bei gedrücktem Sprint — sonst „rennen die Beine nicht".
   if (Math.abs(o.velX) > 0.5) {
     const spd = o.isRunning ? 0.26 : 0.17;         // rennen: schnellere Schrittfolge
-    return 1 + (Math.floor(o.time * spd) % 4);
+    return walkCycle[Math.floor(o.time * spd) % walkCycle.length];
   }
   return 0;
 }
@@ -1015,7 +1056,10 @@ function drawPlushCharacter(ctx: CanvasRenderingContext2D, W: number, H: number,
   // Panda (groß, 80). Füße unten-mittig, rechts-gerichtet (Spiegelung = Aufrufer).
   if (form === 'monkey' && o.monkeyFrames && blitPlushSprite(ctx, W, H, o.monkeyFrames, 68, o)) return;
   if (form === 'panda' && o.pandaFrames && blitPlushSprite(ctx, W, H, o.pandaFrames, 80, o)) return;
-  if (form === 'elephant' && o.elefantFrames && blitPlushSprite(ctx, W, H, o.elefantFrames, 80, o)) return;
+  // Elefant: echte Schritt-Posen liegen auf f3–f5 (f0–f2 sind ~Idle). Eigene
+  // Lauf-Sequenz [3,4,5,4] — f3 hebt das hintere, f4 das vordere Bein → die
+  // Beine wechseln sichtbar vorne/hinten, es sieht nach echtem Rennen aus.
+  if (form === 'elephant' && o.elefantFrames && blitPlushSprite(ctx, W, H, o.elefantFrames, 80, o, [3, 4, 5, 4])) return;
   const P = PLUSH_PAL[form];
   const t = o.time;
   const cx = W / 2;

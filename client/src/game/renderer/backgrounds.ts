@@ -2,7 +2,7 @@ import type { Renderer } from '../renderer.ts';
 import { Camera } from '../camera.ts';
 import { TILE_SIZE } from '../constants';
 import { pseudoRandom } from '../util/random';
-import { getGlowDisc, stampGlow, drawGlowDisc } from '../gfx/glow.ts';
+import { getGlowDisc, getGlowDiscMulti, stampGlow, drawGlowDisc } from '../gfx/glow.ts';
 
 function drawBackground(this: Renderer, camera: Camera, worldWidth: number) {
   if (!this.bgGenerated) {
@@ -120,26 +120,12 @@ function drawBackground(this: Renderer, camera: Camera, worldWidth: number) {
       ctx.closePath();
       ctx.fill();
     };
-    // F6b: weiche Lichtstrahlen (God Rays) aus der Lichtquelle, additiv & dezent.
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < 5; i++) {
-      const baseX = gx + (i - 2) * VW * 0.09;
-      const topX = baseX + Math.sin(this.time * 0.006 + i) * 8;
-      const w = 16 + i * 4;
-      const rg = ctx.createLinearGradient(0, gy, 0, VH * 0.82);
-      rg.addColorStop(0, 'rgba(205,228,255,0.05)');
-      rg.addColorStop(1, 'rgba(205,228,255,0)');
-      ctx.fillStyle = rg;
-      ctx.beginPath();
-      ctx.moveTo(topX - w * 0.3, gy);
-      ctx.lineTo(topX + w * 0.3, gy);
-      ctx.lineTo(topX + w, VH * 0.82);
-      ctx.lineTo(topX - w, VH * 0.82);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.restore();
+    // F6b: weiche Lichtstrahlen (God Rays) aus der Lichtquelle — jetzt über das
+    // gecachte God-Ray-System (einmal gebacken, pro Frame nur 1 additiver Blit
+    // statt 5 frische Verläufe/Frame). Gebündelt unter der Sonne (gx≈0.76),
+    // kühl-weiß, dezent — Optik wie zuvor.
+    drawGodRays.call(this, 'bluefield', '205,228,255', 5, 0.05, 0.18, 0.64,
+      { spanFrac: 0.5, centerFrac: 0.76, driftAmp: 0.015, driftSpd: 0.006 });
     // F6: weiche Wolken (hinter den Hügeln, sehr langsame Parallaxe).
     const clouds = [
       { wx: 400, y: 0.15, w: 130, a: 0.5 }, { wx: 1300, y: 0.24, w: 100, a: 0.42 },
@@ -382,6 +368,12 @@ function drawBackground(this: Renderer, camera: Camera, worldWidth: number) {
   // Ferne, dunstige Bergketten ganz hinten (atmosphärische Tiefe).
   this.drawFarRange(camera.x);
 
+  // God-Rays (Ausrollung, gecacht/additiv): warme Sonnenschäfte fallen aus der
+  // Lichtquelle oben rechts durchs Blätterdach — gebündelt unter der Sonne
+  // (gx≈0.74), dezent. Kosten: 1 additiver Blit/Frame.
+  drawGodRays.call(this, 'jungle', '255,244,205', 6, 0.04, 0.05, 0.72,
+    { spanFrac: 0.62, centerFrac: 0.72, driftAmp: 0.02, driftSpd: 0.005 });
+
   // Jungle signature: distant stepped Mayan pyramid silhouette baked
   // into signatureLayers cache. One drawImage per frame, no allocations.
   {
@@ -457,8 +449,8 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
     g.addColorStop(1, '#0d0a14');
     cctx.fillStyle = g;
     cctx.fillRect(0, 0, cw, ch);
-  });
-  ctx.drawImage(cache, 0, 0);
+  }, true);
+  this.blitBgCache(cache);
 
   const pseudoRand = pseudoRandom;
 
@@ -804,8 +796,8 @@ function drawSkyThemeBackground(this: Renderer, camera: Camera) {
     g.addColorStop(1, '#e8e0f8');
     cctx.fillStyle = g;
     cctx.fillRect(0, 0, cw, ch);
-  });
-  ctx.drawImage(skyCache, 0, 0);
+  }, true);
+  this.blitBgCache(skyCache);
 
   const sunX = W * 0.75;
   const sunY = H * 0.18;
@@ -839,6 +831,12 @@ function drawSkyThemeBackground(this: Renderer, camera: Camera) {
     ctx.arc(sx, sy, 0.8 + brightness * 0.5, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  // God-Rays (Ausrollung, gecacht/additiv): weiche warme Sonnenschäfte aus der
+  // Sonne oben rechts, HINTER den Wolken → Tiefe/Volumen im offenen Himmel.
+  // Bewusst sehr dezent, damit der helle Himmel/HUD nicht überstrahlt.
+  drawGodRays.call(this, 'sky', '255,240,205', 6, 0.03, 0.16, 0.6,
+    { spanFrac: 0.55, centerFrac: 0.73, driftAmp: 0.02, driftSpd: 0.005 });
 
   const cloudConfigs = [
     { y: 0.15, speed: 0.02, scale: 1.2, alpha: 0.4, count: 4 },
@@ -1048,8 +1046,8 @@ function drawBeachBackground(this: Renderer, camera: Camera) {
     g.addColorStop(1, '#f0e4b0');
     cctx.fillStyle = g;
     cctx.fillRect(0, 0, cw, ch);
-  });
-  ctx.drawImage(beachCache, 0, 0);
+  }, true);
+  this.blitBgCache(beachCache);
 
   this.drawSun(camera);
   this.drawClouds(camera);
@@ -1134,8 +1132,8 @@ function drawAustraliaBackground(this: Renderer, camera: Camera) {
     g.addColorStop(1, '#e8d080');
     cctx.fillStyle = g;
     cctx.fillRect(0, 0, cw, ch);
-  });
-  ctx.drawImage(ausCache, 0, 0);
+  }, true);
+  this.blitBgCache(ausCache);
 
   const sunX = W * 0.65 - camera.x * 0.015;
   const sunY = H * 0.2;
@@ -1156,6 +1154,9 @@ function drawAustraliaBackground(this: Renderer, camera: Camera) {
   ctx.beginPath();
   ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
   ctx.fill();
+
+  // (Keine zusätzlichen God-Rays im Outback: die Welt hat bereits einen radialen
+  // Sonnen-Strahlenkranz — ein zweites Schaft-Bündel würde nur überladen.)
 
   const pseudoRand = pseudoRandom;
 
@@ -1216,7 +1217,7 @@ function drawAustraliaBackground(this: Renderer, camera: Camera) {
     ctx.beginPath();
     ctx.moveTo(0, H);
     ctx.lineTo(0, yy(0));
-    for (let x = 0; x <= W; x += 6) ctx.lineTo(x, yy(x));
+    for (let x = 0; x <= W; x += 12) ctx.lineTo(x, yy(x));
     ctx.lineTo(W, H);
     ctx.closePath();
     ctx.fillStyle = d.fill;
@@ -1224,7 +1225,7 @@ function drawAustraliaBackground(this: Renderer, camera: Camera) {
     ctx.strokeStyle = d.rim;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    for (let x = 0; x <= W; x += 6) { const y = yy(x); if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+    for (let x = 0; x <= W; x += 12) { const y = yy(x); if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
     ctx.stroke();
   }
 
@@ -1261,6 +1262,185 @@ function drawAustraliaBackground(this: Renderer, camera: Camera) {
 //  Volcano background — glowing crimson sky, distant erupting volcanoes,
 //  charred parallax silhouettes, drifting smoke clouds.
 // =====================================================================
+// Perf (Parallax-Cache, abgesichert): Die STATISCHEN Vulkan-Kegel-Körper
+// (Verlaufs-Silhouette + beleuchtete Flanke) ändern je Frame nur ihre X-Position
+// (Parallax), nicht ihre Form/Farbe. Statt sie pro Frame mit je 1 linearem + 1
+// radialem Verlauf + Clip neu zu malen, backen wir jede eindeutige Kegel-Form
+// EINMAL in ein Offscreen-Sprite (in Geräte-Auflösung → scharfe Silhouettenkante
+// auf Retina) und blitten sie danach nur noch. Es gibt genau 5 eindeutige Formen
+// (3 fern + 2 nah), also max. 5 Sprites im Cache. Alle ANIMIERTEN Schichten
+// (Krater-Glut/Pulse, Rauchsäule, Lava-Flackern, Funken) bleiben unverändert live
+// → keine Naht-/Parallax-Risiken eines getilten Streifens, nur die teuren
+// statischen Verläufe fallen weg.
+const _volcConeCache = new Map<string, HTMLCanvasElement>();
+function getVolcCone(
+  coneW: number, coneH: number,
+  top: string, mid: string, bot: string, litAlpha: number, scale: number,
+): HTMLCanvasElement {
+  // `scale` = STABILER Geräte-Skalierungsfaktor (renderer.baseDeviceScale), NICHT
+  // der Live-Zoom-abhängige Wert → der Key ändert sich nur bei echtem Resize, nie
+  // pro Frame durch Speed-/Impact-Zoom (sonst würde jede Bewegung neu backen).
+  const key = `${coneW}x${coneH}|${top}|${mid}|${bot}|${litAlpha}|${scale.toFixed(2)}`;
+  const hit = _volcConeCache.get(key);
+  if (hit) return hit;
+  const pad = 2;
+  const lw = Math.ceil(coneW) + pad * 2;
+  const lh = Math.ceil(coneH) + pad * 2;
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(lw * scale));
+  cv.height = Math.max(1, Math.round(lh * scale));
+  const c = cv.getContext('2d');
+  if (!c) return cv;
+  c.scale(scale, scale);
+  const cx = coneW / 2 + pad;      // lokale Kegel-Achse
+  const baseY = coneH + pad;       // lokale Basis
+  const topY = pad;                // lokaler Krater-Rand
+  const craterHalf = coneW * 0.11;
+  c.beginPath();
+  c.moveTo(cx - coneW / 2, baseY);
+  c.quadraticCurveTo(cx - coneW * 0.30, baseY - coneH * 0.52, cx - craterHalf, topY);
+  c.lineTo(cx + craterHalf, topY);
+  c.quadraticCurveTo(cx + coneW * 0.30, baseY - coneH * 0.52, cx + coneW / 2, baseY);
+  c.closePath();
+  const bg = c.createLinearGradient(0, topY, 0, baseY);
+  bg.addColorStop(0, top);
+  bg.addColorStop(0.72, mid);
+  bg.addColorStop(1, bot);
+  c.fillStyle = bg;
+  c.fill();
+  if (litAlpha > 0) {
+    c.save();
+    c.clip();
+    const P = 0.58; // Basis-Pulse (0.55±0.12); sichtbares Pulsieren liefert die live Krater-Glut
+    const lit = c.createRadialGradient(cx, topY + 4, 2, cx, topY + 4, coneH * 0.95);
+    lit.addColorStop(0, `rgba(255,140,54,${litAlpha * P})`);
+    lit.addColorStop(0.5, `rgba(198,66,20,${litAlpha * 0.38 * P})`);
+    lit.addColorStop(1, 'rgba(120,20,10,0)');
+    c.fillStyle = lit;
+    c.fillRect(cx - coneW / 2, topY, coneW, coneH);
+    c.restore();
+  }
+  _volcConeCache.set(key, cv);
+  return cv;
+}
+
+// God-Ray-Feinschliff (perf-neutral): weiche volumetrische Lichtschäfte werden
+// EINMAL in ein additiv-fertiges Sprite gebacken (transparenter Hintergrund,
+// getönte Schäfte mit weichem Abfall nach unten, leicht aufgefächert) und pro
+// Frame nur additiv geblittet — mit langsamer Horizontal-Drift + dezentem
+// Alpha-Puls. KEIN Verlauf pro Frame, nur 1 drawImage → echtes „mehr Stimmung
+// bei null Zusatzkosten". In Geräte-Auflösung gebacken → scharfe weiche Kanten.
+const _godRayCache = new Map<string, HTMLCanvasElement>();
+function getGodRayStrip(
+  key: string, bw: number, bh: number,
+  tintRGB: string, shafts: number, maxAlpha: number,
+): HTMLCanvasElement {
+  // bw/bh sind bereits GERÄTE-Pixel (aus dem Backing-Store abgeleitet) → stabil
+  // gegen den Live-Zoom (viewportW ändert sich pro Frame, canvas.width nicht).
+  // Schaft-Geometrie in Bruchteilen der Streifenbreite → auflösungsunabhängig.
+  const w = Math.max(1, Math.round(bw));
+  const h = Math.max(1, Math.round(bh));
+  const ck = `${key}|${w}x${h}|${tintRGB}|${shafts}|${maxAlpha}`;
+  const hit = _godRayCache.get(ck);
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = h;
+  const c = cv.getContext('2d');
+  if (!c) return cv;
+  const inset = w * 0.06; // Rand, damit auffächernde Rand-Schäfte nicht hart abgeschnitten werden
+  for (let i = 0; i < shafts; i++) {
+    const f = (i + 0.5) / shafts;
+    const cxk = inset + f * (w - 2 * inset);              // Schaft-Zentrum (eingerückt)
+    const topW = w * (0.007 + (i % 3) * 0.004);           // schmal oben (Bruchteil der Breite)
+    const botW = topW * 3.6;                              // breit unten (aufgefächert)
+    const skew = (f - 0.5) * w * 0.10;                    // leichte Schrägstellung
+    const a = maxAlpha * (0.45 + 0.55 * pseudoRandom(i * 53 + 7));
+    const g = c.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, `rgba(${tintRGB},${a.toFixed(3)})`);
+    g.addColorStop(0.55, `rgba(${tintRGB},${(a * 0.45).toFixed(3)})`);
+    g.addColorStop(1, `rgba(${tintRGB},0)`);
+    c.fillStyle = g;
+    c.beginPath();
+    c.moveTo(cxk - topW / 2, 0);
+    c.lineTo(cxk + topW / 2, 0);
+    c.lineTo(cxk + botW / 2 + skew, h);
+    c.lineTo(cxk - botW / 2 + skew, h);
+    c.closePath();
+    c.fill();
+  }
+  _godRayCache.set(ck, cv);
+  return cv;
+}
+
+/** Leert die modulweiten Sprite-Caches (Vulkan-Kegel, God-Rays). Aufgerufen von
+ *  resetBackground() (Levelstart) und engine.applyBackingStore() (Resize/Quality),
+ *  konsistent zu bgGradCaches — verhindert veraltete Auflösungs-Sprites & Wachstum. */
+function clearBgSpriteCaches(this: Renderer): void {
+  _volcConeCache.clear();
+  _godRayCache.clear();
+  _spacePlanetCache.clear();
+}
+
+// Space-Planeten sind rein deterministisch aus (r, seed) → statisches Aussehen,
+// nur die X-Position (Parallaxe) ändert sich. Jede eindeutige Planeten-Form wird
+// EINMAL in ein Geräte-Auflösungs-Sprite gebacken (stabiler baseDeviceScale-Anker,
+// zoom-fest) und danach nur noch geblittet — spart pro Frame Radial-Verläufe +
+// Clip + Detail-Strokes je Planet.
+const _spacePlanetCache = new Map<string, HTMLCanvasElement>();
+function getPlanetSprite(
+  key: string, halfW: number, halfH: number, scale: number,
+  draw: (c: CanvasRenderingContext2D, lx: number, ly: number) => void,
+): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const pad = 2;
+  const lw = Math.ceil(halfW * 2) + pad * 2;
+  const lh = Math.ceil(halfH * 2) + pad * 2;
+  const ck = `${key}|${lw}x${lh}|${scale.toFixed(2)}`;
+  const hit = _spacePlanetCache.get(ck);
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(lw * scale));
+  cv.height = Math.max(1, Math.round(lh * scale));
+  const c = cv.getContext('2d');
+  if (!c) return cv;
+  c.scale(scale, scale);
+  draw(c, halfW + pad, halfH + pad); // Zeichnen ums lokale Zentrum
+  _spacePlanetCache.set(ck, cv);
+  return cv;
+}
+
+/** Blittet einen gecachten God-Ray-Streifen additiv mit langsamer Drift + Puls.
+ *  spanFrac/centerFrac steuern Breite & Mitte des Schaft-Bündels (für gebündelte
+ *  Strahlen aus einer Lichtquelle, z. B. Sonne oben rechts) — Default = volle
+ *  Breite mittig. */
+function drawGodRays(
+  this: Renderer, key: string, tintRGB: string, shafts: number, maxAlpha: number,
+  topFrac: number, hFrac: number,
+  opts: { spanFrac?: number; centerFrac?: number; driftAmp?: number; driftSpd?: number } = {},
+): void {
+  const { spanFrac = 1.4, centerFrac = 0.5, driftAmp = 0.06, driftSpd = 0.004 } = opts;
+  const ctx = this.ctx, W = this.viewportW, H = this.viewportH, t = this.time;
+  // Backen in GERÄTE-Pixeln (Backing-Store × Fraktion) → Key/Backing stabil gegen
+  // Live-Zoom; Blitt-Ziel = Live-(gezoomter) Viewport, drawImage skaliert 1:1 aufs
+  // Backing (device-exakt, retina-scharf).
+  const bw = (this.ctx.canvas.width || W) * spanFrac;
+  const bh = (this.ctx.canvas.height || H) * hFrac;
+  const rw = W * spanFrac, rh = H * hFrac;
+  const strip = getGodRayStrip(key, bw, bh, tintRGB, shafts, maxAlpha);
+  const drift = Math.sin(t * driftSpd) * (W * driftAmp);
+  const pulseA = 0.82 + Math.sin(t * 0.013 + 1.1) * 0.18;
+  const x0 = W * centerFrac - rw / 2 + drift;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = pulseA;
+  const prevS = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(strip, 0, 0, strip.width, strip.height, x0, H * topFrac, rw, rh);
+  ctx.imageSmoothingEnabled = prevS;
+  ctx.restore();
+}
+
 function drawVolcanoBackground(this: Renderer, camera: Camera) {
   const ctx = this.ctx;
   const W = this.viewportW;
@@ -1279,8 +1459,8 @@ function drawVolcanoBackground(this: Renderer, camera: Camera) {
     g.addColorStop(1, '#2a0a08');
     cctx.fillStyle = g;
     cctx.fillRect(0, 0, cw, ch);
-  });
-  ctx.drawImage(volcCache, 0, 0);
+  }, true);
+  this.blitBgCache(volcCache);
 
   const pulse = 0.55 + Math.sin(t * 0.02) * 0.12;
   const horizonY = H * 0.80;
@@ -1298,35 +1478,21 @@ function drawVolcanoBackground(this: Renderer, camera: Camera) {
 
   // ── Vulkan-Kegel-Helfer: gekrümmte (leicht konvexe) Flanken statt spitzem
   // Dreieck; Körper-Verlauf dunkel→lava-warm; optional beleuchtete Krater-Flanke.
+  // Perf: statische Silhouette wird als Sprite gecacht (getVolcCone) und nur noch
+  // an der Parallax-Position geblittet — kein Verlauf/Clip mehr pro Frame/Kegel.
+  const coneScale = this.baseDeviceScale || 1;
   const drawCone = (
     sx: number, baseY: number, coneW: number, coneH: number,
     top: string, mid: string, bot: string, litAlpha: number,
   ) => {
-    const craterHalf = coneW * 0.11;
-    const topY = baseY - coneH;
-    ctx.beginPath();
-    ctx.moveTo(sx - coneW / 2, baseY);
-    ctx.quadraticCurveTo(sx - coneW * 0.30, baseY - coneH * 0.52, sx - craterHalf, topY);
-    ctx.lineTo(sx + craterHalf, topY);
-    ctx.quadraticCurveTo(sx + coneW * 0.30, baseY - coneH * 0.52, sx + coneW / 2, baseY);
-    ctx.closePath();
-    const bg = ctx.createLinearGradient(0, topY, 0, baseY);
-    bg.addColorStop(0, top);
-    bg.addColorStop(0.72, mid);
-    bg.addColorStop(1, bot);
-    ctx.save();
-    ctx.fillStyle = bg;
-    ctx.fill();
-    if (litAlpha > 0) {
-      ctx.clip();
-      const lit = ctx.createRadialGradient(sx, topY + 4, 2, sx, topY + 4, coneH * 0.95);
-      lit.addColorStop(0, `rgba(255,140,54,${litAlpha * pulse})`);
-      lit.addColorStop(0.5, `rgba(198,66,20,${litAlpha * 0.38 * pulse})`);
-      lit.addColorStop(1, 'rgba(120,20,10,0)');
-      ctx.fillStyle = lit;
-      ctx.fillRect(sx - coneW / 2, topY, coneW, coneH);
-    }
-    ctx.restore();
+    const cone = getVolcCone(coneW, coneH, top, mid, bot, litAlpha, coneScale);
+    const pad = 2;
+    const lw = Math.ceil(coneW) + pad * 2;
+    const lh = Math.ceil(coneH) + pad * 2;
+    const prevS = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = true; // weiche Silhouette/Verlauf sauber runterskalieren
+    ctx.drawImage(cone, 0, 0, cone.width, cone.height, sx - coneW / 2 - pad, baseY - coneH - pad, lw, lh);
+    ctx.imageSmoothingEnabled = prevS;
   };
 
   // Aufsteigende, driftende Rauchsäule aus einem Krater (unten glut-warm,
@@ -1352,13 +1518,16 @@ function drawVolcanoBackground(this: Renderer, camera: Camera) {
     ctx.restore();
   };
 
+  // Perf: statt pro Aufruf (5×/Frame) einen radialen Verlauf zu allokieren, die
+  // Krater-Glut EINMAL als 2-Ton-Disc backen (gelb→orange→transparent, Referenz-
+  // Alpha) und nur skaliert/mit a*pulse geblittet. source-over wie zuvor.
+  const craterDisc = getGlowDiscMulti('volcCrater', 128, [
+    [0, 'rgba(255,236,150,1)'],
+    [0.45, 'rgba(255,110,34,0.5)'],
+    [1, 'rgba(90,0,0,0)'],
+  ]);
   const craterGlow = (sx: number, cy: number, rad: number, a: number) => {
-    const cr = ctx.createRadialGradient(sx, cy, 0, sx, cy, rad);
-    cr.addColorStop(0, `rgba(255,236,150,${a * pulse})`);
-    cr.addColorStop(0.45, `rgba(255,110,34,${a * 0.5 * pulse})`);
-    cr.addColorStop(1, 'rgba(90,0,0,0)');
-    ctx.fillStyle = cr;
-    ctx.fillRect(sx - rad, cy - rad, rad * 2, rad * 2);
+    drawGlowDisc(ctx, craterDisc, sx, cy, rad, rad, a * pulse, false);
   };
 
   const lavaFlows = (sx: number, topY: number, coneW: number, coneH: number, i: number) => {
@@ -1411,12 +1580,20 @@ function drawVolcanoBackground(this: Renderer, camera: Camera) {
     drawPlume(sx, topY, coneH * 1.15, i * 2 + 3);
   }
 
+  // God-Rays (Feinschliff, gecacht/additiv): warme Lichtschäfte brechen durch die
+  // aschige Höhe — verstärken die glühende Vulkan-Stimmung, kosten pro Frame nur
+  // 1 additiven Blit (kein Verlauf). Dezent gehalten, damit Münzen/Kisten nicht
+  // überstrahlt werden.
+  drawGodRays.call(this, 'volcano', '255,150,64', 7, 0.045, 0.04, 0.74,
+    { spanFrac: 1.3, centerFrac: 0.5, driftAmp: 0.025, driftSpd: 0.004 });
+
   // Vordergrund-Grat mit glühender Oberkante.
   ctx.save();
   ctx.fillStyle = '#0a0204';
   ctx.beginPath();
   ctx.moveTo(0, H);
-  for (let x = 0; x <= W + 20; x += 6) {
+  // Perf: gröbere Schrittweite (12) für die weiche dunkle Grat-Silhouette.
+  for (let x = 0; x <= W + 20; x += 12) {
     const wx = x + camera.x * 0.12;
     const ridgeY = H * 0.88 + Math.sin(wx * 0.012) * 22 + Math.sin(wx * 0.04) * 8;
     ctx.lineTo(x, ridgeY);
@@ -1427,7 +1604,7 @@ function drawVolcanoBackground(this: Renderer, camera: Camera) {
   ctx.strokeStyle = `rgba(255,130,44,${0.4 * pulse})`;
   ctx.lineWidth = 1.4;
   ctx.beginPath();
-  for (let x = 0; x <= W + 20; x += 6) {
+  for (let x = 0; x <= W + 20; x += 12) {
     const wx = x + camera.x * 0.12;
     const ridgeY = H * 0.88 + Math.sin(wx * 0.012) * 22 + Math.sin(wx * 0.04) * 8;
     if (x === 0) ctx.moveTo(x, ridgeY); else ctx.lineTo(x, ridgeY);
@@ -1469,14 +1646,18 @@ function drawIceBackground(this: Renderer, camera: Camera) {
   const H = this.viewportH;
   const t = this.time;
 
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
-  skyGrad.addColorStop(0, '#0a1a3a');
-  skyGrad.addColorStop(0.25, '#3055a0');
-  skyGrad.addColorStop(0.55, '#88b8e0');
-  skyGrad.addColorStop(0.8, '#c8e0f0');
-  skyGrad.addColorStop(1, '#e8f4fa');
-  ctx.fillStyle = skyGrad;
-  ctx.fillRect(0, 0, W, H);
+  // Basis-Verlauf gecacht (Geräte-Auflösung, retina-scharf) statt pro Frame neu.
+  const iceCache = this.getBgGradCache('ice-base', (cctx, cw, ch) => {
+    const g = cctx.createLinearGradient(0, 0, 0, ch);
+    g.addColorStop(0, '#0a1a3a');
+    g.addColorStop(0.25, '#3055a0');
+    g.addColorStop(0.55, '#88b8e0');
+    g.addColorStop(0.8, '#c8e0f0');
+    g.addColorStop(1, '#e8f4fa');
+    cctx.fillStyle = g;
+    cctx.fillRect(0, 0, cw, ch);
+  }, true);
+  this.blitBgCache(iceCache);
 
   const sunX = W * 0.78;
   const sunY = H * 0.18;
@@ -1640,14 +1821,18 @@ function drawCastleBackground(this: Renderer, camera: Camera) {
   const H = this.viewportH;
   const t = this.time;
 
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
-  skyGrad.addColorStop(0, '#08020e');
-  skyGrad.addColorStop(0.3, '#1a0a2a');
-  skyGrad.addColorStop(0.6, '#321448');
-  skyGrad.addColorStop(0.85, '#52205a');
-  skyGrad.addColorStop(1, '#1a0820');
-  ctx.fillStyle = skyGrad;
-  ctx.fillRect(0, 0, W, H);
+  // Basis-Verlauf gecacht (Geräte-Auflösung, retina-scharf) statt pro Frame neu.
+  const castleCache = this.getBgGradCache('castle-base', (cctx, cw, ch) => {
+    const g = cctx.createLinearGradient(0, 0, 0, ch);
+    g.addColorStop(0, '#08020e');
+    g.addColorStop(0.3, '#1a0a2a');
+    g.addColorStop(0.6, '#321448');
+    g.addColorStop(0.85, '#52205a');
+    g.addColorStop(1, '#1a0820');
+    cctx.fillStyle = g;
+    cctx.fillRect(0, 0, cw, ch);
+  }, true);
+  this.blitBgCache(castleCache);
 
   const pseudoRand = pseudoRandom;
 
@@ -1663,11 +1848,12 @@ function drawCastleBackground(this: Renderer, camera: Camera) {
 
   const moonX = W * 0.72;
   const moonY = H * 0.2;
-  const moonGlow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, 90);
-  moonGlow.addColorStop(0, 'rgba(220, 200, 240, 0.4)');
-  moonGlow.addColorStop(1, 'rgba(150, 120, 200, 0)');
-  ctx.fillStyle = moonGlow;
-  ctx.fillRect(moonX - 90, moonY - 90, 180, 180);
+  // Perf: statischer Mond-Schein als gebackene Disc (Referenz-Alpha 1), pro Frame
+  // nur mit 0.4 geblittet statt Radial-Allokation. source-over wie zuvor.
+  drawGlowDisc(ctx, getGlowDiscMulti('castleMoon', 128, [
+    [0, 'rgba(220,200,240,1)'],
+    [1, 'rgba(150,120,200,0)'],
+  ]), moonX, moonY, 90, 90, 0.4, false);
   ctx.fillStyle = 'rgba(245, 235, 255, 0.95)';
   ctx.beginPath();
   ctx.arc(moonX, moonY, 26, 0, Math.PI * 2);
@@ -1837,14 +2023,18 @@ function drawUnderwaterBackground(this: Renderer, camera: Camera) {
   const H = this.viewportH;
   const t = this.time;
 
-  const seaGrad = ctx.createLinearGradient(0, 0, 0, H);
-  seaGrad.addColorStop(0, '#3088c8');
-  seaGrad.addColorStop(0.25, '#1c5a98');
-  seaGrad.addColorStop(0.55, '#0a3868');
-  seaGrad.addColorStop(0.85, '#062045');
-  seaGrad.addColorStop(1, '#020e28');
-  ctx.fillStyle = seaGrad;
-  ctx.fillRect(0, 0, W, H);
+  // Basis-Verlauf gecacht (Geräte-Auflösung, retina-scharf) statt pro Frame neu.
+  const seaCache = this.getBgGradCache('underwater-base', (cctx, cw, ch) => {
+    const g = cctx.createLinearGradient(0, 0, 0, ch);
+    g.addColorStop(0, '#3088c8');
+    g.addColorStop(0.25, '#1c5a98');
+    g.addColorStop(0.55, '#0a3868');
+    g.addColorStop(0.85, '#062045');
+    g.addColorStop(1, '#020e28');
+    cctx.fillStyle = g;
+    cctx.fillRect(0, 0, cw, ch);
+  }, true);
+  this.blitBgCache(seaCache);
 
   ctx.save();
   for (let i = 0; i < 7; i++) {
@@ -1986,13 +2176,17 @@ function drawSpaceBackground(this: Renderer, camera: Camera) {
   const H = this.viewportH;
   const t = this.time;
 
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, '#01010a');
-  grad.addColorStop(0.4, '#08081a');
-  grad.addColorStop(0.7, '#10082a');
-  grad.addColorStop(1, '#04020c');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
+  // Basis-Verlauf gecacht (Geräte-Auflösung, retina-scharf) statt pro Frame neu.
+  const spaceCache = this.getBgGradCache('space-base', (cctx, cw, ch) => {
+    const g = cctx.createLinearGradient(0, 0, 0, ch);
+    g.addColorStop(0, '#01010a');
+    g.addColorStop(0.4, '#08081a');
+    g.addColorStop(0.7, '#10082a');
+    g.addColorStop(1, '#04020c');
+    cctx.fillStyle = g;
+    cctx.fillRect(0, 0, cw, ch);
+  }, true);
+  this.blitBgCache(spaceCache);
 
   const pseudoRand = pseudoRandom;
 
@@ -2005,12 +2199,14 @@ function drawSpaceBackground(this: Renderer, camera: Camera) {
   for (const n of nebulae) {
     const cx = (n.x * W * 2 - camera.x * 0.02) % (W + n.r * 2) - n.r;
     const cy = n.y * H;
-    const ng = ctx.createRadialGradient(cx, cy, 0, cx, cy, n.r);
-    ng.addColorStop(0, `hsla(${n.hue}, 80%, 60%, ${n.alpha})`);
-    ng.addColorStop(0.5, `hsla(${n.hue + 20}, 70%, 40%, ${n.alpha * 0.5})`);
-    ng.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = ng;
-    ctx.fillRect(cx - n.r, cy - n.r, n.r * 2, n.r * 2);
+    // Perf: Nebel-Disc je Farbton EINMAL gebacken (Referenz-Alpha), pro Frame nur
+    // skaliert/mit n.alpha geblittet statt Radial-Allokation. source-over wie zuvor.
+    const nd = getGlowDiscMulti(`neb${n.hue}`, 128, [
+      [0, `hsla(${n.hue}, 80%, 60%, 1)`],
+      [0.5, `hsla(${n.hue + 20}, 70%, 40%, 0.5)`],
+      [1, 'rgba(0,0,0,0)'],
+    ]);
+    drawGlowDisc(ctx, nd, cx, cy, n.r, n.r, n.alpha, false);
   }
   ctx.restore();
 
@@ -2069,28 +2265,44 @@ function drawSpaceBackground(this: Renderer, camera: Camera) {
   const planetX = ((W * 0.7 - camera.x * 0.05) % (W * 1.5) + W * 1.5) % (W * 1.5);
   const planetY = H * 0.28;
   const planetR = 48;
-  const pg = ctx.createRadialGradient(planetX - planetR * 0.4, planetY - planetR * 0.4, planetR * 0.1, planetX, planetY, planetR);
-  pg.addColorStop(0, '#f0c8a0');
-  pg.addColorStop(0.5, '#c87850');
-  pg.addColorStop(1, '#5a2010');
-  ctx.fillStyle = pg;
-  ctx.beginPath();
-  ctx.arc(planetX, planetY, planetR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(220, 200, 180, 0.45)';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.ellipse(planetX, planetY, planetR * 1.5, planetR * 0.35, -0.3, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(180, 160, 140, 0.25)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.ellipse(planetX, planetY, planetR * 1.7, planetR * 0.4, -0.3, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-  ctx.beginPath();
-  ctx.arc(planetX + planetR * 0.3, planetY + planetR * 0.1, planetR, 0, Math.PI * 2);
-  ctx.fill();
+  // Perf: der große Ringplanet ist statisch (nur Parallaxe) → einmal in ein Sprite
+  // backen (Ringe reichen bis 1.7·R horizontal, Terminator bis ~1.1·R vertikal)
+  // und nur noch blitten. Identischer Zeichencode um das lokale Zentrum.
+  const ringScale = this.baseDeviceScale || 1;
+  const rhw = planetR * 1.75 + 3, rhh = planetR * 1.15 + 3;
+  const ringSprite = getPlanetSprite('ringed|48', rhw, rhh, ringScale, (c, lx, ly) => {
+    const pg = c.createRadialGradient(lx - planetR * 0.4, ly - planetR * 0.4, planetR * 0.1, lx, ly, planetR);
+    pg.addColorStop(0, '#f0c8a0');
+    pg.addColorStop(0.5, '#c87850');
+    pg.addColorStop(1, '#5a2010');
+    c.fillStyle = pg;
+    c.beginPath();
+    c.arc(lx, ly, planetR, 0, Math.PI * 2);
+    c.fill();
+    c.strokeStyle = 'rgba(220, 200, 180, 0.45)';
+    c.lineWidth = 3;
+    c.beginPath();
+    c.ellipse(lx, ly, planetR * 1.5, planetR * 0.35, -0.3, 0, Math.PI * 2);
+    c.stroke();
+    c.strokeStyle = 'rgba(180, 160, 140, 0.25)';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.ellipse(lx, ly, planetR * 1.7, planetR * 0.4, -0.3, 0, Math.PI * 2);
+    c.stroke();
+    c.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    c.beginPath();
+    c.arc(lx + planetR * 0.3, ly + planetR * 0.1, planetR, 0, Math.PI * 2);
+    c.fill();
+  });
+  if (ringSprite) {
+    const pad = 2;
+    const lw = Math.ceil(rhw * 2) + pad * 2;
+    const lh = Math.ceil(rhh * 2) + pad * 2;
+    const prevS = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(ringSprite, 0, 0, ringSprite.width, ringSprite.height, planetX - rhw - pad, planetY - rhh - pad, lw, lh);
+    ctx.imageSmoothingEnabled = prevS;
+  }
   ctx.restore();
 
   ctx.save();
@@ -2398,8 +2610,17 @@ function drawAerialHaze(this: Renderer, W: number, H: number) {
     castle: { c: '64,54,84', peak: 0.12 },
     underwater: { c: '42,116,146', peak: 0.15 },
     space: { c: '52,46,92', peak: 0.10 },
+    // Grafik-Feinschliff: die neuesten Welten hatten keinen Eintrag und bekamen
+    // den grau-blauen Default bei fast doppelter Stärke (0.20) — das entsättigte
+    // gerade die pastelligen/warmen Paletten. Jetzt paletten-passend & dezent.
+    school: { c: '224,214,190', peak: 0.10 },
+    gym: { c: '232,214,176', peak: 0.10 },
+    trampoline: { c: '198,236,214', peak: 0.10 },
+    plush: { c: '245,225,240', peak: 0.09 },
+    bluefield: { c: '196,222,240', peak: 0.10 },
+    dragon: { c: '40,70,48', peak: 0.11 },
   };
-  const h = HAZE[theme] || { c: '200,212,224', peak: 0.20 };
+  const h = HAZE[theme] || { c: '200,212,224', peak: 0.12 };
   const ctx = this.ctx;
   // Dunst als Band um den Horizont konzentriert (dort, wo die fernen
   // Elemente an das Spielfeld stoßen), nach oben zum klaren Himmel und nach
@@ -2676,54 +2897,67 @@ function drawPuffyCloud(this: Renderer, cx: number, cy: number, w: number, h: nu
 
 function drawSpacePlanet(this: Renderer, cx: number, cy: number, r: number, seed: number): void {
   const ctx = this.ctx;
-  const palettes = [
-    ['#a0c0f0', '#5070c0', '#203060'],
-    ['#f0a070', '#c05030', '#601810'],
-    ['#a0e0a0', '#50a060', '#205030'],
-    ['#e0c0f0', '#9060c0', '#402060'],
-  ];
-  const pal = palettes[Math.floor(pseudoRandom(seed * 7) * palettes.length) % palettes.length];
-  const pg = ctx.createRadialGradient(cx - r * 0.4, cy - r * 0.4, r * 0.1, cx, cy, r);
-  pg.addColorStop(0, pal[0]);
-  pg.addColorStop(0.5, pal[1]);
-  pg.addColorStop(1, pal[2]);
-  ctx.fillStyle = pg;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-  // Oberflächen-Details (Bänder oder Krater), auf die Kugel geclippt.
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.clip();
-  if (pseudoRandom(seed * 3) > 0.5) {
-    ctx.strokeStyle = pal[2];
-    ctx.globalAlpha = 0.4;
-    ctx.lineWidth = r * 0.16;
-    for (let b = -2; b <= 2; b++) {
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + b * r * 0.34, r, r * 0.16, 0, 0, Math.PI * 2);
-      ctx.stroke();
+  const scale = this.baseDeviceScale || 1;
+  // Statisches Planeten-Aussehen (Verlauf + geclippte Bänder/Krater + Terminator)
+  // einmal gebacken; identischer Zeichencode, nur um das lokale Zentrum (lx,ly).
+  const sprite = getPlanetSprite(`p|${seed}|${r}`, r, r, scale, (c, lx, ly) => {
+    const palettes = [
+      ['#a0c0f0', '#5070c0', '#203060'],
+      ['#f0a070', '#c05030', '#601810'],
+      ['#a0e0a0', '#50a060', '#205030'],
+      ['#e0c0f0', '#9060c0', '#402060'],
+    ];
+    const pal = palettes[Math.floor(pseudoRandom(seed * 7) * palettes.length) % palettes.length];
+    const pg = c.createRadialGradient(lx - r * 0.4, ly - r * 0.4, r * 0.1, lx, ly, r);
+    pg.addColorStop(0, pal[0]);
+    pg.addColorStop(0.5, pal[1]);
+    pg.addColorStop(1, pal[2]);
+    c.fillStyle = pg;
+    c.beginPath();
+    c.arc(lx, ly, r, 0, Math.PI * 2);
+    c.fill();
+    // Oberflächen-Details (Bänder oder Krater), auf die Kugel geclippt.
+    c.save();
+    c.beginPath();
+    c.arc(lx, ly, r, 0, Math.PI * 2);
+    c.clip();
+    if (pseudoRandom(seed * 3) > 0.5) {
+      c.strokeStyle = pal[2];
+      c.globalAlpha = 0.4;
+      c.lineWidth = r * 0.16;
+      for (let b = -2; b <= 2; b++) {
+        c.beginPath();
+        c.ellipse(lx, ly + b * r * 0.34, r, r * 0.16, 0, 0, Math.PI * 2);
+        c.stroke();
+      }
+      c.globalAlpha = 1;
+    } else {
+      c.fillStyle = pal[2];
+      c.globalAlpha = 0.4;
+      for (let cc = 0; cc < 4; cc++) {
+        const crx = lx + (pseudoRandom(seed + cc * 13) - 0.5) * r * 1.2;
+        const cry = ly + (pseudoRandom(seed + cc * 17) - 0.5) * r * 1.2;
+        c.beginPath();
+        c.arc(crx, cry, r * (0.1 + pseudoRandom(seed + cc * 19) * 0.14), 0, Math.PI * 2);
+        c.fill();
+      }
+      c.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
-  } else {
-    ctx.fillStyle = pal[2];
-    ctx.globalAlpha = 0.4;
-    for (let c = 0; c < 4; c++) {
-      const crx = cx + (pseudoRandom(seed + c * 13) - 0.5) * r * 1.2;
-      const cry = cy + (pseudoRandom(seed + c * 17) - 0.5) * r * 1.2;
-      ctx.beginPath();
-      ctx.arc(crx, cry, r * (0.1 + pseudoRandom(seed + c * 19) * 0.14), 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-  }
-  // Schatten-Terminator.
-  ctx.fillStyle = 'rgba(0,0,0,0.4)';
-  ctx.beginPath();
-  ctx.arc(cx + r * 0.55, cy + r * 0.18, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+    // Schatten-Terminator.
+    c.fillStyle = 'rgba(0,0,0,0.4)';
+    c.beginPath();
+    c.arc(lx + r * 0.55, ly + r * 0.18, r, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+  });
+  if (!sprite) return;
+  const pad = 2;
+  const lw = Math.ceil(r * 2) + pad * 2;
+  const lh = Math.ceil(r * 2) + pad * 2;
+  const prevS = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(sprite, 0, 0, sprite.width, sprite.height, cx - r - pad, cy - r - pad, lw, lh);
+  ctx.imageSmoothingEnabled = prevS;
 }
 
 function drawSchoolHallway(this: Renderer, camera: Camera, alpha: number) {
@@ -5571,6 +5805,7 @@ function drawDragonLairForeground(this: Renderer, camX: number, VW: number, VH: 
 
 export const backgroundsMethods
  = {
+  clearBgSpriteCaches,
   drawDragonLairForeground,
   drawBluefieldForeground,
   drawBluefieldAmbient,

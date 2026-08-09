@@ -589,17 +589,27 @@ function drawCaveAmbient(this: Renderer, cameraX: number, _cameraY: number, canv
 
 function drawParticle(this: Renderer, x: number, y: number, size: number, color: string, alpha: number) {
   const ctx = this.ctx;
+  const cx = x + size / 2, cy = y + size / 2;
   ctx.save();
-  ctx.globalAlpha = alpha;
-
-  ctx.shadowColor = color;
-  ctx.shadowBlur = size * 2;
+  // Perf: `shadowBlur` war der teuerste Teil (erzwingt einen Blur-Pass PRO
+  // Partikel, bricht das Batching) — bei Bursts summieren sich hunderte davon.
+  // Ersatz: ein weicher Halo aus zwei blassen, größeren Scheiben derselben Farbe
+  // hinter dem Kern → glühender Eindruck zum Nulltarif, gleiches Batching.
   ctx.fillStyle = color;
+  ctx.globalAlpha = alpha * 0.18;
   ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+  ctx.arc(cx, cy, size, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.shadowBlur = 0;
+  ctx.globalAlpha = alpha * 0.30;
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.72, 0, Math.PI * 2);
+  ctx.fill();
+  // Kern
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+  ctx.fill();
+  // Glanzpunkt
   ctx.globalAlpha = alpha * 0.6;
   ctx.fillStyle = '#fff';
   ctx.beginPath();
@@ -1261,6 +1271,27 @@ const GRASS_OVERHANG: Record<string, { mid: string; hi: string }> = {
   bluefield: { mid: '#2d52c4', hi: '#4a7be0' },
 };
 
+// Perf: die fuenf fixen Kanten-Verlaeufe EINMAL im lokalen (0,0)-Raum backen und
+// pro Tile nur per translate positionieren — statt je Rand-Tile bis zu fuenf
+// createLinearGradient-Allokationen (GC-Druck skaliert sonst mit Bildinhalt).
+let EDGE_G: { L: CanvasGradient; hlL: CanvasGradient; R: CanvasGradient; hlR: CanvasGradient; B: CanvasGradient } | null = null;
+function edgeGrads(ctx: CanvasRenderingContext2D) {
+  if (EDGE_G) return EDGE_G;
+  const S = 32;
+  const mk = (x0: number, y0: number, x1: number, y1: number, a0: string, a1: string) => {
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    g.addColorStop(0, a0); g.addColorStop(1, a1); return g;
+  };
+  EDGE_G = {
+    L: mk(0, 0, 13, 0, 'rgba(0,0,0,0.36)', 'rgba(0,0,0,0)'),
+    hlL: mk(0, 0, 0, 7, 'rgba(255,246,214,0.34)', 'rgba(255,246,214,0)'),
+    R: mk(S, 0, S - 13, 0, 'rgba(0,0,0,0.32)', 'rgba(0,0,0,0)'),
+    hlR: mk(0, 0, 0, 7, 'rgba(255,246,214,0.26)', 'rgba(255,246,214,0)'),
+    B: mk(0, S, 0, S - 17, 'rgba(0,0,0,0.52)', 'rgba(0,0,0,0)'),
+  };
+  return EDGE_G;
+}
+
 function drawTileEdgeShading(
   this: Renderer, screenX: number, screenY: number, tile: number,
   exL: boolean, exR: boolean, exB: boolean, grassOverhang = false,
@@ -1268,75 +1299,55 @@ function drawTileEdgeShading(
   if (!EDGE_TERRAIN.has(tile)) return;
   const ctx = this.ctx;
   const S = 32;
+  const G = edgeGrads(ctx);
   ctx.save();
+  ctx.translate(screenX, screenY);
   if (exL) {
-    const g = ctx.createLinearGradient(screenX, 0, screenX + 13, 0);
-    g.addColorStop(0, 'rgba(0,0,0,0.36)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(screenX, screenY, 13, S);
+    ctx.fillStyle = G.L;
+    ctx.fillRect(0, 0, 13, S);
     ctx.fillStyle = 'rgba(0,0,0,0.30)';
-    ctx.fillRect(screenX, screenY, 1.5, S);                 // klare Kante
-    ctx.fillStyle = 'rgba(0,0,0,0.10)';                      // senkrechte Riefen
-    ctx.fillRect(screenX + 3.5, screenY + 3, 1, S - 6);
-    ctx.fillRect(screenX + 7, screenY + 6, 1, S - 10);
-    // Licht-Lippe an der oberen Außenkante → die Wand bekommt eine plastische
-    // 3D-Oberkante (Sonnenlicht fängt sich an der Kante), statt flacher Sticker.
-    const hl = ctx.createLinearGradient(0, screenY, 0, screenY + 7);
-    hl.addColorStop(0, 'rgba(255,246,214,0.34)');
-    hl.addColorStop(1, 'rgba(255,246,214,0)');
-    ctx.fillStyle = hl;
-    ctx.fillRect(screenX + 1.5, screenY, 2.5, 7);
+    ctx.fillRect(0, 0, 1.5, S);
+    ctx.fillStyle = 'rgba(0,0,0,0.10)';
+    ctx.fillRect(3.5, 3, 1, S - 6);
+    ctx.fillRect(7, 6, 1, S - 10);
+    ctx.fillStyle = G.hlL;
+    ctx.fillRect(1.5, 0, 2.5, 7);
   }
   if (exR) {
-    const g = ctx.createLinearGradient(screenX + S, 0, screenX + S - 13, 0);
-    g.addColorStop(0, 'rgba(0,0,0,0.32)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(screenX + S - 13, screenY, 13, S);
+    ctx.fillStyle = G.R;
+    ctx.fillRect(S - 13, 0, 13, S);
     ctx.fillStyle = 'rgba(0,0,0,0.26)';
-    ctx.fillRect(screenX + S - 1.5, screenY, 1.5, S);
+    ctx.fillRect(S - 1.5, 0, 1.5, S);
     ctx.fillStyle = 'rgba(0,0,0,0.09)';
-    ctx.fillRect(screenX + S - 4.5, screenY + 4, 1, S - 7);
-    ctx.fillRect(screenX + S - 8, screenY + 7, 1, S - 11);
-    const hl = ctx.createLinearGradient(0, screenY, 0, screenY + 7);
-    hl.addColorStop(0, 'rgba(255,246,214,0.26)');
-    hl.addColorStop(1, 'rgba(255,246,214,0)');
-    ctx.fillStyle = hl;
-    ctx.fillRect(screenX + S - 4, screenY, 2.5, 7);
+    ctx.fillRect(S - 4.5, 4, 1, S - 7);
+    ctx.fillRect(S - 8, 7, 1, S - 11);
+    ctx.fillStyle = G.hlR;
+    ctx.fillRect(S - 4, 0, 2.5, 7);
   }
   if (exB) {
-    const g = ctx.createLinearGradient(0, screenY + S, 0, screenY + S - 17);
-    g.addColorStop(0, 'rgba(0,0,0,0.52)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(screenX, screenY + S - 17, S, 17);
-    ctx.fillStyle = 'rgba(0,0,0,0.42)';                     // harte, im Schatten liegende Unterkante
-    ctx.fillRect(screenX, screenY + S - 2, S, 2);
+    ctx.fillStyle = G.B;
+    ctx.fillRect(0, S - 17, S, 17);
+    ctx.fillStyle = 'rgba(0,0,0,0.42)';
+    ctx.fillRect(0, S - 2, S, 2);
   }
-  // Gras-Überhang über freiliegende Oberkanten erhöhter Gras-Blöcke: weicht die
-  // harte Klotz-Kante auf, sodass der Block wie organische Erde mit übergrei-
-  // fendem Gras liest (statt flachem Deckel). Nur Gras-Welten, nur Top-Tiles.
   const go = grassOverhang ? GRASS_OVERHANG[this.currentTheme] : undefined;
   if (go) {
     const droop = (dir: number) => {
-      // dir = +1: linke Kante (Gras hängt nach rechts/unten), -1: rechte Kante
-      const ex = dir > 0 ? screenX : screenX + S;
-      const s = dir; // Vorzeichen für x-Richtung
+      const ex = dir > 0 ? 0 : S;
+      const s = dir;
       ctx.fillStyle = go.mid;
       ctx.beginPath();
-      ctx.moveTo(ex, screenY - 1);
-      ctx.lineTo(ex + s * 11, screenY - 1);
-      ctx.lineTo(ex + s * 10, screenY + 4);
-      ctx.quadraticCurveTo(ex + s * 6, screenY + 9, ex + s * 3, screenY + 5.5);
-      ctx.quadraticCurveTo(ex + s * 1.5, screenY + 3, ex, screenY + 2);
+      ctx.moveTo(ex, -1);
+      ctx.lineTo(ex + s * 11, -1);
+      ctx.lineTo(ex + s * 10, 4);
+      ctx.quadraticCurveTo(ex + s * 6, 9, ex + s * 3, 5.5);
+      ctx.quadraticCurveTo(ex + s * 1.5, 3, ex, 2);
       ctx.closePath();
       ctx.fill();
-      // 2 helle Grashalme über der Kante
       ctx.strokeStyle = go.hi;
       ctx.lineWidth = 1.1;
-      ctx.beginPath(); ctx.moveTo(ex + s * 3.5, screenY + 2); ctx.lineTo(ex + s * 2.5, screenY + 7); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(ex + s * 7, screenY + 0.5); ctx.lineTo(ex + s * 6.5, screenY + 5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ex + s * 3.5, 2); ctx.lineTo(ex + s * 2.5, 7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ex + s * 7, 0.5); ctx.lineTo(ex + s * 6.5, 5); ctx.stroke();
     };
     if (exL) droop(1);
     if (exR) droop(-1);
@@ -1395,10 +1406,14 @@ function drawSceneGrade(this: Renderer, theme: string, W: number, H: number) {
   // highlights minimal an (screen-Blend), nur auf höchster Stufe. Echtes
   // selektives Vollbild-Bloom ist bewusst dem WebGL-Post-Pass (Gate G2)
   // vorbehalten — in reinem Canvas-2D wäre es zu teuer.
-  if (this.quality === 'high') {
+  // Grafik-Feinschliff (#10): der Highlight-Lift lief nur auf 'high' — dadurch
+  // wirkten iPad/Handys auf 'mid' flacher. Jetzt auch auf 'mid' (schwächer),
+  // damit der „belichtete", cinematische Eindruck auf der Mehrheit der Geräte da
+  // ist. Ein 'screen'-Gradient + fillRect (wie bisher) → vernachlässigbar.
+  if (this.quality !== 'low') {
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = 0.06;
+    ctx.globalAlpha = this.quality === 'high' ? 0.06 : 0.038;
     const hg = ctx.createLinearGradient(0, 0, 0, H * 0.5);
     hg.addColorStop(0, 'rgba(255,250,230,1)');
     hg.addColorStop(1, 'rgba(255,250,230,0)');

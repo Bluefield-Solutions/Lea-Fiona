@@ -2092,11 +2092,10 @@ export class GameEngine {
       ctx.fillRect(0, 0, W, H);
       // (W2.3 globaler Dunst entfernt — das Spiel hat bereits drawAerialHaze,
       // eine bessere theme-spezifische atmosphärische Perspektive pro Welt.)
-      const vig = ctx.createRadialGradient(W / 2, H * 0.46, H * 0.45, W / 2, H * 0.5, H * 0.95);
-      vig.addColorStop(0, 'rgba(12,18,36,0)');
-      vig.addColorStop(1, 'rgba(12,18,36,0.15)');
-      ctx.fillStyle = vig;
-      ctx.fillRect(0, 0, W, H);
+      // Grafik-Feinschliff: die zweite, neutrale Per-Frame-Vignette wurde
+      // entfernt — drawSceneGrade backt bereits eine theme-getönte Vignette pro
+      // Viewport. Zwei gestapelte Vignetten drückten die Ecken zu dunkel und
+      // kosteten eine Gradient-Allokation/Frame. Jetzt saubere Ecken + kein Alloc.
       // W1.4 · Welten-Farb-Grading: dezenter Farbstich pro Welt (multiply mit
       // hellem Tint → verschiebt die Farbtemperatur, verdunkelt kaum). Ein
       // einfaches Overlay, KEIN Self-Draw (Safari-sicher).
@@ -2120,9 +2119,18 @@ export class GameEngine {
         if (pat) {
           ctx.save();
           ctx.globalCompositeOperation = 'overlay';
-          ctx.globalAlpha = 0.03;
+          ctx.globalAlpha = 0.035;
           ctx.fillStyle = pat;
-          ctx.fillRect(0, 0, W, H);
+          // Grafik-Feinschliff: das Korn pro Frame um einen zufälligen Betrag
+          // (< Kachelgröße 128) verschieben. Statisches Korn dithert Banding in
+          // Bewegung NICHT (Muster bewegt sich nicht relativ zum Verlauf) und
+          // wirkt wie Schmutz auf der Scheibe; bewegtes Korn ist echtes Filmkorn
+          // und unterdrückt Himmel-/Vignetten-Banding sichtbar. Overfill per
+          // Versatz, damit keine Kante frei bleibt.
+          const jx = Math.floor(Math.random() * 128);
+          const jy = Math.floor(Math.random() * 128);
+          ctx.translate(-jx, -jy);
+          ctx.fillRect(jx, jy, W, H);
           ctx.restore();
         }
       }
@@ -2283,6 +2291,12 @@ export class GameEngine {
     this.baseRenderScaleY = backingH / logicalH;
     this.baseViewportW = logicalW;
     this.baseViewportH = logicalH;
+    // Stabilen Geräte-Skalierungsfaktor an den Renderer geben (Backing/Basis-
+    // Logik) und die Sprite-Caches (Kegel/God-Rays) leeren, da die alte Auflösung
+    // nach einem Backing-Wechsel nicht mehr passt. Läuft nur bei Resize/Quality,
+    // NICHT im Per-Frame-Zoom → kein Cache-Thrash.
+    this.renderer.baseDeviceScale = this.baseRenderScaleX;
+    this.renderer.clearBgSpriteCaches();
     // Aktuellen Speed-Zoom sofort anwenden (kein 1-Frame-Sprung nach resize).
     this.applyDynamicZoom();
     // WebGL-Overlay an dieselbe Anzeigegröße koppeln (Spike, Gate G2).

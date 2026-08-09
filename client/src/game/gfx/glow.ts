@@ -35,6 +35,28 @@ export function getGlowDisc(size: number, r: number, g: number, b: number, coreA
   return c;
 }
 
+/** Wie getGlowDisc, aber mit FREIEN Farb-Stops (mehrfarbige/mehrstufige Glows,
+ *  z. B. Vulkan-Krater gelb→orange→transparent oder Nebel hue→hue+20). Bei
+ *  Referenz-Deckkraft (Kern-Alpha meist 1) backen und beim Blitten via
+ *  drawGlowDisc(..., alpha, ...) pro Frame modulieren. `key` muss den Farbverlauf
+ *  eindeutig kennzeichnen. */
+export function getGlowDiscMulti(key: string, size: number, stops: [number, string][]): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const ck = `M:${key}:${size}`;
+  const hit = cache.get(ck);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const cx = c.getContext('2d');
+  if (!cx) return null;
+  const grad = cx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  for (const [o, col] of stops) grad.addColorStop(o, col);
+  cx.fillStyle = grad;
+  cx.fillRect(0, 0, size, size);
+  cache.set(ck, c);
+  return c;
+}
+
 /** Stempelt eine Glow-Disc additiv, zentriert auf (cx, cy). Bewusst schlank
  *  gehalten (kein save/restore, kein imageSmoothing-Wechsel): bei vielen
  *  Stempeln pro Frame summieren sich Zustandswechsel spürbar. */

@@ -1,6 +1,6 @@
 import type { Renderer } from '../renderer.ts';
 import { CHUCK_HITS_TO_KILL } from '../constants';
-import { drawDinoSprite } from './enemies-core.ts';
+import { drawDinoSprite, softShadowEllipse } from './enemies-core.ts';
 
 function drawPiranhaPlant(this: Renderer, x: number, y: number, w: number, h: number, emergeOffset: number, frame: number, pipeTopY: number) {
   if (emergeOffset <= 0) return;
@@ -323,10 +323,7 @@ function drawSpider(this: Renderer, x: number, y: number, w: number, h: number, 
     ctx.globalAlpha = 1;
   }
 
-  ctx.fillStyle = this.getThemeAccent().shadow;
-  ctx.beginPath();
-  ctx.ellipse(x + w / 2, y + h + 2, w * 0.35, 2.5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  softShadowEllipse(ctx, x + w / 2, y + h + 2, w * 0.35, 2.5, this.getThemeAccent().shadow);
 
   const legPhase = frame * 0.15;
   const cx = x + w / 2;
@@ -422,10 +419,7 @@ function drawCrab(this: Renderer, x: number, y: number, w: number, h: number, fr
   const cy = y + h / 2;
 
   const accent = this.getThemeAccent();
-  ctx.fillStyle = accent.shadow;
-  ctx.beginPath();
-  ctx.ellipse(cx, y + h + 2, w * 0.3, 2.5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  softShadowEllipse(ctx, cx, y + h + 2, w * 0.3, 2.5, accent.shadow);
 
   ctx.save();
   if (isDead) {
@@ -549,10 +543,7 @@ function drawJellyfish(this: Renderer, x: number, y: number, w: number, h: numbe
   const bellBottom = bellTop + bellH;
 
   const accent = this.getThemeAccent();
-  ctx.fillStyle = accent.shadow;
-  ctx.beginPath();
-  ctx.ellipse(cx, y + h + 2, w * 0.2, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
+  softShadowEllipse(ctx, cx, y + h + 2, w * 0.2, 2, accent.shadow);
 
   ctx.save();
   ctx.shadowColor = 'rgba(120,100,255,0.4)';
@@ -638,10 +629,7 @@ function drawKangaroo(this: Renderer, x: number, y: number, w: number, h: number
   const cy = y + h / 2;
 
   const accent = this.getThemeAccent();
-  ctx.fillStyle = accent.shadow;
-  ctx.beginPath();
-  ctx.ellipse(cx, y + h + 2, w * 0.25, 2.5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  softShadowEllipse(ctx, cx, y + h + 2, w * 0.25, 2.5, accent.shadow);
 
   ctx.save();
   ctx.translate(cx, cy);
@@ -783,10 +771,7 @@ function drawSnake(this: Renderer, x: number, y: number, w: number, h: number, f
   const groundY = y + h * 0.75;
 
   const accent = this.getThemeAccent();
-  ctx.fillStyle = accent.shadow;
-  ctx.beginPath();
-  ctx.ellipse(cx, y + h + 2, w * 0.35, 2, 0, 0, Math.PI * 2);
-  ctx.fill();
+  softShadowEllipse(ctx, cx, y + h + 2, w * 0.35, 2, accent.shadow);
 
   ctx.save();
   ctx.translate(cx, groundY);
@@ -1329,10 +1314,7 @@ function drawSpikeBall(this: Renderer, x: number, y: number, w: number, h: numbe
     ctx.globalAlpha = 0.7;
   }
   // Soft contact shadow.
-  ctx.fillStyle = this.getThemeAccent().shadow;
-  ctx.beginPath();
-  ctx.ellipse(cx, y + h + 2, r * 0.7, 2.5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  softShadowEllipse(ctx, cx, y + h + 2, r * 0.7, 2.5, this.getThemeAccent().shadow);
   // Punkt 3: emissiver, pulsierender Gefahren-Glow (additiv) — signalisiert
   // die Bedrohung und hebt die Stachelkugel vom Hintergrund ab. Ab 'mid'.
   if (!isDead && this.quality !== 'low') {
@@ -1976,10 +1958,7 @@ function drawApe(this: Renderer, x: number, y: number, w: number, h: number, dir
 
   // Bodenschatten
   if (!isDead) {
-    ctx.fillStyle = this.getThemeAccent().shadow;
-    ctx.beginPath();
-    ctx.ellipse(0, h * 0.46, w * 0.36, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    softShadowEllipse(ctx, 0, h * 0.46, w * 0.36, 3, this.getThemeAccent().shadow);
   }
 
   // ── Hinterer (ruhender) Arm ──
@@ -2431,10 +2410,7 @@ function drawKnight(this: Renderer, x: number, y: number, w: number, h: number, 
 
   // Bodenschatten
   if (!isDead) {
-    ctx.fillStyle = this.getThemeAccent().shadow;
-    ctx.beginPath();
-    ctx.ellipse(0, h * 0.46, w * 0.34, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    softShadowEllipse(ctx, 0, h * 0.46, w * 0.34, 3, this.getThemeAccent().shadow);
   }
 
   // Schwert (Rückhand, hinten)

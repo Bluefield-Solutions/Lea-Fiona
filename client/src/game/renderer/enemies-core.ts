@@ -1,5 +1,18 @@
 import type { Renderer } from '../renderer.ts';
 
+// Grafik-Feinschliff: weicher, weltgetönter Gegner-Schatten. Zwei überlagerte
+// Ellipsen derselben (bereits alpha-behafteten) Theme-Schattenfarbe — der Kern
+// wird dichter, der Rand bleibt zart → ein Falloff-Eindruck ohne teuren Gradient
+// und ohne die Grundfläche zu vergrößern. Ersetzt den flachen Einzel-Ellipsen-
+// Schatten, der „aufgeklebt" wirkte.
+export function softShadowEllipse(
+  ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, col: string,
+) {
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx, Math.max(1, ry), 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.62, Math.max(1, ry * 0.62), 0, 0, Math.PI * 2); ctx.fill();
+}
+
 // Kleiner Helfer: abgerundeter Rechteck-Pfad (ohne Abhängigkeit von ctx.roundRect).
 function rrPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   const rad = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -218,10 +231,7 @@ function drawGoomba(this: Renderer, x: number, y: number, w: number, h: number, 
     const acc = this.getThemeAccent();
     // Weicher Grund-Schatten für Volumen.
     if (!isDead) {
-      ctx.fillStyle = acc.shadow;
-      ctx.beginPath();
-      ctx.ellipse(bx + bw / 2, by + bh + 2, bw * 0.5, 3, 0, 0, Math.PI * 2);
-      ctx.fill();
+      softShadowEllipse(ctx, bx + bw / 2, by + bh + 2, bw * 0.5, 3, acc.shadow);
     }
     const rr = Math.min(6, bh * 0.28);
     // Gummikörper mit senkrechtem Verlauf (hell oben → satt unten) statt platter Fläche.
@@ -321,10 +331,7 @@ function drawGoomba(this: Renderer, x: number, y: number, w: number, h: number, 
   }
 
   if (!isDead) {
-    ctx.fillStyle = accent.shadow;
-    ctx.beginPath();
-    ctx.ellipse(x + w / 2, y + h + 1, w * 0.4, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    softShadowEllipse(ctx, x + w / 2, y + h + 1, w * 0.4, 3, accent.shadow);
 
     const walkOffset = Math.sin(frame * 0.3) * 2.5;
     const footW = w * 0.22;
@@ -614,10 +621,7 @@ function drawKoopa(this: Renderer, x: number, y: number, w: number, h: number, d
   if (direction < 0) ctx.scale(-1, 1);
   ctx.translate(-w / 2, 0);
 
-  ctx.fillStyle = this.getThemeAccent().shadow;
-  ctx.beginPath();
-  ctx.ellipse(w / 2, h + 1, w * 0.38, 3, 0, 0, Math.PI * 2);
-  ctx.fill();
+  softShadowEllipse(ctx, w / 2, h + 1, w * 0.38, 3, this.getThemeAccent().shadow);
 
   if (!isShell) {
     // Zwei aufrechte Stummelbeine mit Füßchen, im Gegentakt animiert.
@@ -751,10 +755,7 @@ function drawBat(this: Renderer, x: number, y: number, w: number, h: number, fra
   const wingAngle2 = Math.sin(frame * 0.15 + 0.3) * 0.4;
 
   const accent = this.getThemeAccent();
-  ctx.fillStyle = accent.shadow;
-  ctx.beginPath();
-  ctx.ellipse(x + w / 2, y + h + 2, w * 0.25, 2.5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  softShadowEllipse(ctx, x + w / 2, y + h + 2, w * 0.25, 2.5, accent.shadow);
 
   for (let side = -1; side <= 1; side += 2) {
     ctx.save();

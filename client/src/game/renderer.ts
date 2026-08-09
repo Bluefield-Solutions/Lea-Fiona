@@ -68,6 +68,12 @@ export class Renderer {
   // HEIGHT is also dynamic now: the engine shrinks the logical view height
   // below CANVAS_HEIGHT to zoom the camera IN (everything appears larger).
   viewportH = CANVAS_HEIGHT;
+  // Stabiler Geräte-Skalierungsfaktor (Backing-Pixel je BASIS-Logikpixel), von
+  // engine.applyBackingStore() gesetzt. Bewusst NICHT der Live-Zoom-abhängige
+  // Wert (viewportW ändert sich pro Frame durch Speed-/Impact-Zoom) — Sprite-
+  // Caches (Vulkan-Kegel, God-Rays) schlüsseln hierauf, damit sie unter Bewegung
+  // nicht jeden Frame neu backen. Ändert sich nur bei echtem Resize/Quality-Wechsel.
+  baseDeviceScale = 1;
   tileCache: Map<number, HTMLCanvasElement> = new Map();
   // Per-theme background-gradient caches. Built lazily by
   // getBgGradCache; cleared by resetBackground on level start.
@@ -142,6 +148,11 @@ export class Renderer {
   // re-allocate when the device pixel ratio changes (window moved between
   // displays) and so the player sprite stays crisp on retina screens.
   playerOffDpr = 1;
+  // Grafik-Feinschliff: Silhouetten-Puffer für das Spieler-Rim-Light (getönte
+  // Umriss-Kopie, leicht vergrößert hinter den Sprite geblittet → Lesbarkeit vor
+  // unruhigen Hintergründen). Nur die Figur → eine Extra-Blit-Kette/Frame.
+  playerRimOffscreen: HTMLCanvasElement | null = null;
+  playerRimCtx: CanvasRenderingContext2D | null = null;
   // Sun rendering cache (originally near drawSun)
   sunCache: HTMLCanvasElement | null = null;
   sunCacheX = 0;
@@ -415,15 +426,45 @@ export class Renderer {
   getBgGradCache(
     theme: string,
     builder: (ctx: CanvasRenderingContext2D, w: number, h: number) => void,
+    hires = false,
   ): HTMLCanvasElement {
     const cached = this.bgGradCaches.get(theme);
     if (cached) return cached;
     const c = document.createElement('canvas');
-    c.width = this.viewportW;
-    c.height = this.viewportH;
-    builder(c.getContext('2d')!, this.viewportW, this.viewportH);
+    if (hires) {
+      // Retina-Schärfe: den (glatten) Vollbild-Verlauf in GERÄTE-Auflösung backen
+      // statt in logischer — sonst bläst der Haupt-ctx (imageSmoothing=false +
+      // DPR-Transform) den Cache nearest-neighbor auf → verdoppeltes Banding und
+      // weiche/klobige Kanten. Größe = Backing-Store (bereits budget-gedeckelt),
+      // also KEIN Supersample-Overhead; der Verlauf wird beim Blitten 1:1 gemappt.
+      const dw = this.ctx.canvas.width || this.viewportW;
+      const dh = this.ctx.canvas.height || this.viewportH;
+      c.width = Math.max(1, dw);
+      c.height = Math.max(1, dh);
+      const cx = c.getContext('2d')!;
+      cx.scale(dw / this.viewportW, dh / this.viewportH);
+      builder(cx, this.viewportW, this.viewportH);
+    } else {
+      c.width = this.viewportW;
+      c.height = this.viewportH;
+      builder(c.getContext('2d')!, this.viewportW, this.viewportH);
+    }
     this.bgGradCaches.set(theme, c);
     return c;
+  }
+
+  /** Blittet einen (ggf. in Geräte-Auflösung gebauten) Vollbild-BG-Cache scharf:
+   *  explizite Ziel-Größe = logischer Viewport, Smoothing an → 1:1 auf Retina,
+   *  hochwertiger Downsample sonst. Für `hires`-Caches aus getBgGradCache. */
+  blitBgCache(cache: HTMLCanvasElement): void {
+    const ctx = this.ctx;
+    const prev = ctx.imageSmoothingEnabled;
+    const prevQ = ctx.imageSmoothingQuality;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(cache, 0, 0, cache.width, cache.height, 0, 0, this.viewportW, this.viewportH);
+    ctx.imageSmoothingEnabled = prev;
+    ctx.imageSmoothingQuality = prevQ;
   }
 
   /**
@@ -470,6 +511,7 @@ export class Renderer {
     this.signatureLayers.clear();
     this.skyCache = null;
     this.bgGradCaches.clear();
+    this.clearBgSpriteCaches();
   }
 }
 
