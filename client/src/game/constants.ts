@@ -384,6 +384,16 @@ export const KANGAROO_JUMP_INTERVAL = 90;
 export const DEER_SPEED = 1.15;
 export const DEER_JUMP_FORCE = -7;
 export const DEER_JUMP_INTERVAL = 150;
+// Braunes Reh: identisches Verhalten wie das Eisreh (nur anderes Fell).
+// Reh-Boss (Wald-Finale): großes Eisreh, trabt & springt und braucht drei
+// Kopfsprünge. Mit jedem Treffer etwas flinker (kinderfair, aber ein Highlight).
+export const DEER_BOSS_SPEED = 1.0;
+export const DEER_BOSS_JUMP_FORCE = -8.5;   // negativ = nach oben (wie DEER_JUMP_FORCE)
+export const DEER_BOSS_JUMP_INTERVAL = 105;
+export const DEER_BOSS_HP = 3;
+export const DEER_BOSS_HIT_STUN = 34;       // i-frames nach einem Treffer
+export const DEER_BOSS_W = 60;
+export const DEER_BOSS_H = 58;
 export const SNAKE_SPEED = 2.0;
 // Baby-Drachen (Welt 16): hüpfen aktiv Richtung Spielerin (etwas fordernder),
 // stampfbar, schaden bei Berührung. Ei schlüpft bei Annäherung.
@@ -473,6 +483,8 @@ export enum EntityType {
   SNOWBALL = 'snowball',
   KNIGHT = 'knight',
   DEER = 'deer',
+  DEER_BROWN = 'deer_brown',
+  DEER_BOSS = 'deer_boss',
   MINI_UFO = 'mini_ufo',
   UFO_LASER = 'ufo_laser',
   CAPE = 'cape',

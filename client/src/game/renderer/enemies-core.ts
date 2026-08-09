@@ -1015,11 +1015,14 @@ function drawBoss(this: Renderer, x: number, y: number, w: number, h: number, di
 // Eisreh (Wald-Gegner): blittet einen der 7 base64-Frames, an den Füßen
 // verankert, gespiegelt je Blickrichtung (Sprite blickt LINKS). Gibt false
 // zurück, solange die Bilder noch nicht geladen sind → Aufrufer malt Platzhalter.
-export function drawRehSprite(
-  r: Renderer, x: number, y: number, w: number, h: number,
-  frameIdx: number, direction: number, isDead: boolean, scale = 1.55,
+/** Gemeinsamer Reh-Blitter (Eisreh & braunes Reh & Boss). Zeichnet den Frame
+ *  aus dem übergebenen Frame-Array, Füße unten-mittig, Spiegelung bei Richtung
+ *  rechts, im Todesfall gekippt. */
+function blitReh(
+  r: Renderer, frames: (HTMLImageElement | null)[] | null,
+  x: number, y: number, w: number, h: number,
+  frameIdx: number, direction: number, isDead: boolean, scale: number,
 ): boolean {
-  const frames = r.rehFrames;
   const ref = frames && frames[0];
   if (!ref) return false;
   const ctx = r.ctx;
@@ -1036,22 +1039,89 @@ export function drawRehSprite(
   return true;
 }
 
+export function drawRehSprite(
+  r: Renderer, x: number, y: number, w: number, h: number,
+  frameIdx: number, direction: number, isDead: boolean, scale = 1.55,
+): boolean {
+  return blitReh(r, r.rehFrames, x, y, w, h, frameIdx, direction, isDead, scale);
+}
+
+/** Posenwahl aus dem Bewegungszustand (für alle Reh-Varianten identisch). */
+function rehPose(frame: number, isDead: boolean, onGround: boolean, velY: number): number {
+  if (isDead) return 6;                                 // Recovery-Pose als „getroffen"
+  if (!onGround) return velY < 0 ? 4 : 5;               // LEAP_A (steigend) / LEAP_B (fallend)
+  return 1 + (Math.floor(frame * 0.18) % 2);            // WALK_A / WALK_B im Trab
+}
+
 function drawDeer(
   this: Renderer, x: number, y: number, w: number, h: number,
   frame: number, isDead: boolean, direction: number, velY = 0, onGround = true,
 ) {
-  // Posenwahl aus Bewegungszustand: Sprung (auf/ab), Trab (Walk A/B), sonst Stand.
-  let idx: number;
-  if (isDead) idx = 6;                                  // Recovery-Pose als „getroffen"
-  else if (!onGround) idx = velY < 0 ? 4 : 5;           // LEAP_A (steigend) / LEAP_B (fallend)
-  else idx = 1 + (Math.floor(frame * 0.18) % 2);        // WALK_A / WALK_B im Trab
-  if (drawRehSprite(this, x, y, w, h, idx, direction, isDead)) return;
+  const idx = rehPose(frame, isDead, onGround, velY);
+  if (blitReh(this, this.rehFrames, x, y, w, h, idx, direction, isDead, 1.55)) return;
   // Fallback (Sprites noch nicht geladen): hellblauer Platzhalter.
   const ctx = this.ctx;
   ctx.save();
   ctx.fillStyle = '#bfe3ff';
   ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.55, w * 0.4, h * 0.36, 0, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
+}
+
+function drawBrownDeer(
+  this: Renderer, x: number, y: number, w: number, h: number,
+  frame: number, isDead: boolean, direction: number, velY = 0, onGround = true,
+) {
+  const idx = rehPose(frame, isDead, onGround, velY);
+  if (blitReh(this, this.rehBrownFrames, x, y, w, h, idx, direction, isDead, 1.55)) return;
+  // Fallback: brauner Platzhalter.
+  const ctx = this.ctx;
+  ctx.save();
+  ctx.fillStyle = '#a9743f';
+  ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.55, w * 0.4, h * 0.36, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawDeerBoss(
+  this: Renderer, x: number, y: number, w: number, h: number,
+  frame: number, isDead: boolean, direction: number, velY = 0, onGround = true,
+  hp = 3, maxHp = 3,
+) {
+  const idx = rehPose(frame, isDead, onGround, velY);
+  const ctx = this.ctx;
+  // Kalter Boss-Schein hinter dem großen Eisreh (nur solange es lebt).
+  if (!isDead) {
+    ctx.save();
+    const cx = x + w / 2, cy = y + h * 0.5;
+    const g = ctx.createRadialGradient(cx, cy, w * 0.2, cx, cy, w * 0.95);
+    g.addColorStop(0, 'rgba(150,224,255,0.30)');
+    g.addColorStop(1, 'rgba(150,224,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, w * 0.95, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // Boss = großes Eisreh (etwas größerer Scale für Präsenz).
+  if (!blitReh(this, this.rehFrames, x, y, w, h, idx, direction, isDead, 1.7)) {
+    ctx.save();
+    ctx.fillStyle = '#9fd8ff';
+    ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.55, w * 0.45, h * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // HP-Anzeige (3 Herzen/Pips) über dem Boss, solange er lebt.
+  if (!isDead) {
+    ctx.save();
+    const pipR = 3.4, gap = 4, drawH = h * 1.7;
+    const totalW = maxHp * (pipR * 2) + (maxHp - 1) * gap;
+    const startX = x + w / 2 - totalW / 2 + pipR;
+    const py = y + h - drawH - 8;
+    for (let i = 0; i < maxHp; i++) {
+      const px = startX + i * (pipR * 2 + gap);
+      ctx.beginPath(); ctx.arc(px, py, pipR, 0, Math.PI * 2);
+      ctx.fillStyle = i < hp ? '#ff5a7a' : 'rgba(255,255,255,0.25)';
+      ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 export const enemiesCoreMethods = {
@@ -1063,4 +1133,6 @@ export const enemiesCoreMethods = {
   getCachedBatBody,
   drawBat,
   drawDeer,
+  drawBrownDeer,
+  drawDeerBoss,
 };

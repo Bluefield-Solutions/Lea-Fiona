@@ -2,13 +2,13 @@
 // so the long per-entity-type switch + theme-ambient dispatch lives in
 // its own file. Reads engine state but does NOT mutate gameplay state.
 import {
-  TILE_SIZE, GameState, TileType, CANVAS_WIDTH, CANVAS_HEIGHT, SWING_AMP, SWING_DRIVE,
+  TILE_SIZE, GameState, TileType, EntityType, CANVAS_WIDTH, CANVAS_HEIGHT, SWING_AMP, SWING_DRIVE,
   ROPE_SWING_AMP, ROPE_SWING_DRIVE,
 } from '../constants';
 import {
   Coin, SpinningCoin, SpecialCoin, Goomba, Koopa, Boss, Bat, PowerUp, SpikeBall, Hornet, MovingPlatform, Spring, Crate, Switch, Door, FireBarrier,
   BombOmb, BombExplosion, PlayerFireball, Spider, Crab, Jellyfish,
-  Kangaroo, Deer, Snake, Fireball, Ghost, Fish, Wizard, MagicBolt, PiranhaPlant,
+  Kangaroo, Deer, BrownDeer, DeerBoss, Snake, Fireball, Ghost, Fish, Wizard, MagicBolt, PiranhaPlant,
   BanzaiBill, CharginChuck, BigBoo,
   Particle, FloatingText,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO, BabyDragon, DragonEgg,
@@ -362,6 +362,12 @@ function renderWorldLayer(engine: GameEngine): void {
     } else if (entity instanceof Deer) {
       engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
       engine.renderer.drawDeer(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround);
+    } else if (entity instanceof BrownDeer) {
+      engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+      engine.renderer.drawBrownDeer(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround);
+    } else if (entity instanceof DeerBoss) {
+      engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+      engine.renderer.drawDeerBoss(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround, entity.hp, entity.maxHp);
     } else if (entity instanceof Snake) {
       engine.renderer.drawSnake(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction);
     } else if (entity instanceof Fireball) {
@@ -778,6 +784,11 @@ function forestFgForbidden(level: GameEngine['level']): number[][] {
   }
   if (level.checkpoint) zones.push([(level.checkpoint.col - 3) * TS, (level.checkpoint.col + 4) * TS]);
   if (level.flagPosition) { const fc = level.flagPosition.x / TS; zones.push([(fc - 3) * TS, (fc + 4) * TS]); }
+  // Boss-Arena (Reh-Boss) freihalten: der Kampf soll nicht von Vordergrundbäumen
+  // verdeckt werden.
+  for (const e of level.entities) {
+    if (e.type === EntityType.DEER_BOSS) { const bc = e.x / TS; zones.push([(bc - 6) * TS, (bc + 7) * TS]); }
+  }
   _fgForbiddenCache.set(level, zones);
   return zones;
 }

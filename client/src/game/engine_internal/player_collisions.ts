@@ -15,7 +15,7 @@ import {
 } from '../constants';
 import {
   Entity, Goomba, Koopa, Boss, Bat, Coin, SpinningCoin, SpecialCoin, PowerUp, PiranhaPlant,
-  Spider, Crab, Jellyfish, Kangaroo, Deer, Snake, Fireball, Ghost, Fish,
+  Spider, Crab, Jellyfish, Kangaroo, Deer, BrownDeer, DeerBoss, Snake, Fireball, Ghost, Fish,
   Wizard, MagicBolt, BombOmb, BombExplosion, PlayerFireball, SpikeBall,
   Hornet, BanzaiBill, CharginChuck, BigBoo,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO,
@@ -723,7 +723,7 @@ export function runEntityCollisions(engine: GameEngine): void {
           playerHit(engine, entity);
         }
       }
-    } else if (entity instanceof Deer) {
+    } else if (entity instanceof Deer || entity instanceof BrownDeer) {
       if (entity.isDead) continue;
       if (player.intersects(entity)) {
         if (isStompHit(engine, entity)) {
@@ -731,6 +731,20 @@ export function runEntityCollisions(engine: GameEngine): void {
           const boosted = player.velY > 0 ? playerBounceFromStomp(engine) : false;
           audio.playSfx(boosted ? 'bounceBoost' : 'stomp');
           applyStompCombo(engine, ENEMY_KILL_SCORE, entity);
+        } else {
+          playerHit(engine, entity);
+        }
+      }
+    } else if (entity instanceof DeerBoss) {
+      if (entity.isDead) continue;
+      if (player.intersects(entity)) {
+        // Reh-Boss: drei Kopfsprünge. Während der i-frames (hitStun) zählt der
+        // Treffer nicht, die Figur federt aber trotzdem ab (kein Schaden).
+        if (isStompHit(engine, entity)) {
+          const defeated = entity.stomp();
+          const boosted = player.velY > 0 ? playerBounceFromStomp(engine) : false;
+          audio.playSfx(boosted ? 'bounceBoost' : 'stomp');
+          if (defeated) applyStompCombo(engine, ENEMY_KILL_SCORE * 3, entity);
         } else {
           playerHit(engine, entity);
         }

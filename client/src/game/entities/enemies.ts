@@ -9,6 +9,8 @@ import {
   HORNET_SPEED, JELLYFISH_FLY_AMPLITUDE, JELLYFISH_FLY_SPEED, JELLYFISH_SPEED,
   KANGAROO_JUMP_FORCE, KANGAROO_JUMP_INTERVAL, KANGAROO_SPEED,
   DEER_SPEED, DEER_JUMP_FORCE, DEER_JUMP_INTERVAL, MAX_FALL_SPEED,
+  DEER_BOSS_SPEED, DEER_BOSS_JUMP_FORCE, DEER_BOSS_JUMP_INTERVAL,
+  DEER_BOSS_HP, DEER_BOSS_HIT_STUN, DEER_BOSS_W, DEER_BOSS_H,
   PIRANHA_HIDE_TIME, PIRANHA_SHOW_TIME, SNAKE_SPEED, SPIDER_DROP_SPEED,
   SPIDER_SPEED, SPIKE_BALL_ROLL_RATE, TILE_SIZE,
   BANZAI_BILL_SPEED, BANZAI_BILL_SIZE, BANZAI_BILL_AGGRO_RANGE,
@@ -124,6 +126,120 @@ export class Boss extends Entity {
     this.hp--;
     this.hitFlash = 10;
     this.hitStun = BOSS_HIT_STUN;
+    if (this.hp <= 0) {
+      this.isDead = true;
+      this.velX = 0;
+      this.deadTimer = 0;
+      return true;
+    }
+    return false;
+  }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/** Braunes Reh — Verhalten identisch zum Eisreh (Deer), nur ein anderes Fell.
+ *  Eigene Klasse, damit der Renderer die braunen Frames wählt (instanceof). */
+export class BrownDeer extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  jumpTimer = 0;
+  edgeBehavior = true;
+
+  constructor(x: number, y: number) {
+    super(x, y, 34, 34, EntityType.DEER_BROWN);
+    this.direction = Direction.LEFT;
+    this.velX = -DEER_SPEED;
+  }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) {
+      this.deadTimer++;
+      if (this.deadTimer > 30) this.alive = false;
+      return;
+    }
+    this.velX = this.direction === Direction.LEFT ? -DEER_SPEED : DEER_SPEED;
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+    if (this.onGround) {
+      this.jumpTimer++;
+      if (this.jumpTimer >= DEER_JUMP_INTERVAL) {
+        this.velY = DEER_JUMP_FORCE;
+        this.jumpTimer = 0;
+        this.onGround = false;
+      }
+    }
+  }
+
+  stomp() {
+    this.isDead = true;
+    this.hitFlash = 7;
+    this.velX = 0;
+    this.deadTimer = 0;
+  }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/** Reh-Boss (Wald-Finale) — großes Eisreh, das trabt und springt. Drei
+ *  Kopfsprünge besiegen es; zwischen den Treffern kurze i-frames (hitStun),
+ *  und mit jedem Treffer wird es etwas flinker. Kein Projektil-Wurf → fair für
+ *  Kinder, aber ein echtes Highlight am Levelende. */
+export class DeerBoss extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  edgeBehavior = true;
+  hp = DEER_BOSS_HP;
+  maxHp = DEER_BOSS_HP;
+  hitStun = 0;
+  jumpTimer = 0;
+
+  constructor(x: number, y: number) {
+    super(x, y, DEER_BOSS_W, DEER_BOSS_H, EntityType.DEER_BOSS);
+    this.direction = Direction.LEFT;
+    this.velX = -DEER_BOSS_SPEED;
+  }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) {
+      this.deadTimer++;
+      if (this.deadTimer > 46) this.alive = false;
+      return;
+    }
+    if (this.hitStun > 0) this.hitStun--;
+    const phase = this.maxHp - this.hp;                       // 0..2
+    const spd = DEER_BOSS_SPEED * (1 + phase * 0.35);
+    this.velX = this.direction === Direction.LEFT ? -spd : spd;
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+    if (this.onGround) {
+      this.jumpTimer++;
+      const interval = Math.max(60, DEER_BOSS_JUMP_INTERVAL - phase * 20);
+      if (this.jumpTimer >= interval) {
+        this.velY = DEER_BOSS_JUMP_FORCE;
+        this.jumpTimer = 0;
+        this.onGround = false;
+      }
+    }
+  }
+
+  /** Treffer von oben. Gibt true zurück, wenn der Boss dadurch besiegt wird.
+   *  Während der i-frames (hitStun) zählt kein weiterer Treffer. */
+  stomp(): boolean {
+    if (this.hitStun > 0) return false;
+    this.hp--;
+    this.hitFlash = 10;
+    this.hitStun = DEER_BOSS_HIT_STUN;
     if (this.hp <= 0) {
       this.isDead = true;
       this.velX = 0;

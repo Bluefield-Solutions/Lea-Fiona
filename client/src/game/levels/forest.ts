@@ -97,11 +97,17 @@ export function createForestLevel(): LevelData {
   const Sp = (col: number) => entities.push({ type: EntityType.SPRING_STONE, x: col * TILE_SIZE, y: ground * TILE_SIZE });
   const Cr = (col: number) => entities.push({ type: EntityType.CRATE, x: col * TILE_SIZE, y: ground * TILE_SIZE });
   const De = (col: number, row = ground - 2) => entities.push({ type: EntityType.DEER, x: col * TILE_SIZE, y: row * TILE_SIZE });
+  const Bd = (col: number, row = ground - 2) => entities.push({ type: EntityType.DEER_BROWN, x: col * TILE_SIZE, y: row * TILE_SIZE });
+  const Bo = (col: number, row = ground - 3) => entities.push({ type: EntityType.DEER_BOSS, x: col * TILE_SIZE, y: row * TILE_SIZE });
 
-  G(20); G(41); K(72); G(100); Ba(128, ground - 7); K(150); G(169); G(197);
+  G(20); G(41); K(72); G(100); Ba(128, ground - 7); K(150); G(169);
   Sp(61); Cr(58); Cr(81);
-  // Eisrehe — trabende Wald-Bewohner (auf Lichtung & Hügel), machen sanfte Sätze.
-  De(66); De(180);
+  // Rehe — sanfte Wald-Bewohner mit gut vorhersehbaren Sätzen.
+  //   Morgenlicht/Lichtung → braune Rehe · Dämmerung/Nacht → Eisrehe.
+  Bd(18); Bd(66);       // braune Rehe am Anfang (Tag)
+  De(128); De(176);     // Eisrehe später (Dämmerung → Nacht)
+  // Finale: großer Eisreh-Boss unter dem Sternenhimmel — drei Kopfsprünge!
+  Bo(203);
 
   // ── Münzen ──
   const { addCoinRow, addCoinArc } = bindCoinHelpers(entities);
@@ -133,7 +139,7 @@ export function createForestLevel(): LevelData {
     for (let c = h.startCol; c <= h.endCol; c++) set(c, ground, TileType.GROUND);
 
   // Boden-Gegner/Objekte auf die Hügelkurve heben.
-  const groundEnemies = new Set<EntityType>([EntityType.GOOMBA, EntityType.KOOPA, EntityType.SPIKE_BALL, EntityType.APE, EntityType.DEER]);
+  const groundEnemies = new Set<EntityType>([EntityType.GOOMBA, EntityType.KOOPA, EntityType.SPIKE_BALL, EntityType.APE, EntityType.DEER, EntityType.DEER_BROWN, EntityType.DEER_BOSS]);
   for (const e of entities) {
     if (e.type === EntityType.SPRING_STONE || e.type === EntityType.CRATE) {
       const sy = smoothGroundY(terrainHills, e.x + TILE_SIZE / 2);
