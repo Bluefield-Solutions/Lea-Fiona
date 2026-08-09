@@ -44,7 +44,14 @@ type Sfx =
   | 'dinoFlutter'
   // Sticker-Album
   | 'albumOpen'
-  | 'stickerGet';
+  | 'stickerGet'
+  // Boss-Feedback (Schlangen-Boss)
+  | 'snakeHiss'
+  | 'snakeRattle'
+  | 'snakeLunge'
+  | 'bossHit'
+  // Kuschel-Maus
+  | 'mousePiep';
 
 interface ThemeSong {
   bpm: number;
@@ -563,8 +570,60 @@ class AudioEngine {
         this.tone(1568, 0.30, 'sine', 0.14, now + 0.07, 0.003, 0.25);
         this.tone(2093, 0.22, 'sine', 0.06, now + 0.11, 0.003, 0.2);
         break;
+      // Schlangen-Boss richtet sich auf → Zischen (zwei überlappende Rauschbögen).
+      case 'snakeHiss':
+        this.noise(0.30, now, 0.09);
+        this.noise(0.24, now + 0.11, 0.06);
+        this.tone(2400, 0.20, 'triangle', 0.015, now + 0.04, 0.02, 0.15);
+        break;
+      // Warn-Rasseln in der Telegraph-Phase: schnelle, leise Sägezahn-Pulse „brrr".
+      case 'snakeRattle': {
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(185, now);
+        g.gain.setValueAtTime(0, now);
+        let tt = now + 0.005;
+        for (let i = 0; i < 15; i++) {   // ~0.4 s Rassel-Puls-Folge
+          g.gain.linearRampToValueAtTime(0.045, tt);
+          g.gain.linearRampToValueAtTime(0.0006, tt + 0.011);
+          tt += 0.026;
+        }
+        osc.connect(g); g.connect(this.sfxGain);
+        osc.start(now); osc.stop(tt + 0.05);
+        break;
+      }
+      // Schlangen-Boss schnellt vor → „Wusch" (Abwärts-Sweep + kurzer Luftstoß).
+      case 'snakeLunge':
+        this.noise(0.16, now, 0.11);
+        this.descend(920, 220, 0.16, 'sine', 0.10, now);
+        break;
+      // Maus erschrickt/flieht oder taucht auf → kurzer, hoher Quieker „piep-piep".
+      case 'mousePiep':
+        this.tone(2100, 0.05, 'square', 0.06, now, 0.002, 0.03);
+        this.tone(2600, 0.05, 'square', 0.05, now + 0.06, 0.002, 0.03);
+        break;
+      // Kopfsprung auf einen Boss → wuchtiger Treffer (Thud + Sub-Bass + Crack).
+      case 'bossHit':
+        this.tone(320, 0.06, 'triangle', 0.18, now, 0.002, 0.03);
+        this.tone(150, 0.10, 'sine', 0.22, now, 0.002, 0.05);
+        this.noise(0.10, now, 0.10);
+        this.bassPunch(now, 0.34);
+        break;
     }
     this.sfxPan = 0;
+  }
+
+  /** Kurzes Musik-Ducking für Wucht bei einem Boss-Treffer: senkt die Musik
+   *  kurz ab und blendet sie wieder auf den vorherigen Pegel zurück. */
+  duckMusic(ms = 380, depth = 0.4) {
+    if (!this.ctx || !this.musicGain) return;
+    const now = this.ctx.currentTime;
+    const cur = this.musicGain.gain.value;
+    this.musicGain.gain.cancelScheduledValues(now);
+    this.musicGain.gain.setValueAtTime(cur, now);
+    this.musicGain.gain.linearRampToValueAtTime(cur * depth, now + 0.03);
+    this.musicGain.gain.linearRampToValueAtTime(cur, now + ms / 1000);
   }
 
   /** AP 1.9: kurzer, wuchtiger Sub-Bass-Impuls (Sweep 150→45 Hz) für Gewicht

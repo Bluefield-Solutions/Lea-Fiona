@@ -8,7 +8,7 @@ import {
 import {
   Coin, SpinningCoin, SpecialCoin, Goomba, Koopa, Boss, Bat, PowerUp, SpikeBall, Hornet, MovingPlatform, Spring, Crate, Switch, Door, FireBarrier,
   BombOmb, BombExplosion, PlayerFireball, Spider, Crab, Jellyfish,
-  Kangaroo, Deer, BrownDeer, DeerBoss, Snake, Fireball, Ghost, Fish, Wizard, MagicBolt, PiranhaPlant,
+  Kangaroo, Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss, Snake, Fireball, Ghost, Fish, Wizard, MagicBolt, PiranhaPlant,
   BanzaiBill, CharginChuck, BigBoo,
   Particle, FloatingText,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO, BabyDragon, DragonEgg,
@@ -246,6 +246,10 @@ function renderWorldLayer(engine: GameEngine): void {
     }
   }
 
+  // Kuscheltierwelt: kleine Mauselöcher als Zuhause an den Maus-Spawns (hinter
+  // den Mäusen gezeichnet, damit sie davor herlaufen).
+  if (engine.level.theme === 'plush') drawPlushMouseHoles(engine);
+
   for (const entity of engine.entities) {
     if (!entity.alive) continue;
     if (entity instanceof PiranhaPlant) continue;
@@ -368,6 +372,20 @@ function renderWorldLayer(engine: GameEngine): void {
     } else if (entity instanceof DeerBoss) {
       engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
       engine.renderer.drawDeerBoss(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround, entity.hp, entity.maxHp);
+    } else if (entity instanceof Sheep) {
+      engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+      engine.renderer.drawSheep(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround);
+    } else if (entity instanceof Turtle) {
+      engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+      engine.renderer.drawTurtle(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround);
+    } else if (entity instanceof Mouse) {
+      if (!entity.hiding) {   // steckt sie im Loch, wird nichts gezeichnet
+        engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+        engine.renderer.drawMouse(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround, entity.sniffing, entity.fleeing);
+      }
+    } else if (entity instanceof SnakeBoss) {
+      engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+      engine.renderer.drawSnakeBoss(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.animState, entity.hp, entity.maxHp);
     } else if (entity instanceof Snake) {
       engine.renderer.drawSnake(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction);
     } else if (entity instanceof Fireball) {
@@ -767,6 +785,61 @@ function renderWorldLayer(engine: GameEngine): void {
 // Verbotszonen für Wald-Vordergrundbäume: Welt-x-Intervalle (px), in denen KEIN
 // Baum stehen darf — Wassergräben/Sprünge, Checkpoint, Zielfahne. Pro Level
 // einmal berechnet (gecacht), da statisch.
+// Kuscheltierwelt: Mauseloch-Positionen (Weltkoordinaten) je Level, aus den
+// Maus-Spawns abgeleitet und gecacht.
+const _mouseHoleCache = new WeakMap<object, number[]>();
+function plushMouseHoleXs(level: GameEngine['level']): number[] {
+  const cached = _mouseHoleCache.get(level);
+  if (cached) return cached;
+  const xs: number[] = [];
+  for (const e of level.entities) if (e.type === EntityType.MOUSE) xs.push(e.x + 15);
+  _mouseHoleCache.set(level, xs);
+  return xs;
+}
+function drawPlushMouseHoles(engine: GameEngine): void {
+  const xs = plushMouseHoleXs(engine.level);
+  if (!xs.length || engine.level.groundRow === undefined) return;
+  const ctx = engine.renderer.ctx;
+  const groundY = engine.level.groundRow * TILE_SIZE;
+  for (const wx of xs) {
+    if (!engine.camera.isVisible(wx - 20, groundY - 22, 40, 26)) continue;
+    const s = engine.camera.worldToScreenInto(wx, groundY, _s);
+    ctx.save();
+    // weiches Erd-/Stoff-Hügelchen um das Loch
+    ctx.fillStyle = '#6b4a3a';
+    ctx.beginPath(); ctx.ellipse(s.x, s.y, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
+    // dunkles Loch (Halbkreis-Bogen nach oben)
+    ctx.fillStyle = '#241a17';
+    ctx.beginPath(); ctx.arc(s.x, s.y, 10, Math.PI, 0, false); ctx.closePath(); ctx.fill();
+    // weicher Highlight-Rand
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(s.x, s.y - 1, 10, Math.PI, 0, false); ctx.stroke();
+    // kleine Grasbüschel seitlich als Nische-Deko
+    ctx.strokeStyle = '#8fbf6a'; ctx.lineWidth = 1.4;
+    for (const gx of [s.x - 22, s.x + 22]) {
+      ctx.beginPath(); ctx.moveTo(gx, s.y); ctx.lineTo(gx - 1, s.y - 6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(gx + 2, s.y); ctx.lineTo(gx + 3, s.y - 5); ctx.stroke();
+    }
+    // Kuschel-Charme: kleines Wollknäuel links vom Loch …
+    const wx0 = s.x - 17, wy0 = s.y - 4;
+    ctx.fillStyle = '#e59ab8';
+    ctx.beginPath(); ctx.arc(wx0, wy0, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(wx0, wy0, 4.5, 0.4, 3.4); ctx.stroke();
+    ctx.beginPath(); ctx.arc(wx0, wy0, 2.6, -0.6, 2.4); ctx.stroke();
+    ctx.strokeStyle = '#e59ab8'; ctx.lineWidth = 0.9;   // loser Wollfaden
+    ctx.beginPath(); ctx.moveTo(wx0 - 4, wy0 + 2); ctx.quadraticCurveTo(wx0 - 9, wy0 + 5, wx0 - 6, s.y); ctx.stroke();
+    // … und ein Käse-Eckchen rechts vom Loch.
+    const cx0 = s.x + 15, cy0 = s.y;
+    ctx.fillStyle = '#f6c944';
+    ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx0 + 10, cy0); ctx.lineTo(cx0 + 10, cy0 - 6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#d9a520';
+    ctx.beginPath(); ctx.arc(cx0 + 4, cy0 - 1.5, 1.1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx0 + 7.5, cy0 - 3, 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
 const _fgForbiddenCache = new WeakMap<object, number[][]>();
 function forestFgForbidden(level: GameEngine['level']): number[][] {
   const cached = _fgForbiddenCache.get(level);

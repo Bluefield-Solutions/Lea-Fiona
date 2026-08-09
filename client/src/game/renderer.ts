@@ -8,6 +8,10 @@ import { DRACHE_FRAME_URLS } from './assets/dracheSprites.ts';
 import { DINO_WALK_URLS } from './assets/dinoWalkSprites.ts';
 import { REH_FRAME_URLS } from './assets/rehSprites.ts';
 import { REH_BROWN_FRAME_URLS } from './assets/rehBrownSprites.ts';
+import { SCHAF_FRAME_URLS } from './assets/schafSprites.ts';
+import { SCHILDKROETE_FRAME_URLS } from './assets/schildkroeteSprites.ts';
+import { MAUS_FRAME_URLS } from './assets/mausSprites.ts';
+import { SCHLANGE_FRAME_URLS } from './assets/schlangeSprites.ts';
 import fiona01 from '@assets/fiona_01.webp';
 import fiona02 from '@assets/fiona_02.webp';
 import fiona03 from '@assets/fiona_03.webp';
@@ -146,6 +150,12 @@ export class Renderer {
   rehFrames: (HTMLImageElement | null)[] = new Array(7).fill(null);
   // Wald: braunes Reh (gleiche Frame-Reihenfolge wie das Eisreh).
   rehBrownFrames: (HTMLImageElement | null)[] = new Array(7).fill(null);
+  // Wolkenwelt: Schaf · Tiefsee: Schildkröte · Wiese: Maus (je 10 Frames).
+  schafFrames: (HTMLImageElement | null)[] = new Array(10).fill(null);
+  turtleFrames: (HTMLImageElement | null)[] = new Array(10).fill(null);
+  mausFrames: (HTMLImageElement | null)[] = new Array(10).fill(null);
+  // Australien: Schlangen-Boss (10 Frames, Lunge-Attacke).
+  schlangeFrames: (HTMLImageElement | null)[] = new Array(10).fill(null);
   // Avatar/preview still draws a single standing image (Lea's stand frame).
   playerImage: HTMLImageElement | null = null;
   playerImageLoaded = false;
@@ -203,6 +213,10 @@ export class Renderer {
     DINO_WALK_URLS.forEach((p, i) => this.loadFrame(p, this.dinoWalkFrames, i));
     REH_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.rehFrames, i));
     REH_BROWN_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.rehBrownFrames, i));
+    SCHAF_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.schafFrames, i));
+    SCHILDKROETE_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.turtleFrames, i));
+    MAUS_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.mausFrames, i));
+    SCHLANGE_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.schlangeFrames, i));
     this.loadFrame(BERATER_DUCK_URL, this.beraterDuckArr, 0);
   }
 

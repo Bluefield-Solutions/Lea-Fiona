@@ -54,7 +54,10 @@ export function createPlushLevel(): LevelData {
   const Shell = (col: number, row = ground - 2) => entities.push({ type: EntityType.KOOPA, x: col * TILE_SIZE, y: row * TILE_SIZE });    // blauer Panzer-Dino
   const Hop = (col: number, row = ground - 2) => entities.push({ type: EntityType.KANGAROO, x: col * TILE_SIZE, y: row * TILE_SIZE });  // grüner Hüpf-Dino
   const Fly = (col: number, row = ground - 4) => entities.push({ type: EntityType.BAT, x: col * TILE_SIZE, y: row * TILE_SIZE });      // rosa Flatter-Dino
+  const Mus = (col: number, row = ground - 2) => entities.push({ type: EntityType.MOUSE, x: col * TILE_SIZE, y: row * TILE_SIZE });   // Plüsch-Mäuschen (flieht, schnuppert)
   const Plush = (col: number) => set(col, ground - 1, DP);              // Kuscheltier
+  // Kuschel-Mäuschen — über die Welt verteilt, mit eigenem Zuhause (Mauseloch).
+  Mus(24); Mus(52); Mus(86); Mus(140);
 
   // === BEAT 1 — Aufwachen (0–26): ruhiger Start, Verwandlungen früh. ===
   set(5, ground - 1, SIGN);

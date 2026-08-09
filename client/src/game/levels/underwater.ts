@@ -60,6 +60,9 @@ export function createUnterwasserLevel(): LevelData {
   const Cr = (col: number, row = ground - 2) => entities.push({ type: EntityType.CRAB, x: col * TILE_SIZE, y: row * TILE_SIZE });
   const Fi = (col: number, row: number) => entities.push({ type: EntityType.FISH, x: col * TILE_SIZE, y: row * TILE_SIZE });
   const Je = (col: number, row: number) => entities.push({ type: EntityType.JELLYFISH, x: col * TILE_SIZE, y: row * TILE_SIZE });
+  // Schildkröten — gemütliche Panzer-Wanderer am Meeresboden (neben Krabben/Koopas).
+  const Tu = (col: number, row = ground - 2) => entities.push({ type: EntityType.TURTLE, x: col * TILE_SIZE, y: row * TILE_SIZE });
+  Tu(26); Tu(112); Tu(178);
 
   // BEAT 1 — Ankommen am Meeresboden (0–28): Sand, erste Krabben.
   fillGround(0, 28, ground);

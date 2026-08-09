@@ -15,7 +15,7 @@ import {
 } from '../constants';
 import {
   Entity, Goomba, Koopa, Boss, Bat, Coin, SpinningCoin, SpecialCoin, PowerUp, PiranhaPlant,
-  Spider, Crab, Jellyfish, Kangaroo, Deer, BrownDeer, DeerBoss, Snake, Fireball, Ghost, Fish,
+  Spider, Crab, Jellyfish, Kangaroo, Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss, Snake, Fireball, Ghost, Fish,
   Wizard, MagicBolt, BombOmb, BombExplosion, PlayerFireball, SpikeBall,
   Hornet, BanzaiBill, CharginChuck, BigBoo,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO,
@@ -723,8 +723,10 @@ export function runEntityCollisions(engine: GameEngine): void {
           playerHit(engine, entity);
         }
       }
-    } else if (entity instanceof Deer || entity instanceof BrownDeer) {
+    } else if (entity instanceof Deer || entity instanceof BrownDeer
+               || entity instanceof Sheep || entity instanceof Turtle || entity instanceof Mouse) {
       if (entity.isDead) continue;
+      if (entity instanceof Mouse && entity.hiding) continue;   // im Loch: nicht treffbar
       if (player.intersects(entity)) {
         if (isStompHit(engine, entity)) {
           entity.stomp();
@@ -735,16 +737,39 @@ export function runEntityCollisions(engine: GameEngine): void {
           playerHit(engine, entity);
         }
       }
-    } else if (entity instanceof DeerBoss) {
+    } else if (entity instanceof DeerBoss || entity instanceof SnakeBoss) {
       if (entity.isDead) continue;
       if (player.intersects(entity)) {
-        // Reh-Boss: drei Kopfsprünge. Während der i-frames (hitStun) zählt der
-        // Treffer nicht, die Figur federt aber trotzdem ab (kein Schaden).
+        // Boss (Reh/Schlange): drei Kopfsprünge. Während der i-frames (hitStun)
+        // zählt der Treffer nicht, die Figur federt aber trotzdem ab (kein Schaden).
         if (isStompHit(engine, entity)) {
+          const hpBefore = entity.hp;
           const defeated = entity.stomp();
           const boosted = player.velY > 0 ? playerBounceFromStomp(engine) : false;
-          audio.playSfx(boosted ? 'bounceBoost' : 'stomp');
-          if (defeated) applyStompCombo(engine, ENEMY_KILL_SCORE * 3, entity);
+          const landed = entity.hp < hpBefore;   // echter Treffer (nicht durch i-frames geblockt)
+          if (landed) {
+            // Wuchtiges Feedback: Boss-Treffer-Sound + kurzer Screen-Shake + Impact-Zoom
+            // + Musik-Ducking + Staub-/Funken-Wolke am Aufprallpunkt (Boss-Kopf).
+            audio.playSfx('bossHit', engine.panForWorldX(entity.x + entity.width / 2));
+            audio.duckMusic();
+            engine.shakeCamera(defeated ? 9 : 6, defeated ? 22 : 12);
+            engine.addImpactZoom(defeated ? 0.07 : 0.05);
+            engine.spawnStompParticles(player.x + player.width / 2, entity.y);
+            engine.spawnSparks(player.x + player.width / 2, entity.y);
+          } else {
+            audio.playSfx(boosted ? 'bounceBoost' : 'stomp');
+          }
+          if (defeated) {
+            applyStompCombo(engine, ENEMY_KILL_SCORE * 3, entity);
+            // Sieges-Sequenz: Funken-Explosion + „Besiegt!"-Text + Sieges-Jingle und
+            // ein kleiner Freuden-Hüpfer der Figur.
+            const bx = entity.x + entity.width / 2, by = entity.y + entity.height * 0.4;
+            engine.spawnStarParticles(bx, by);
+            engine.spawnSparks(bx, by);
+            engine.particles.push(engine.acquireFloatingText(bx, entity.y - 10, 'Besiegt!', 1.2));
+            audio.playSfx('oneUp');
+            if (!player.isSwinging) { player.velY = Math.min(player.velY, -6); player.onGround = false; }
+          }
         } else {
           playerHit(engine, entity);
         }

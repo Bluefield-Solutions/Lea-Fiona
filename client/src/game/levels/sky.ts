@@ -62,6 +62,9 @@ export function createSkyLevel(): LevelData {
   Spr(48); Box(61);   // im gegnerfreien Belohnungs-Abschnitt (Beat 3)
   // Möwen (Seagull) auf Wunsch entfernt — keine Vögel mehr in dieser Welt.
   const Bz = (col: number, row: number) => entities.push({ type: EntityType.BANZAI_BILL, x: col * TILE_SIZE, y: row * TILE_SIZE });
+  // Wolken-Schafe — weiche Hüpfer auf dem Wolkenboden (Anfang & Hügel).
+  const Sh = (col: number, row = ground - 2) => entities.push({ type: EntityType.SHEEP, x: col * TILE_SIZE, y: row * TILE_SIZE });
+  Sh(52); Sh(150); Sh(185);
 
   // ====================================================================
   //  BEAT 1 — Ankommen (cols 0–24): Wolkenboden, erste Münzen, sanft.
@@ -192,7 +195,7 @@ export function createSkyLevel(): LevelData {
   for (const h of terrainHills)
     for (let c = h.startCol; c <= h.endCol; c++) set(c, ground, TileType.GROUND);
   // 2) Boden-Gegner auf die Hügelkurve heben (fliegende bleiben).
-  const hillGroundEnemies = new Set<EntityType>([EntityType.GOOMBA, EntityType.KOOPA]);
+  const hillGroundEnemies = new Set<EntityType>([EntityType.GOOMBA, EntityType.KOOPA, EntityType.SHEEP]);
   for (const e of entities) {
     if (e.type === EntityType.SPRING_STONE || e.type === EntityType.CRATE) {
       const sy = smoothGroundY(terrainHills, e.x + TILE_SIZE / 2);

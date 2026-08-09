@@ -59,6 +59,10 @@ export function createAustraliaLevel(): LevelData {
   const Ka = (col: number, row = ground - 2) => entities.push({ type: EntityType.KANGAROO, x: col * TILE_SIZE, y: row * TILE_SIZE });
   const Sn = (col: number, row = ground - 2) => entities.push({ type: EntityType.SNAKE, x: col * TILE_SIZE, y: row * TILE_SIZE });
   const Bz = (col: number, row: number) => entities.push({ type: EntityType.BANZAI_BILL, x: col * TILE_SIZE, y: row * TILE_SIZE });
+  // Schlangen-Boss im Finale (flacher Streifen 179–191 vor der Flagge): kriecht,
+  // richtet sich auf und schnellt vor — drei Kopfsprünge besiegen ihn.
+  const SnBoss = (col: number, row = ground - 3) => entities.push({ type: EntityType.SNAKE_BOSS, x: col * TILE_SIZE, y: row * TILE_SIZE });
+  SnBoss(185);
 
   // BEAT 1 — Ankommen im Outback (0–24): trocken, erste Kängurus.
   fillGround(0, 24, ground);
@@ -174,7 +178,7 @@ export function createAustraliaLevel(): LevelData {
   for (const h of terrainHills)
     for (let c = h.startCol; c <= h.endCol; c++) set(c, ground, TileType.GROUND);
   // 2) Boden-Gegner auf die Hügelkurve heben (sonst stecken sie im Hang).
-  const hillGroundEnemies = new Set<EntityType>([EntityType.GOOMBA, EntityType.KOOPA, EntityType.KANGAROO, EntityType.SNAKE]);
+  const hillGroundEnemies = new Set<EntityType>([EntityType.GOOMBA, EntityType.KOOPA, EntityType.KANGAROO, EntityType.SNAKE, EntityType.SNAKE_BOSS]);
   for (const e of entities) {
     if (e.type === EntityType.SPRING_STONE || e.type === EntityType.CRATE) {
       const sy = smoothGroundY(terrainHills, e.x + TILE_SIZE / 2);

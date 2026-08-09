@@ -4,7 +4,7 @@
 // culling, pool recycling, alive filter).
 import {
   Entity, Goomba, Koopa, Boss, Bat, Coin, SpinningCoin, PowerUp, PiranhaPlant,
-  Spider, Crab, Jellyfish, Kangaroo, Deer, BrownDeer, DeerBoss, Snake, Fireball, Ghost, Fish,
+  Spider, Crab, Jellyfish, Kangaroo, Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss, Snake, Fireball, Ghost, Fish,
   Wizard, MagicBolt, BombOmb, BombExplosion, PlayerFireball, SpikeBall,
   Hornet, BanzaiBill, CharginChuck, BigBoo,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO, BabyDragon, DragonEgg,
@@ -13,7 +13,10 @@ import {
 } from '../entities';
 import { Direction } from '../constants';
 import { audio } from '../audio';
-import { TILE_SIZE, MAGNET_RANGE, MAGNET_PULL_SPEED } from '../constants';
+import {
+  TILE_SIZE, MAGNET_RANGE, MAGNET_PULL_SPEED, MOUSE_FLEE_RANGE,
+  MOUSE_HIDE_DURATION, MOUSE_HOLE_ENTER_DIST, MOUSE_HIDE_COOLDOWN,
+} from '../constants';
 import type { GameEngine } from '../engine';
 
 export function stepEntities(engine: GameEngine): void {
@@ -175,12 +178,90 @@ export function stepEntities(engine: GameEngine): void {
           a._wasGround = entity.onGround;
         }
       }
-    } else if (entity instanceof Deer || entity instanceof BrownDeer || entity instanceof DeerBoss) {
+    } else if (entity instanceof Deer || entity instanceof BrownDeer || entity instanceof DeerBoss
+               || entity instanceof Sheep || entity instanceof Turtle || entity instanceof Mouse
+               || entity instanceof SnakeBoss) {
+      // Maus: versteckt im Loch → runterzählen, ggf. wieder auftauchen; sonst überspringen.
+      if (entity instanceof Mouse && entity.hiding) {
+        entity.velX = 0; entity.velY = 0;
+        entity.hideTimer--;
+        if (entity.hideTimer <= 0) {
+          entity.hiding = false;
+          entity.hideCd = MOUSE_HIDE_COOLDOWN;
+          entity.fleeing = false;
+          engine.spawnDust(entity.x + entity.width / 2, entity.y + entity.height - 2, 1);
+          engine.spawnDust(entity.x + entity.width / 2, entity.y + entity.height - 2, -1);
+          audio.playSfx('mousePiep', engine.panForWorldX(entity.x + entity.width / 2));
+        }
+        continue;   // im Loch: keine Bewegung, keine Kollision
+      }
+      // Maus: Flucht-Zustand VOR dem Update setzen (braucht die Spielerposition).
+      if (entity instanceof Mouse && !entity.isDead) {
+        if (entity.hideCd > 0) {
+          // Frisch aus dem Loch: erst kurz normal weiterhuschen (kein erneutes Verstecken).
+          entity.hideCd--;
+          entity.fleeing = false;
+        } else {
+          const center = entity.x + entity.width / 2;
+          const wasFleeing = entity.fleeing;
+          if (Math.abs(player.x - entity.x) < MOUSE_FLEE_RANGE) {
+            entity.fleeing = true;
+            // Ziel: nächstes Mauseloch — die Maus flüchtet in ihren Bau.
+            let holeX = entity.homeX, best = Infinity;
+            for (const o of engine.entities) {
+              if (o instanceof Mouse) { const d = Math.abs(o.homeX - center); if (d < best) { best = d; holeX = o.homeX; } }
+            }
+            entity.fleeDir = holeX < center ? Direction.LEFT : Direction.RIGHT;
+            if (!wasFleeing) audio.playSfx('mousePiep', engine.panForWorldX(center));
+            // Am Loch angekommen? Hineinflitzen und kurz verschwinden.
+            if (best < MOUSE_HOLE_ENTER_DIST) {
+              entity.hiding = true;
+              entity.hideTimer = MOUSE_HIDE_DURATION;
+              entity.velX = 0;
+              engine.spawnDust(center, entity.y + entity.height - 2, entity.fleeDir === Direction.LEFT ? -1 : 1);
+              audio.playSfx('mousePiep', engine.panForWorldX(center));
+              continue;   // ab ins Loch — diesen Frame nicht mehr bewegen
+            }
+          } else {
+            entity.fleeing = false;
+          }
+        }
+      }
       entity.update(1);
       if (!entity.isDead) {
         const result = physics.moveEntity(entity);
         if (result.hitWall) entity.reverseDirection();
         if (result.edgeDetected && entity.edgeBehavior) entity.reverseDirection();
+      }
+      // Maus: Laufstaub beim Rennen/Fliehen (am Boden, gedrosselt).
+      if (entity instanceof Mouse && !entity.isDead && entity.onGround
+          && Math.abs(entity.velX) > 1.4 && Math.random() < 0.4) {
+        const mdir = entity.velX < 0 ? -1 : 1;
+        engine.spawnRunDust(entity.x + entity.width / 2 - mdir * entity.width * 0.3,
+          entity.y + entity.height - 2, -mdir);
+      }
+      // Schlangen-Boss: Sound-Trigger, Lunge-Staubfahne & Funkeln beim Auflösen.
+      if (entity instanceof SnakeBoss) {
+        if (entity.isDead) {
+          // Besiegt → löst sich über die Todes-Animation in Funkeln auf.
+          if (entity.deadTimer % 5 === 0) {
+            engine.spawnStarParticles(entity.x + entity.width / 2, entity.y + entity.height * 0.4);
+          }
+        } else {
+          if (entity.animState !== entity.prevAnimState) {
+            const pan = engine.panForWorldX(entity.x + entity.width / 2);
+            // Aufrichten (1): Zischen + Warn-Rasseln · Zuschnappen (2): „Wusch".
+            if (entity.animState === 1) { audio.playSfx('snakeHiss', pan); audio.playSfx('snakeRattle', pan); }
+            else if (entity.animState === 2) audio.playSfx('snakeLunge', pan);
+          }
+          entity.prevAnimState = entity.animState;
+          // Staubfahne hinter der Schlange während des Zuschnappens (am Boden).
+          if (entity.animState === 2 && entity.onGround && entity.stateTimer % 3 === 0) {
+            const mdir = entity.velX < 0 ? -1 : 1;
+            const px = mdir < 0 ? entity.x + entity.width : entity.x;
+            engine.spawnDust(px, entity.y + entity.height - 4, -mdir);
+          }
+        }
       }
     } else if (entity instanceof Snake) {
       entity.update(1);

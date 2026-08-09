@@ -11,6 +11,12 @@ import {
   DEER_SPEED, DEER_JUMP_FORCE, DEER_JUMP_INTERVAL, MAX_FALL_SPEED,
   DEER_BOSS_SPEED, DEER_BOSS_JUMP_FORCE, DEER_BOSS_JUMP_INTERVAL,
   DEER_BOSS_HP, DEER_BOSS_HIT_STUN, DEER_BOSS_W, DEER_BOSS_H,
+  SHEEP_SPEED, SHEEP_JUMP_FORCE, SHEEP_JUMP_INTERVAL, TURTLE_SPEED,
+  MOUSE_SPEED, MOUSE_JUMP_FORCE, MOUSE_JUMP_INTERVAL,
+  MOUSE_FLEE_SPEED, MOUSE_SNIFF_INTERVAL, MOUSE_SNIFF_DURATION,
+  SNAKE_BOSS_SPEED, SNAKE_BOSS_LUNGE_SPEED, SNAKE_BOSS_LUNGE_INTERVAL,
+  SNAKE_BOSS_WINDUP, SNAKE_BOSS_LUNGE_FRAMES, SNAKE_BOSS_RECOVER, SNAKE_BOSS_HP,
+  SNAKE_BOSS_HIT_STUN, SNAKE_BOSS_W, SNAKE_BOSS_H,
   PIRANHA_HIDE_TIME, PIRANHA_SHOW_TIME, SNAKE_SPEED, SPIDER_DROP_SPEED,
   SPIDER_SPEED, SPIKE_BALL_ROLL_RATE, TILE_SIZE,
   BANZAI_BILL_SPEED, BANZAI_BILL_SIZE, BANZAI_BILL_AGGRO_RANGE,
@@ -240,6 +246,260 @@ export class DeerBoss extends Entity {
     this.hp--;
     this.hitFlash = 10;
     this.hitStun = DEER_BOSS_HIT_STUN;
+    if (this.hp <= 0) {
+      this.isDead = true;
+      this.velX = 0;
+      this.deadTimer = 0;
+      return true;
+    }
+    return false;
+  }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/** Wolken-Schaf (Wolkenwelt) — trabt gemütlich und macht ab und zu einen
+ *  weichen Hüpfer. Ein Kopfsprung besiegt es. */
+export class Sheep extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  jumpTimer = 0;
+  edgeBehavior = true;
+
+  constructor(x: number, y: number) {
+    super(x, y, 36, 32, EntityType.SHEEP);
+    this.direction = Direction.LEFT;
+    this.velX = -SHEEP_SPEED;
+  }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) {
+      this.deadTimer++;
+      if (this.deadTimer > 30) this.alive = false;
+      return;
+    }
+    this.velX = this.direction === Direction.LEFT ? -SHEEP_SPEED : SHEEP_SPEED;
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+    if (this.onGround) {
+      this.jumpTimer++;
+      if (this.jumpTimer >= SHEEP_JUMP_INTERVAL) {
+        this.velY = SHEEP_JUMP_FORCE;
+        this.jumpTimer = 0;
+        this.onGround = false;
+      }
+    }
+  }
+
+  stomp() {
+    this.isDead = true;
+    this.hitFlash = 7;
+    this.velX = 0;
+    this.deadTimer = 0;
+  }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/** Schildkröte (Tiefsee) — langsamer Panzer-Wanderer am Meeresboden, kein
+ *  Sprung. Ein Kopfsprung besiegt sie (zieht sich in den Panzer zurück). */
+export class Turtle extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  edgeBehavior = true;
+
+  constructor(x: number, y: number) {
+    super(x, y, 36, 30, EntityType.TURTLE);
+    this.direction = Direction.LEFT;
+    this.velX = -TURTLE_SPEED;
+  }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) {
+      this.deadTimer++;
+      if (this.deadTimer > 32) this.alive = false;
+      return;
+    }
+    this.velX = this.direction === Direction.LEFT ? -TURTLE_SPEED : TURTLE_SPEED;
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+  }
+
+  stomp() {
+    this.isDead = true;
+    this.hitFlash = 7;
+    this.velX = 0;
+    this.deadTimer = 0;
+  }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/** Kuschel-Mäuschen (Plüsch-Traumland) — flink und klein. Flieht vor der Figur
+ *  (Panik-Sprint weg), schnuppert in Ruhephasen und macht kurze Sprünge. Ein
+ *  Kopfsprung besiegt sie. `fleeing`/`fleeDir` setzt entity_step (Spielernähe). */
+export class Mouse extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  jumpTimer = 0;
+  edgeBehavior = true;
+  fleeing = false;
+  fleeDir = Direction.LEFT;
+  sniffing = false;
+  sniffTimer = 0;
+  // Mauseloch-Interaktion (Logik/Positionen in entity_step).
+  readonly homeX: number;      // Weltmitte des eigenen Lochs (= Spawn)
+  hiding = false;              // steckt gerade im Loch (unsichtbar/unverwundbar)
+  hideTimer = 0;
+  hideCd = 0;                  // Schonfrist nach dem Auftauchen
+
+  constructor(x: number, y: number) {
+    super(x, y, 30, 28, EntityType.MOUSE);
+    this.direction = Direction.LEFT;
+    this.velX = -MOUSE_SPEED;
+    this.homeX = x + 15;       // deckt sich mit der Loch-Deko (e.x + 15)
+  }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) {
+      this.deadTimer++;
+      if (this.deadTimer > 28) this.alive = false;
+      return;
+    }
+    if (this.fleeing) {
+      // Panik-Sprint weg von der Figur — kein Schnuppern.
+      this.direction = this.fleeDir;
+      this.velX = this.direction === Direction.LEFT ? -MOUSE_FLEE_SPEED : MOUSE_FLEE_SPEED;
+      this.sniffing = false;
+      this.sniffTimer = 0;
+    } else {
+      this.sniffTimer++;
+      if (this.sniffing) {
+        this.velX = 0;   // steht und schnuppert
+        if (this.sniffTimer >= MOUSE_SNIFF_DURATION) { this.sniffing = false; this.sniffTimer = 0; }
+      } else {
+        this.velX = this.direction === Direction.LEFT ? -MOUSE_SPEED : MOUSE_SPEED;
+        if (this.sniffTimer >= MOUSE_SNIFF_INTERVAL) { this.sniffing = true; this.sniffTimer = 0; }
+      }
+    }
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+    // Kurze Hüpfer nur beim normalen Umherlaufen (nicht beim Schnuppern).
+    if (this.onGround && !this.sniffing) {
+      this.jumpTimer++;
+      if (this.jumpTimer >= MOUSE_JUMP_INTERVAL) {
+        this.velY = MOUSE_JUMP_FORCE;
+        this.jumpTimer = 0;
+        this.onGround = false;
+      }
+    }
+  }
+
+  stomp() {
+    this.isDead = true;
+    this.hitFlash = 7;
+    this.velX = 0;
+    this.deadTimer = 0;
+  }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/** Schlangen-Boss (Australien-Finale) — kriecht am Boden, richtet sich vor dem
+ *  Angriff auf (Telegraph), schnellt vor (Lunge) und sackt danach kurz ab
+ *  (Erholung = gut sichtbares Fenster für den Kopfsprung). Drei Kopfsprünge
+ *  besiegen ihn; zwischen Treffern kurze i-frames, danach eine Phase flinker.
+ *  animState: 0 kriechen · 1 aufrichten · 2 zuschnappen · 3 erholen. */
+export class SnakeBoss extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  edgeBehavior = true;
+  hp = SNAKE_BOSS_HP;
+  maxHp = SNAKE_BOSS_HP;
+  hitStun = 0;
+  animState = 0;
+  prevAnimState = 0;   // für Sound-Trigger in entity_step (Zischen/Wusch bei Wechsel)
+  stateTimer = SNAKE_BOSS_LUNGE_INTERVAL;
+
+  constructor(x: number, y: number) {
+    super(x, y, SNAKE_BOSS_W, SNAKE_BOSS_H, EntityType.SNAKE_BOSS);
+    this.direction = Direction.LEFT;
+    this.velX = -SNAKE_BOSS_SPEED;
+  }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) {
+      this.deadTimer++;
+      if (this.deadTimer > 46) this.alive = false;
+      return;
+    }
+    if (this.hitStun > 0) this.hitStun--;
+    // Phase 0..2 — je 1 Treffer eine Stufe aggressiver, aber immer gut lesbar.
+    const phase = this.maxHp - this.hp;
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+    const dir = this.direction === Direction.LEFT ? -1 : 1;
+    this.stateTimer--;
+    if (this.animState === 0) {                          // kriechen (ruhig, lesbar)
+      this.velX = dir * SNAKE_BOSS_SPEED * (1 + phase * 0.30);
+      if (this.stateTimer <= 0) {
+        this.animState = 1;
+        this.stateTimer = Math.max(16, SNAKE_BOSS_WINDUP - phase * 5);   // 30 → 25 → 20
+        this.velX = 0;
+      }
+    } else if (this.animState === 1) {                   // aufrichten (Telegraph)
+      this.velX = 0;
+      if (this.stateTimer <= 0) {
+        this.animState = 2;
+        this.stateTimer = SNAKE_BOSS_LUNGE_FRAMES + phase * 4;           // längere Reichweite später
+      }
+    } else if (this.animState === 2) {                   // zuschnappen (Lunge)
+      this.velX = dir * SNAKE_BOSS_LUNGE_SPEED * (1 + phase * 0.22);     // 3.2 → 3.9 → 4.6
+      if (this.stateTimer <= 0) {
+        this.animState = 3;
+        this.stateTimer = Math.max(20, SNAKE_BOSS_RECOVER - phase * 8);  // 42 → 34 → 26
+        this.velX = 0;
+      }
+    } else {                                             // erholen (verwundbar)
+      this.velX = 0;
+      if (this.stateTimer <= 0) {
+        this.animState = 0;
+        this.stateTimer = Math.max(70, SNAKE_BOSS_LUNGE_INTERVAL - phase * 35); // 165 → 130 → 95
+      }
+    }
+  }
+
+  /** Treffer von oben. true, wenn der Boss dadurch besiegt wird. */
+  stomp(): boolean {
+    if (this.hitStun > 0) return false;
+    this.hp--;
+    this.hitFlash = 10;
+    this.hitStun = SNAKE_BOSS_HIT_STUN;
+    // Nach einem Treffer kurz zurück ins Kriechen und eine faire Atempause, bevor
+    // die nächste (nun flinkere) Attacke beginnt.
+    this.animState = 0;
+    this.velX = 0;
+    this.stateTimer = Math.max(55, SNAKE_BOSS_LUNGE_INTERVAL - (this.maxHp - this.hp) * 30);
     if (this.hp <= 0) {
       this.isDead = true;
       this.velX = 0;

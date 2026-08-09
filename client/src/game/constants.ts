@@ -394,6 +394,42 @@ export const DEER_BOSS_HP = 3;
 export const DEER_BOSS_HIT_STUN = 34;       // i-frames nach einem Treffer
 export const DEER_BOSS_W = 60;
 export const DEER_BOSS_H = 58;
+// Wolken-Schaf (Wolkenwelt): gemütlicher, weicher Hüpfer.
+export const SHEEP_SPEED = 1.0;
+export const SHEEP_JUMP_FORCE = -6.5;
+export const SHEEP_JUMP_INTERVAL = 165;
+// Schildkröte (Tiefsee): langsamer, gemütlicher Panzer-Wanderer am Meeresboden.
+export const TURTLE_SPEED = 0.7;
+// Feldmaus (Die blaue Wiese): flink und klein, macht kurze Sprints.
+export const MOUSE_SPEED = 1.9;
+export const MOUSE_JUMP_FORCE = -6;
+export const MOUSE_JUMP_INTERVAL = 120;
+// Maus-Details: flieht vor der Figur (Sprint weg) und schnuppert ab und zu.
+export const MOUSE_FLEE_SPEED = 3.4;   // Panik-Sprint
+export const MOUSE_FLEE_RANGE = 92;    // Weltpixel: ab hier flieht die Maus
+export const MOUSE_SNIFF_INTERVAL = 190; // Frames zwischen Schnupper-Pausen
+export const MOUSE_SNIFF_DURATION = 34;  // Länge einer Schnupper-Pause
+// Fliehende Maus flitzt in ein Mauseloch und verschwindet kurz.
+export const MOUSE_HIDE_DURATION = 110;  // Frames unsichtbar im Loch
+export const MOUSE_HOLE_ENTER_DIST = 16; // Weltpixel Abstand zum Loch zum Reinflitzen
+export const MOUSE_HIDE_COOLDOWN = 90;   // Frames nach dem Auftauchen ohne erneutes Verstecken
+// Schlangen-Boss (Australien-Finale): kriecht, richtet sich auf (Telegraph),
+// schnellt vor (Lunge) und sackt danach kurz ab (Erholung = verwundbares
+// Fenster für den Kopfsprung). Drei Kopfsprünge besiegen ihn; mit jedem Treffer
+// eine Phase aggressiver. Kein vertikaler Sprung — bleibt am Boden.
+// Alle folgenden Werte sind die PHASE-0-Basis (frisch, hp3); die Klasse staffelt
+// sie pro Treffer (phase 0..2): schneller, kürzerer Telegraph, weitere Lunge,
+// häufigere Angriffe und ein kürzeres (aber faires) Erholungs-Fenster.
+export const SNAKE_BOSS_SPEED = 0.8;           // Kriechtempo (ruhiger Einstieg)
+export const SNAKE_BOSS_LUNGE_SPEED = 3.2;     // Lunge-Tempo (skaliert mit Phase)
+export const SNAKE_BOSS_LUNGE_INTERVAL = 165;  // Frames zwischen Zuschnapp-Attacken
+export const SNAKE_BOSS_WINDUP = 30;           // Aufricht-Telegraph (gut lesbar)
+export const SNAKE_BOSS_LUNGE_FRAMES = 22;     // Dauer/Reichweite der Lunge
+export const SNAKE_BOSS_RECOVER = 42;          // Erholungs-Pause danach (Stomp-Fenster)
+export const SNAKE_BOSS_HP = 3;
+export const SNAKE_BOSS_HIT_STUN = 34;
+export const SNAKE_BOSS_W = 48;
+export const SNAKE_BOSS_H = 54;
 export const SNAKE_SPEED = 2.0;
 // Baby-Drachen (Welt 16): hüpfen aktiv Richtung Spielerin (etwas fordernder),
 // stampfbar, schaden bei Berührung. Ei schlüpft bei Annäherung.
@@ -485,6 +521,10 @@ export enum EntityType {
   DEER = 'deer',
   DEER_BROWN = 'deer_brown',
   DEER_BOSS = 'deer_boss',
+  SHEEP = 'sheep',
+  TURTLE = 'turtle',
+  MOUSE = 'mouse',
+  SNAKE_BOSS = 'snake_boss',
   MINI_UFO = 'mini_ufo',
   UFO_LASER = 'ufo_laser',
   CAPE = 'cape',

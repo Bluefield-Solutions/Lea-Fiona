@@ -1124,6 +1124,114 @@ function drawDeerBoss(
   }
 }
 
+// --- Schaf (Wolkenwelt) · 10 Frames: 0 idle · 1-4 walk · 5 run · 6-8 jump · 9 land ---
+function drawSheep(
+  this: Renderer, x: number, y: number, w: number, h: number,
+  frame: number, isDead: boolean, direction: number, velY = 0, onGround = true,
+) {
+  let idx: number;
+  if (isDead) idx = 9;                                  // Landing-Recovery als „getroffen"
+  else if (!onGround) idx = velY < 0 ? 6 : 8;           // Takeoff (steigend) / Flight-B (fallend)
+  else idx = 1 + (Math.floor(frame * 0.18) % 2) * 2;    // Contact A / Contact B im Trab
+  if (blitReh(this, this.schafFrames, x, y, w, h, idx, direction, isDead, 1.55)) return;
+  const ctx = this.ctx;
+  ctx.save(); ctx.fillStyle = '#f6f3ec';
+  ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.5, w * 0.45, h * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// --- Schildkröte (Tiefsee) · 10 Frames: 0 stand · 1-5 walk · 6 crouch · 7 crawl · 8 jump · 9 land ---
+function drawTurtle(
+  this: Renderer, x: number, y: number, w: number, h: number,
+  frame: number, isDead: boolean, direction: number, velY = 0, onGround = true,
+) {
+  let idx: number;
+  if (isDead) idx = 6;                                  // Crouch = in den Panzer zurückgezogen
+  else if (!onGround) idx = 8;                          // Jump
+  else idx = 1 + (Math.floor(frame * 0.16) % 5);        // Walk-Zyklus 1..5 (weiches Kriechen)
+  if (blitReh(this, this.turtleFrames, x, y, w, h, idx, direction, isDead, 1.5)) return;
+  const ctx = this.ctx;
+  ctx.save(); ctx.fillStyle = '#5fbfae';
+  ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.55, w * 0.45, h * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// --- Maus (Wiese) · 10 Frames: 0 idle · 1-4 walk · 5 takeoff · 6 flight · 7 run · 8 fall · 9 land ---
+function drawMouse(
+  this: Renderer, x: number, y: number, w: number, h: number,
+  frame: number, isDead: boolean, direction: number, velY = 0, onGround = true,
+  sniffing = false, fleeing = false,
+) {
+  let idx: number;
+  let yOff = 0;
+  if (isDead) idx = 9;                                  // Landing-Crouch als „getroffen"
+  else if (!onGround) idx = velY < 0 ? 5 : 8;           // Takeoff (steigend) / Falling (fallend)
+  else if (fleeing) idx = 7;                            // Renn-Pose beim Flüchten
+  else if (sniffing) {
+    idx = 0;                                            // Idle-Pose beim Schnuppern
+    yOff = Math.abs(Math.sin(frame * 0.45)) * 1.6;      // sanftes Nasen-/Kopf-Wippen
+  } else idx = 1 + (Math.floor(frame * 0.22) % 2) * 2;  // Contact A / Contact B, flink
+  // Feines Schnurrhaar-/Nasen-Zucken beim Schnuppern (leichte horizontale Stauchung).
+  const wig = sniffing ? 1 + Math.sin(frame * 0.9) * 0.03 : 1;
+  const drawW = w * wig, drawX = x + (w - drawW) / 2;
+  if (blitReh(this, this.mausFrames, drawX, y + yOff, drawW, h, idx, direction, isDead, 1.45)) return;
+  const ctx = this.ctx;
+  ctx.save(); ctx.fillStyle = '#b9b2ad';
+  ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.55, w * 0.4, h * 0.36, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// --- Schlangen-Boss (Australien) · 10 Frames: 0 idle-coil · 1/3 creep · 2 raised ·
+//     4 low-coil · 5 turn · 6-7 stretch · 8 jump/strike · 9 landing.
+//     animState: 0 kriechen · 1 aufrichten (Telegraph) · 2 zuschnappen (Lunge). ---
+function drawSnakeBoss(
+  this: Renderer, x: number, y: number, w: number, h: number,
+  frame: number, isDead: boolean, direction: number, animState = 0,
+  hp = 3, maxHp = 3,
+) {
+  const ctx = this.ctx;
+  let idx: number;
+  if (isDead) idx = 4;                                  // Low-Coil = besiegt zusammengesackt
+  else if (animState === 1) idx = 2;                    // aufgerichtet (Telegraph)
+  else if (animState === 2) idx = 8;                    // zuschnappen (gestreckt)
+  else if (animState === 3) idx = 9;                    // erholen (abgesackt, verwundbar)
+  else idx = 1 + (Math.floor(frame * 0.14) % 2) * 2;    // Creep A / Creep B
+  // Gefahren-Aura nur beim Aufrichten/Zuschnappen (warmes Rot-Orange) — im
+  // Erholungs-Fenster (3) bewusst AUS, damit „jetzt draufspringen" klar ist.
+  if (!isDead && (animState === 1 || animState === 2)) {
+    ctx.save();
+    const cx = x + w / 2, cy = y + h * 0.45;
+    const g = ctx.createRadialGradient(cx, cy, w * 0.15, cx, cy, w * 1.0);
+    g.addColorStop(0, 'rgba(255,120,60,0.28)');
+    g.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, w * 1.0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // Boss = große Schlange (etwas größerer Scale für Präsenz).
+  if (!blitReh(this, this.schlangeFrames, x, y, w, h, idx, direction, isDead, 1.7)) {
+    ctx.save(); ctx.fillStyle = '#e58bb0';
+    ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.5, w * 0.4, h * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // HP-Anzeige (3 Pips) über dem Boss, solange er lebt.
+  if (!isDead) {
+    ctx.save();
+    const pipR = 3.4, gap = 4, drawH = h * 1.7;
+    const totalW = maxHp * (pipR * 2) + (maxHp - 1) * gap;
+    const startX = x + w / 2 - totalW / 2 + pipR;
+    const py = y + h - drawH - 8;
+    for (let i = 0; i < maxHp; i++) {
+      const px = startX + i * (pipR * 2 + gap);
+      ctx.beginPath(); ctx.arc(px, py, pipR, 0, Math.PI * 2);
+      ctx.fillStyle = i < hp ? '#ff5a7a' : 'rgba(255,255,255,0.25)';
+      ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 export const enemiesCoreMethods = {
   getCachedGoomba,
   drawGoomba,
@@ -1135,4 +1243,8 @@ export const enemiesCoreMethods = {
   drawDeer,
   drawBrownDeer,
   drawDeerBoss,
+  drawSheep,
+  drawTurtle,
+  drawMouse,
+  drawSnakeBoss,
 };
