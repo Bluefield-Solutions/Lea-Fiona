@@ -4,7 +4,7 @@
 // culling, pool recycling, alive filter).
 import {
   Entity, Goomba, Koopa, Boss, Bat, Coin, SpinningCoin, PowerUp, PiranhaPlant,
-  Spider, Crab, Jellyfish, Kangaroo, Snake, Fireball, Ghost, Fish,
+  Spider, Crab, Jellyfish, Kangaroo, Deer, Snake, Fireball, Ghost, Fish,
   Wizard, MagicBolt, BombOmb, BombExplosion, PlayerFireball, SpikeBall,
   Hornet, BanzaiBill, CharginChuck, BigBoo,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO, BabyDragon, DragonEgg,
@@ -174,6 +174,13 @@ export function stepEntities(engine: GameEngine): void {
           }
           a._wasGround = entity.onGround;
         }
+      }
+    } else if (entity instanceof Deer) {
+      entity.update(1);
+      if (!entity.isDead) {
+        const result = physics.moveEntity(entity);
+        if (result.hitWall) entity.reverseDirection();
+        if (result.edgeDetected && entity.edgeBehavior) entity.reverseDirection();
       }
     } else if (entity instanceof Snake) {
       entity.update(1);

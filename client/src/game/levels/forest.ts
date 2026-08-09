@@ -96,9 +96,12 @@ export function createForestLevel(): LevelData {
   const Ba = (col: number, row: number) => entities.push({ type: EntityType.BAT, x: col * TILE_SIZE, y: row * TILE_SIZE });
   const Sp = (col: number) => entities.push({ type: EntityType.SPRING_STONE, x: col * TILE_SIZE, y: ground * TILE_SIZE });
   const Cr = (col: number) => entities.push({ type: EntityType.CRATE, x: col * TILE_SIZE, y: ground * TILE_SIZE });
+  const De = (col: number, row = ground - 2) => entities.push({ type: EntityType.DEER, x: col * TILE_SIZE, y: row * TILE_SIZE });
 
   G(20); G(41); K(72); G(100); Ba(128, ground - 7); K(150); G(169); G(197);
   Sp(61); Cr(58); Cr(81);
+  // Eisrehe — trabende Wald-Bewohner (auf Lichtung & Hügel), machen sanfte Sätze.
+  De(66); De(180);
 
   // ── Münzen ──
   const { addCoinRow, addCoinArc } = bindCoinHelpers(entities);
@@ -130,7 +133,7 @@ export function createForestLevel(): LevelData {
     for (let c = h.startCol; c <= h.endCol; c++) set(c, ground, TileType.GROUND);
 
   // Boden-Gegner/Objekte auf die Hügelkurve heben.
-  const groundEnemies = new Set<EntityType>([EntityType.GOOMBA, EntityType.KOOPA, EntityType.SPIKE_BALL, EntityType.APE]);
+  const groundEnemies = new Set<EntityType>([EntityType.GOOMBA, EntityType.KOOPA, EntityType.SPIKE_BALL, EntityType.APE, EntityType.DEER]);
   for (const e of entities) {
     if (e.type === EntityType.SPRING_STONE || e.type === EntityType.CRATE) {
       const sy = smoothGroundY(terrainHills, e.x + TILE_SIZE / 2);

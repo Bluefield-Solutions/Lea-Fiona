@@ -5,7 +5,7 @@
 import { EntityType, TILE_SIZE, Direction } from '../constants';
 import {
   Goomba, Koopa, Boss, Bat, Coin, PiranhaPlant, Spider, Crab, Jellyfish,
-  Kangaroo, Snake, Fireball, Ghost, Fish, Wizard, BombOmb, SpikeBall,
+  Kangaroo, Deer, Snake, Fireball, Ghost, Fish, Wizard, BombOmb, SpikeBall,
   Hornet, BanzaiBill, CharginChuck, BigBoo,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO, MovingPlatform, Spring, Crate, Switch, Door, FireBarrier,
   PowerUp, BabyDragon, DragonEgg,
@@ -25,6 +25,9 @@ export function spawnLevelEntities(engine: GameEngine): void {
     switch (spawn.type) {
       case EntityType.GOOMBA:
         engine.entities.push(new Goomba(spawn.x, spawn.y));
+        break;
+      case EntityType.DEER:
+        engine.entities.push(new Deer(spawn.x, spawn.y));
         break;
       case EntityType.DRAGON_EGG:
         engine.entities.push(new DragonEgg(spawn.x, spawn.y));

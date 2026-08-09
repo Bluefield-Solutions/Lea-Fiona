@@ -19,6 +19,7 @@
   export type { PowerUpKind } from './entities/pickups';
   export {
     Goomba, Koopa, Boss, Bat, PiranhaPlant, Spider, Crab, Jellyfish, Kangaroo,
+    Deer,
     Snake, Ghost, Fish, BombOmb, BombExplosion, SpikeBall, Hornet,
     BanzaiBill, CharginChuck, BigBoo,
     Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO,

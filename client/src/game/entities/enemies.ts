@@ -7,7 +7,8 @@ import {
   GHOST_FLY_AMPLITUDE, GHOST_FLY_SPEED, GHOST_SPEED, GRAVITY,
   HORNET_AGGRO_RANGE, HORNET_AMPLITUDE, HORNET_DIVE_SPEED, HORNET_FLY_SPEED,
   HORNET_SPEED, JELLYFISH_FLY_AMPLITUDE, JELLYFISH_FLY_SPEED, JELLYFISH_SPEED,
-  KANGAROO_JUMP_FORCE, KANGAROO_JUMP_INTERVAL, KANGAROO_SPEED, MAX_FALL_SPEED,
+  KANGAROO_JUMP_FORCE, KANGAROO_JUMP_INTERVAL, KANGAROO_SPEED,
+  DEER_SPEED, DEER_JUMP_FORCE, DEER_JUMP_INTERVAL, MAX_FALL_SPEED,
   PIRANHA_HIDE_TIME, PIRANHA_SHOW_TIME, SNAKE_SPEED, SPIDER_DROP_SPEED,
   SPIDER_SPEED, SPIKE_BALL_ROLL_RATE, TILE_SIZE,
   BANZAI_BILL_SPEED, BANZAI_BILL_SIZE, BANZAI_BILL_AGGRO_RANGE,
@@ -490,6 +491,57 @@ export class Kangaroo extends Entity {
       this.jumpTimer++;
       if (this.jumpTimer >= jumpInterval) {
         this.velY = jumpForce;
+        this.jumpTimer = 0;
+        this.onGround = false;
+      }
+    }
+  }
+
+  stomp() {
+    this.isDead = true;
+    this.hitFlash = 7;
+    this.velX = 0;
+    this.deadTimer = 0;
+  }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/**
+ * Eisreh (Wald-Gegner). Trabt am Boden und macht in ruhigen Abständen einen
+ * sanften Satz (Sprung). Stampfbar wie ein Goomba. Frame-/Posenwahl (Stand /
+ * Walk / Leap) übernimmt der Renderer anhand von onGround/velY.
+ */
+export class Deer extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  jumpTimer = 0;
+  edgeBehavior = true;
+
+  constructor(x: number, y: number) {
+    super(x, y, 34, 34, EntityType.DEER);
+    this.direction = Direction.LEFT;
+    this.velX = -DEER_SPEED;
+  }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) {
+      this.deadTimer++;
+      if (this.deadTimer > 30) this.alive = false;
+      return;
+    }
+    this.velX = this.direction === Direction.LEFT ? -DEER_SPEED : DEER_SPEED;
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+    if (this.onGround) {
+      this.jumpTimer++;
+      if (this.jumpTimer >= DEER_JUMP_INTERVAL) {
+        this.velY = DEER_JUMP_FORCE;
         this.jumpTimer = 0;
         this.onGround = false;
       }

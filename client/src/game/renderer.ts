@@ -6,6 +6,7 @@ import { PANDA_FRAME_URLS } from './assets/pandaSprites.ts';
 import { ELEFANT_FRAME_URLS } from './assets/elefantSprites.ts';
 import { DRACHE_FRAME_URLS } from './assets/dracheSprites.ts';
 import { DINO_WALK_URLS } from './assets/dinoWalkSprites.ts';
+import { REH_FRAME_URLS } from './assets/rehSprites.ts';
 import fiona01 from '@assets/fiona_01.webp';
 import fiona02 from '@assets/fiona_02.webp';
 import fiona03 from '@assets/fiona_03.webp';
@@ -140,6 +141,8 @@ export class Renderer {
   // Welt 16: Drachen-Boss-Sprites. 0-3 Laufzyklus · 4 Brüllen.
   dracheFrames: (HTMLImageElement | null)[] = new Array(5).fill(null);
   dinoWalkFrames: (HTMLImageElement | null)[] = new Array(6).fill(null);
+  // Wald: Eisreh-Gegner. 0 stand · 1-2 walk · 3 run · 4-5 leap · 6 recovery.
+  rehFrames: (HTMLImageElement | null)[] = new Array(7).fill(null);
   // Avatar/preview still draws a single standing image (Lea's stand frame).
   playerImage: HTMLImageElement | null = null;
   playerImageLoaded = false;
@@ -195,6 +198,7 @@ export class Renderer {
     ELEFANT_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.elefantFrames, i));
     DRACHE_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.dracheFrames, i));
     DINO_WALK_URLS.forEach((p, i) => this.loadFrame(p, this.dinoWalkFrames, i));
+    REH_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.rehFrames, i));
     this.loadFrame(BERATER_DUCK_URL, this.beraterDuckArr, 0);
   }
 

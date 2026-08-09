@@ -1012,6 +1012,48 @@ function drawBoss(this: Renderer, x: number, y: number, w: number, h: number, di
   ctx.restore();
 }
 
+// Eisreh (Wald-Gegner): blittet einen der 7 base64-Frames, an den Füßen
+// verankert, gespiegelt je Blickrichtung (Sprite blickt LINKS). Gibt false
+// zurück, solange die Bilder noch nicht geladen sind → Aufrufer malt Platzhalter.
+export function drawRehSprite(
+  r: Renderer, x: number, y: number, w: number, h: number,
+  frameIdx: number, direction: number, isDead: boolean, scale = 1.55,
+): boolean {
+  const frames = r.rehFrames;
+  const ref = frames && frames[0];
+  if (!ref) return false;
+  const ctx = r.ctx;
+  ctx.save();
+  const cx = x + w / 2;
+  const drawH = h * scale * (isDead ? 0.72 : 1);
+  const drawW = drawH * (ref.width / ref.height);
+  const f = frames[frameIdx] || ref;
+  ctx.translate(cx, y + h);
+  if (direction === 1) ctx.scale(-1, 1);   // Sprite blickt links → bei Richtung rechts spiegeln
+  if (isDead) { ctx.translate(0, drawH * 0.3); ctx.scale(1, -1); ctx.translate(0, -drawH); }
+  ctx.drawImage(f, -drawW / 2, -drawH, drawW, drawH);
+  ctx.restore();
+  return true;
+}
+
+function drawDeer(
+  this: Renderer, x: number, y: number, w: number, h: number,
+  frame: number, isDead: boolean, direction: number, velY = 0, onGround = true,
+) {
+  // Posenwahl aus Bewegungszustand: Sprung (auf/ab), Trab (Walk A/B), sonst Stand.
+  let idx: number;
+  if (isDead) idx = 6;                                  // Recovery-Pose als „getroffen"
+  else if (!onGround) idx = velY < 0 ? 4 : 5;           // LEAP_A (steigend) / LEAP_B (fallend)
+  else idx = 1 + (Math.floor(frame * 0.18) % 2);        // WALK_A / WALK_B im Trab
+  if (drawRehSprite(this, x, y, w, h, idx, direction, isDead)) return;
+  // Fallback (Sprites noch nicht geladen): hellblauer Platzhalter.
+  const ctx = this.ctx;
+  ctx.save();
+  ctx.fillStyle = '#bfe3ff';
+  ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.55, w * 0.4, h * 0.36, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 export const enemiesCoreMethods = {
   getCachedGoomba,
   drawGoomba,
@@ -1020,4 +1062,5 @@ export const enemiesCoreMethods = {
   drawKoopa,
   getCachedBatBody,
   drawBat,
+  drawDeer,
 };

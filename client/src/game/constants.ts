@@ -378,6 +378,12 @@ export const JELLYFISH_FLY_SPEED = 0.025;
 export const KANGAROO_SPEED = 1.6;
 export const KANGAROO_JUMP_FORCE = -8;
 export const KANGAROO_JUMP_INTERVAL = 90;
+
+// Eisreh (Wald-Gegner): trabt gemächlich und macht ab und zu einen sanften,
+// gut vorhersehbaren Satz — kinderfreundlich für Level 3.
+export const DEER_SPEED = 1.15;
+export const DEER_JUMP_FORCE = -7;
+export const DEER_JUMP_INTERVAL = 150;
 export const SNAKE_SPEED = 2.0;
 // Baby-Drachen (Welt 16): hüpfen aktiv Richtung Spielerin (etwas fordernder),
 // stampfbar, schaden bei Berührung. Ei schlüpft bei Annäherung.
@@ -466,6 +472,7 @@ export enum EntityType {
   BABY_DRAGON = 'baby_dragon',
   SNOWBALL = 'snowball',
   KNIGHT = 'knight',
+  DEER = 'deer',
   MINI_UFO = 'mini_ufo',
   UFO_LASER = 'ufo_laser',
   CAPE = 'cape',

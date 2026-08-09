@@ -15,7 +15,7 @@ import {
 } from '../constants';
 import {
   Entity, Goomba, Koopa, Boss, Bat, Coin, SpinningCoin, SpecialCoin, PowerUp, PiranhaPlant,
-  Spider, Crab, Jellyfish, Kangaroo, Snake, Fireball, Ghost, Fish,
+  Spider, Crab, Jellyfish, Kangaroo, Deer, Snake, Fireball, Ghost, Fish,
   Wizard, MagicBolt, BombOmb, BombExplosion, PlayerFireball, SpikeBall,
   Hornet, BanzaiBill, CharginChuck, BigBoo,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO,
@@ -719,6 +719,18 @@ export function runEntityCollisions(engine: GameEngine): void {
           const boosted = player.velY > 0 ? playerBounceFromStomp(engine) : false;
           audio.playSfx(boosted ? 'bounceBoost' : 'stomp');
           applyStompCombo(engine, ENEMY_KILL_SCORE * 2, entity);
+        } else {
+          playerHit(engine, entity);
+        }
+      }
+    } else if (entity instanceof Deer) {
+      if (entity.isDead) continue;
+      if (player.intersects(entity)) {
+        if (isStompHit(engine, entity)) {
+          entity.stomp();
+          const boosted = player.velY > 0 ? playerBounceFromStomp(engine) : false;
+          audio.playSfx(boosted ? 'bounceBoost' : 'stomp');
+          applyStompCombo(engine, ENEMY_KILL_SCORE, entity);
         } else {
           playerHit(engine, entity);
         }

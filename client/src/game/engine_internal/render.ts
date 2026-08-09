@@ -8,7 +8,7 @@ import {
 import {
   Coin, SpinningCoin, SpecialCoin, Goomba, Koopa, Boss, Bat, PowerUp, SpikeBall, Hornet, MovingPlatform, Spring, Crate, Switch, Door, FireBarrier,
   BombOmb, BombExplosion, PlayerFireball, Spider, Crab, Jellyfish,
-  Kangaroo, Snake, Fireball, Ghost, Fish, Wizard, MagicBolt, PiranhaPlant,
+  Kangaroo, Deer, Snake, Fireball, Ghost, Fish, Wizard, MagicBolt, PiranhaPlant,
   BanzaiBill, CharginChuck, BigBoo,
   Particle, FloatingText,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO, BabyDragon, DragonEgg,
@@ -359,6 +359,9 @@ function renderWorldLayer(engine: GameEngine): void {
       engine.renderer.drawJellyfish(screen.x, screen.y, entity.width, entity.height, entity.frame);
     } else if (entity instanceof Kangaroo) {
       engine.renderer.drawKangaroo(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction);
+    } else if (entity instanceof Deer) {
+      engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+      engine.renderer.drawDeer(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround);
     } else if (entity instanceof Snake) {
       engine.renderer.drawSnake(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction);
     } else if (entity instanceof Fireball) {
