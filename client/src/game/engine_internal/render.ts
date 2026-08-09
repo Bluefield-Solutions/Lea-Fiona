@@ -101,6 +101,17 @@ function renderWorldLayer(engine: GameEngine): void {
   const groundBaseRow = groundRowOf(engine.level);
   const grassBand = engine.level.theme === 'jungle' || engine.level.theme === 'beach' || engine.level.theme === 'australia' || engine.level.theme === 'bluefield';
 
+  // Waldbach-Schimmer: Tageslicht-Anteil aus dem Level-Fortschritt (wie im
+  // Wald-Hintergrund), damit die Reflexe tags hell und nachts kühl-silbrig sind.
+  const isForest = engine.level.theme === 'forest';
+  let forestDayF = 0;
+  if (isForest) {
+    const span = Math.max(1, (engine.camera.worldWidth || engine.camera.width) - engine.camera.width);
+    const fp = Math.max(0, Math.min(1, engine.camera.x / span));
+    const k = Math.max(0, Math.min(1, (fp - 0.30) / (0.56 - 0.30)));
+    forestDayF = 1 - k * k * (3 - 2 * k);
+  }
+
   // Nahe Vegetation (Büsche) hinter dem Spielfeld, an die Bodenlinie gekoppelt.
   if (engine.renderer.quality !== 'low') {
     renderNearBushes(engine, startCol, endCol);
@@ -142,6 +153,10 @@ function renderWorldLayer(engine: GameEngine): void {
           drawTileType = TileType.GROUND;
         }
         engine.renderer.drawTile(drawTileType, screen.x, screen.y + tileDip, col, row);
+        // Waldbach: lebendige Lichtreflexe auf der Wasseroberfläche (live, mit time).
+        if (isForest && tile === TileType.WATER_TOP) {
+          engine.renderer.drawForestWaterShimmer(engine.renderer.ctx, screen.x, screen.y + tileDip, engine.renderer.time, col, forestDayF, engine.renderer.viewportW);
+        }
         // Element-Tint (Audit P1): geteilte Bau-Elemente (Ziegel, Holz-/Plattform,
         // Röhre) nehmen den Welt-Farbton an — kein braunes/grünes Fremdkörper mehr
         // in kühlen/dunklen Welten. No-op in Welten ohne Theme-Tint.
@@ -405,7 +420,7 @@ function renderWorldLayer(engine: GameEngine): void {
   // Feinschliff: Coin-Pop-Ringe — über den Entities, am Sammelpunkt.
   for (const c of engine.coinPops) {
     const cs = engine.camera.worldToScreenInto(c.x, c.y, _s);
-    engine.renderer.drawCoinPop(cs.x, cs.y, c.age, c.max);
+    engine.renderer.drawCoinPop(cs.x, cs.y, c.age, c.max, c.combo);
   }
 
   {

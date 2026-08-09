@@ -1014,26 +1014,39 @@ function drawShockwave(this: Renderer, x: number, y: number, age: number, maxAge
 // Einsammeln kurz aufploppt (skaliert nach außen + blendet schnell aus), plus
 // ein winziger Kern-Blitz am Anfang. Additiv ('lighter'), damit er auf jedem
 // Untergrund glänzt. Bewusst klein/kurz, ergänzt die vorhandenen Funken.
-function drawCoinPop(this: Renderer, x: number, y: number, age: number, maxAge: number) {
+function drawCoinPop(this: Renderer, x: number, y: number, age: number, maxAge: number, combo = 0) {
   const ctx = this.ctx;
   const t = Math.min(1, age / maxAge);
   const ease = 1 - (1 - t) * (1 - t);       // ease-out: schnell auf, dann sanft
-  const r = 4 + ease * 15;
-  const alpha = (1 - t) * (1 - t) * 0.9;     // schnelles Ausblenden
+  // Combo-Eskalation (0..1): der Pop-Ring wächst, leuchtet heller und verschiebt
+  // sich von Gold nach Weiß-heiß — dezentes visuelles Pendant zur steigenden
+  // Tonhöhe der Münzreihe. combo 0 ⇒ exakt wie zuvor (kein Regressions-Risiko).
+  const cf = Math.min(1, combo / 8);
+  const r = (4 + ease * 15) * (1 + cf * 0.55);
+  const alpha = (1 - t) * (1 - t) * (0.9 + cf * 0.25);
+  const g = Math.round(232 + 23 * cf);
+  const bl = Math.round(154 + 81 * cf);
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = alpha;
-  ctx.strokeStyle = '#ffe89a';
-  ctx.lineWidth = 2.2 * (1 - t) + 0.6;
+  ctx.strokeStyle = `rgb(255,${g},${bl})`;
+  ctx.lineWidth = (2.2 + cf * 1.4) * (1 - t) + 0.6;
   ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
   ctx.globalAlpha = alpha * 0.6;
   ctx.strokeStyle = '#fffbe0';
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(x, y, r * 0.6, 0, Math.PI * 2); ctx.stroke();
+  // Zweiter, weiterer Ring nur bei hoher Serie (dezent) — „Streak"-Gefühl.
+  if (cf > 0.45) {
+    ctx.globalAlpha = alpha * 0.35 * cf;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(x, y, r * 1.5, 0, Math.PI * 2); ctx.stroke();
+  }
   if (t < 0.35) {
-    ctx.globalAlpha = (1 - t / 0.35) * 0.7;
+    ctx.globalAlpha = (1 - t / 0.35) * (0.7 + cf * 0.3);
     ctx.fillStyle = '#fffdf2';
-    ctx.beginPath(); ctx.arc(x, y, 3.5 * (1 - t / 0.35) + 1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, (3.5 + cf * 2) * (1 - t / 0.35) + 1, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
 }
@@ -1151,6 +1164,7 @@ const SCENE_TINTS: Record<string, { c: string; a: number }> = {
   plush:      { c: '#ffb3d9', a: 0.14 },
   bluefield:  { c: '#7fc8ff', a: 0.15 },
   dragon:     { c: '#3fc86a', a: 0.22 },
+  forest:     { c: '#9aa878', a: 0.05 },
 };
 
 // Element-Tint (Grafik-Audit P1): geteilte Elemente (Ziegel, bewegliche
@@ -1436,6 +1450,7 @@ function drawSceneGrade(this: Renderer, theme: string, W: number, H: number) {
     plush: '40,20,40',
     bluefield: '20,44,70',
     dragon: '6,20,10',
+    forest: '10,14,24',
   };
   const vigC = VIG[theme] || '0,0,0';
   const overlay = this.getBgGradCache(`grade-${theme}-${W}x${H}`, (c, w, h) => {

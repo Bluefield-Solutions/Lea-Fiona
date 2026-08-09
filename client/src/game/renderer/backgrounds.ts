@@ -77,6 +77,11 @@ function drawBackground(this: Renderer, camera: Camera, worldWidth: number) {
     return;
   }
 
+  if (this.currentTheme === 'forest') {
+    this.drawForestBackground(camera);
+    return;
+  }
+
   if (this.currentTheme === 'bluefield') {
     // „Blaue Wiese" — frischer, optimistischer Tag-Himmel in Markenblau
     // (#1E48D6) oben, hell zum Horizont. Heller als das kräftig blaue Gras,
@@ -400,6 +405,395 @@ function drawBackground(this: Renderer, camera: Camera, worldWidth: number) {
   // BG-Aufwertung · Bodennebel: weiche, leicht grünliche Schwaden am unteren
   // Bildbereich, langsam driftend (gebackene Disc → kein Per-Frame-Gradient).
   this.drawGroundFog(camera, 210, 226, 202);
+}
+
+// =====================================================================
+//  Forest background (Level 3 „Wald der Dämmerung") — geschichteter Wald mit
+//  Lichtungen, weichem Kronen-Licht und einem TAG→DÄMMERUNG→NACHT-Bogen, der
+//  aus dem Level-Fortschritt (camera.x / worldWidth) gefahren wird: heller
+//  Morgen am Start → goldene Dämmerung → Nacht mit Sternenhimmel, Mond und
+//  Glühwürmchen. Alle Farben werden zwischen drei Zeit-Keyframes interpoliert.
+// =====================================================================
+function drawForestBackground(this: Renderer, camera: Camera) {
+  const ctx = this.ctx;
+  const W = this.viewportW, H = this.viewportH, t = this.time;
+
+  // Fortschritt 0..1 über das Level → Tageszeit. Bewusst so getaktet, dass die
+  // NACHT bereits bei ~80 % voll erreicht ist: das Finale (0.80–1.0) ist damit
+  // ein satter, ruhiger Sternenhimmel — der vom Spieler gewünschte „Hingucker".
+  const span = Math.max(1, (camera.worldWidth || W) - (camera.width || W));
+  const p = Math.max(0, Math.min(1, camera.x / span));
+  const smooth = (a: number, b: number, x: number) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+  const mix = (c1: number[], c2: number[], k: number) => [c1[0] + (c2[0] - c1[0]) * k, c1[1] + (c2[1] - c1[1]) * k, c1[2] + (c2[2] - c1[2]) * k];
+  const rgb = (c: number[]) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+  // Zwei überlagerte Übergänge: Tag→Dämmerung (Peak ~0.50) und Dämmerung→Nacht
+  // (voll bei ~0.80). Farbe = erst Tag/Dämmerung mischen, dann in die Nacht.
+  const toDusk = smooth(0.12, 0.50, p);
+  const toNight = smooth(0.50, 0.80, p);
+  const phC = (day: number[], dusk: number[], night: number[]) => mix(mix(day, dusk, toDusk), night, toNight);
+
+  const dayF = 1 - smooth(0.30, 0.56, p);   // Tageslicht-Anteil (God-Rays, 1=Tag)
+  const nightF = smooth(0.52, 0.80, p);     // Nacht-Anteil (Sterne/Mond)
+  const duskGlow = Math.max(0, 1 - Math.abs(p - 0.50) / 0.26); // Dämmerungs-Glut (Peak bei p≈0.5)
+
+  // ── Himmel: interpolierter Vertikal-Verlauf (pro Frame, da Zeit sich ändert) ──
+  // WICHTIG: Nur das obere Drittel (~0..0.5) ist sichtbar — darunter liegen
+  // Fern-Grat, Baumkronen & Boden. Deshalb sitzen die „Hero"-Farben (Morgen-
+  // Blau, Abend-Gold) BEWUSST weit oben (Stops 0.00–0.48), nicht am Horizont.
+  const sky = ctx.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0.00, rgb(phC([ 96, 154, 214], [ 44,  50, 102], [  8,  12,  38])))  // Zenit
+  sky.addColorStop(0.24, rgb(phC([138, 192, 232], [116,  80, 148], [ 14,  22,  58])))  // oberes Blau / Dämmer-Violett
+  sky.addColorStop(0.46, rgb(phC([180, 216, 240], [244, 150, 100], [ 22,  34,  74])))  // Horizont-Nähe / GOLD-Band
+  sky.addColorStop(1.00, rgb(phC([214, 234, 224], [252, 198, 128], [ 34,  48,  94])))  // (verdeckt) warmer Bodendunst
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Warmer Dämmerungs-Wash: legt einen goldenen Schimmer über die obere
+  //    Bildhälfte, damit die „goldene Stunde" auch die Kronen erfasst. ──
+  if (duskGlow > 0.04) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const wg = ctx.createLinearGradient(0, 0, 0, H * 0.62);
+    wg.addColorStop(0, `rgba(255,190,120,${(0.05 * duskGlow).toFixed(3)})`);
+    wg.addColorStop(0.55, `rgba(255,164,96,${(0.11 * duskGlow).toFixed(3)})`);
+    wg.addColorStop(1, 'rgba(255,150,90,0)');
+    ctx.fillStyle = wg;
+    ctx.fillRect(0, 0, W, H * 0.62);
+    ctx.restore();
+  }
+
+  // ── Sterne (nachts) ──
+  if (nightF > 0.02) {
+    ctx.save();
+    for (let i = 0; i < 54; i++) {
+      const sx = ((pseudoRandom(i * 7 + 1) * W * 1.6 - camera.x * 0.015) % W + W) % W;
+      const sy = pseudoRandom(i * 13 + 5) * H * 0.6;
+      const tw = 0.5 + Math.sin(t * 0.03 + i * 1.7) * 0.5;
+      ctx.globalAlpha = nightF * (0.35 + tw * 0.55);
+      ctx.fillStyle = '#eef4ff';
+      const r = 0.7 + (i % 3) * 0.5;
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ── Sonne (Tag→Dämmerung, sinkt & rötet, verschwindet nachts) ──
+  const sunP = Math.min(1, p / 0.62);
+  const sunAlpha = 1 - smooth(0.46, 0.70, p);
+  if (sunAlpha > 0.02) {
+    const sunX = W * (0.72 - p * 0.06);
+    const sunY = H * (0.20 + sunP * 0.46);
+    const sunCol = mix([255, 244, 200], [255, 150, 70], sunP);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const gl = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, H * (0.16 + sunP * 0.22));
+    gl.addColorStop(0, `rgba(${sunCol[0] | 0},${sunCol[1] | 0},${sunCol[2] | 0},${(0.5 * sunAlpha).toFixed(3)})`);
+    gl.addColorStop(0.5, `rgba(${sunCol[0] | 0},${sunCol[1] | 0},${sunCol[2] | 0},${(0.14 * sunAlpha).toFixed(3)})`);
+    gl.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = gl;
+    ctx.fillRect(sunX - H * 0.4, sunY - H * 0.4, H * 0.8, H * 0.8);
+    ctx.globalAlpha = sunAlpha;
+    ctx.fillStyle = `rgb(${sunCol[0] | 0},${sunCol[1] | 0},${sunCol[2] | 0})`;
+    ctx.beginPath(); ctx.arc(sunX, sunY, 24 + sunP * 8, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // ── Mond (steigt & leuchtet nachts) ──
+  if (nightF > 0.02) {
+    const moonX = W * 0.70, moonY = H * (0.46 - nightF * 0.30);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const mg = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, H * 0.2);
+    mg.addColorStop(0, `rgba(220,230,255,${(0.28 * nightF).toFixed(3)})`);
+    mg.addColorStop(1, 'rgba(200,215,255,0)');
+    ctx.fillStyle = mg; ctx.fillRect(moonX - H * 0.3, moonY - H * 0.3, H * 0.6, H * 0.6);
+    ctx.globalAlpha = nightF;
+    ctx.fillStyle = '#eef2ff';
+    ctx.beginPath(); ctx.arc(moonX, moonY, 20, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = nightF;
+    ctx.fillStyle = rgb(phC([228, 238, 190], [244, 182, 104], [26, 36, 74])); // Schattenmond in Himmelfarbe
+    ctx.beginPath(); ctx.arc(moonX + 8, moonY - 4, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // ── Ferne, dunstige Baumkronen-Silhouette (atmosphärische Tiefe) ──
+  const ridgeCol = phC([150, 186, 158], [120, 96, 130], [18, 30, 60]);
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = rgb(ridgeCol);
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  const rBase = H * 0.52;
+  for (let x = -20; x <= W + 20; x += 18) {
+    const wx = x + camera.x * 0.02;
+    const y = rBase - Math.abs(Math.sin(wx * 0.006)) * 40 - Math.abs(Math.sin(wx * 0.017 + 1.3)) * 22;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // ── Ferne Rehe am Waldsaum (sparsame Wildtier-Silhouetten, atmosph. Tiefe) ──
+  // An Welt-Positionen verankert (Parallaxe wie die Ferne), als dunkle Scheren-
+  // schnitte vor dem Grat. Leichtes Kopf-Wippen = Grasen. Nicht an jedem Slot.
+  const deerCol = mix(ridgeCol, [0, 0, 0], 0.42);
+  const drawDeer = (dx: number, dyB: number, s: number, dir: number, bob: number) => {
+    ctx.save();
+    ctx.translate(dx, dyB);
+    ctx.scale(dir * s, s);
+    ctx.fillStyle = rgb(deerCol);
+    // Beine
+    ctx.fillRect(-9, -8, 1.6, 8); ctx.fillRect(-5, -8, 1.6, 8);
+    ctx.fillRect(5, -8, 1.6, 8); ctx.fillRect(9, -8, 1.6, 8);
+    // Körper
+    ctx.beginPath(); ctx.ellipse(0, -10, 11, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+    // Hals + Kopf (wippt beim Grasen)
+    const hx = 10, hy = -14 + bob;
+    ctx.beginPath(); ctx.moveTo(6, -13); ctx.lineTo(hx - 1.5, hy); ctx.lineTo(hx + 1.5, hy); ctx.lineTo(9, -11); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(hx + 1.5, hy - 1, 3, 2.2, -0.3, 0, Math.PI * 2); ctx.fill();
+    // Ohren
+    ctx.beginPath(); ctx.moveTo(hx, hy - 2); ctx.lineTo(hx - 2, hy - 6); ctx.lineTo(hx + 1, hy - 3); ctx.closePath(); ctx.fill();
+    // kurzes Schwänzchen
+    ctx.beginPath(); ctx.ellipse(-11, -11, 1.8, 2.4, 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  };
+  // Rehe stehen AUF der Grat-Kante (gleiche Parallaxe 0.02 wie der Grat), damit
+  // ihr Körper gegen den Himmel steht statt in der gleichfarbigen Silhouette zu
+  // verschwinden. Grat-Höhe an der jeweiligen x-Position berechnen.
+  const ridgeYAt = (sx: number) => {
+    const wx = sx + camera.x * 0.02;
+    return rBase - Math.abs(Math.sin(wx * 0.006)) * 40 - Math.abs(Math.sin(wx * 0.017 + 1.3)) * 22;
+  };
+  const deerSp = 520;
+  const pxd = camera.x * 0.02;
+  ctx.globalAlpha = 0.8;
+  for (let i = Math.floor(pxd / deerSp) - 1; i <= Math.floor((pxd + W) / deerSp) + 1; i++) {
+    if (pseudoRandom(i * 97 + 13) < 0.55) continue;   // nur an manchen Slots ein Reh
+    const rx = i * deerSp + pseudoRandom(i * 53 + 2) * 160 - pxd;
+    const s = 0.85 + pseudoRandom(i * 41 + 6) * 0.45;
+    const dir = pseudoRandom(i * 29 + 4) < 0.5 ? -1 : 1;
+    const bob = Math.max(0, Math.sin(t * 0.02 + i)) * 3;  // Kopf senkt sich zum Grasen
+    drawDeer(rx, ridgeYAt(rx) + 2, s, dir, bob);
+  }
+  ctx.globalAlpha = 1;
+
+  // ── Baum-Helfer: Stamm + geschichtete, weiche Kronen-Blobs ──
+  const drawTree = (x: number, baseY: number, w: number, h: number, dark: number[], lit: number[], trunk: number[]) => {
+    const tw = w * 0.13;
+    ctx.fillStyle = rgb(trunk);
+    ctx.beginPath();
+    ctx.moveTo(x - tw * 0.6, baseY);
+    ctx.lineTo(x - tw * 0.36, baseY - h * 0.52);
+    ctx.lineTo(x + tw * 0.36, baseY - h * 0.52);
+    ctx.lineTo(x + tw * 0.6, baseY);
+    ctx.closePath(); ctx.fill();
+    const cy = baseY - h * 0.6;
+    const blobs: number[][] = [[0, -h * 0.30, w * 0.5], [-w * 0.34, -h * 0.10, w * 0.40], [w * 0.34, -h * 0.12, w * 0.40], [0, -h * 0.04, w * 0.48]];
+    ctx.fillStyle = rgb(dark);
+    for (const [dx, dy, r] of blobs) { ctx.beginPath(); ctx.arc(x + dx, cy + dy, r, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = rgb(lit);
+    for (const [dx, dy, r] of blobs) { ctx.beginPath(); ctx.arc(x + dx - r * 0.22, cy + dy - r * 0.26, r * 0.6, 0, Math.PI * 2); ctx.fill(); }
+  };
+
+  // ── Mittlere Baum-Ebene (Parallaxe 0.12) — mit LICHTUNGEN (Lücken) ──
+  const midDark = phC([40, 92, 52], [52, 54, 74], [14, 26, 40]);
+  const midLit = phC([96, 156, 82], [150, 110, 110], [30, 48, 62]);
+  const trunkCol = phC([78, 58, 40], [70, 50, 46], [18, 22, 34]);
+  // Maße relativ zur (kleinen) logischen Viewport-Höhe (~369px), sonst werden
+  // die Kronen riesig und bilden eine Decke über dem ganzen Himmel.
+  const midBaseY = H * 0.78;
+  const midSp = 132;
+  const pxm = camera.x * 0.12;
+  for (let i = Math.floor(pxm / midSp) - 1; i <= Math.floor((pxm + W) / midSp) + 1; i++) {
+    // Lichtung: jeder 4. Slot bleibt frei (Sonne/Sterne scheinen durch).
+    if (((i % 4) + 4) % 4 === 2) continue;
+    const jitter = pseudoRandom(i * 31 + 3);
+    const x = i * midSp + 40 + jitter * 30 - pxm;
+    const scale = 0.72 + pseudoRandom(i * 17 + 9) * 0.30;
+    drawTree(x, midBaseY + jitter * 8, H * 0.20 * scale, H * 0.30 * scale, midDark, midLit, trunkCol);
+  }
+
+  // ── Nebelschwaden zwischen den Stämmen (weiche, langsam driftende Schleier) ──
+  // Liegen am Fuß der Baumreihe und geben dem Wald Tiefe & Ruhe. Etwas dichter
+  // zur Dämmerung; Farbton folgt der Tageszeit (morgens/abends warm, nachts kühl).
+  const mistF = 0.55 + 0.45 * duskGlow;
+  const mistCol = phC([206, 222, 210], [214, 184, 192], [120, 132, 168]);
+  const mistDisc = getGlowDisc(112, mistCol[0] | 0, mistCol[1] | 0, mistCol[2] | 0, 0.5);
+  if (mistDisc) {
+    ctx.save();
+    ctx.globalAlpha = 0.09 * mistF;
+    const mp = camera.x * 0.10;
+    const spanW = W * 1.5;
+    for (let i = 0; i < 7; i++) {
+      const seed = i * 41.3;
+      let mx = (i / 7) * spanW + Math.sin(t * 0.004 + seed) * 60 - ((mp) % spanW);
+      if (mx < -240) mx += spanW;
+      const my = H * (0.68 + 0.05 * Math.sin(seed));
+      const sc = 2.3 + (i % 3) * 0.7;
+      // flach gezogen (Nebel ist breit & niedrig)
+      ctx.drawImage(mistDisc, mx - mistDisc.width * sc / 2, my - mistDisc.height * sc * 0.30, mistDisc.width * sc, mistDisc.height * sc * 0.6);
+    }
+    ctx.restore();
+  }
+
+  // ── God-Rays / Kronen-Licht (nur tagsüber, gecacht/additiv) ──
+  if (dayF > 0.03) {
+    const warm = mix([255, 236, 150], [255, 210, 150], 1 - dayF);
+    drawGodRays.call(this, 'forest', `${warm[0] | 0},${warm[1] | 0},${warm[2] | 0}`, 6, 0.05 * dayF, 0.02, 0.7,
+      { spanFrac: 1.35, centerFrac: 0.62, driftAmp: 0.02, driftSpd: 0.004 });
+  }
+
+  // ── Nahe Vordergrund-Bäume (Parallaxe 0.34) — dunkle Rahmung an den Rändern ──
+  // Bewusst wenige, moderat große Bäume: sie rahmen den unteren Bildbereich und
+  // geben Tiefe, dürfen aber KEINE geschlossene Krone über dem Himmel bilden.
+  const fgDark = phC([22, 52, 30], [34, 30, 46], [8, 16, 26]);
+  const fgTrunk = phC([54, 38, 26], [44, 32, 34], [10, 14, 22]);
+  const fgBaseY = H * 1.04;
+  const fgSp = 300;
+  const pxf = camera.x * 0.34;
+  for (let i = Math.floor(pxf / fgSp) - 1; i <= Math.floor((pxf + W) / fgSp) + 1; i++) {
+    const x = i * fgSp + 30 - pxf;
+    const scale = 0.85 + pseudoRandom(i * 23 + 4) * 0.30;
+    drawTree(x, fgBaseY, H * 0.24 * scale, H * 0.34 * scale, fgDark, fgDark, fgTrunk);
+  }
+
+  // ── Leuchtende Pilze & Blüten am Waldsaum (glimmen zur Dämmerung/Nacht) ──
+  // Biolumineszente Tupfer am Fuß der Baumreihe: grün-cyan „Pilze" und rosa-
+  // violette „Blüten", die erst spät zu leuchten beginnen — magische Undergrowth.
+  const bloom = smooth(0.30, 0.66, p);
+  if (bloom > 0.02) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const gp = camera.x * 0.12;   // gleiche Parallaxe wie die mittleren Bäume
+    const glowSp = 150;
+    for (let i = Math.floor(gp / glowSp) - 1; i <= Math.floor((gp + W) / glowSp) + 1; i++) {
+      const r0 = pseudoRandom(i * 61 + 7);
+      if (r0 < 0.4) continue;                    // nicht an jedem Slot
+      const x = i * glowSp + 30 + r0 * 96 - gp;
+      const y = H * (0.70 + pseudoRandom(i * 29 + 5) * 0.04);
+      const col = pseudoRandom(i * 47 + 2) < 0.6 ? [150, 255, 194] : [232, 172, 255];
+      const blink = 0.7 + 0.3 * Math.sin(t * 0.03 + i * 1.7);
+      const a = bloom * blink;
+      ctx.globalAlpha = a * 0.4;
+      ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},1)`;
+      ctx.beginPath(); ctx.arc(x, y, 8.5, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = a;
+      ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ── Bodennebel (weltgetönt, blauer/dichter zur Nacht) ──
+  const fog = phC([176, 206, 172], [150, 140, 160], [70, 90, 120]);
+  this.drawGroundFog(camera, fog[0] | 0, fog[1] | 0, fog[2] | 0, { baseAlpha: 0.12 + nightF * 0.05, yFrac: 0.80 });
+
+  // ── Glühwürmchen (Dämmerung→Nacht, additiv, langsam schwebend) ──
+  const fireF = smooth(0.34, 0.68, p);
+  if (fireF > 0.02) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 26; i++) {
+      const seed = i * 53.1;
+      const fx = ((i * 137 + Math.sin(t * 0.01 + seed) * 40 - camera.x * 0.16) % (W + 60) + W + 60) % (W + 60) - 30;
+      const fy = H * (0.32 + pseudoRandom(i * 19 + 2) * 0.5) + Math.sin(t * 0.02 + i * 2.1) * 16;
+      const blink = Math.max(0, Math.sin(t * 0.05 + i * 1.9));
+      const a = fireF * (0.15 + blink * 0.75);
+      if (a < 0.02) continue;
+      ctx.globalAlpha = a * 0.5;
+      ctx.fillStyle = 'rgba(190,255,140,1)';
+      ctx.beginPath(); ctx.arc(fx, fy, 3.2, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = 'rgba(230,255,180,1)';
+      ctx.beginPath(); ctx.arc(fx, fy, 1.2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ── Herabschwebende Blätter (Tag→Dämmerung, sanft trudelnd) ──
+  const leafF = dayF;
+  if (leafF > 0.04) {
+    ctx.save();
+    const leafCols = ['#5aa04e', '#7bb84e', '#c9a13a', '#d98a3c'];
+    for (let i = 0; i < 15; i++) {
+      const seed = i * 29.7;
+      const cycle = H + 80;
+      // langsames Fallen + horizontales Pendeln
+      const ly = ((t * (0.5 + (i % 3) * 0.2) + seed * 30) % cycle);
+      const baseX = pseudoRandom(i * 71 + 3) * (W + 80) - 40;
+      const lx = baseX + Math.sin(t * 0.02 + seed) * 26 - camera.x * 0.06;
+      const sx = ((lx % (W + 80)) + (W + 80)) % (W + 80) - 40;
+      const rot = t * 0.03 + i;
+      const a = leafF * (0.5 + 0.3 * Math.sin(t * 0.03 + i));
+      if (a < 0.03) continue;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = leafCols[i % 4];
+      ctx.save();
+      ctx.translate(sx, ly - 40);
+      ctx.rotate(rot);
+      ctx.scale(1, 0.55 + 0.45 * Math.abs(Math.sin(rot))); // Trudeln → perspektivisches Kippen
+      ctx.beginPath();
+      ctx.moveTo(0, -3.4); ctx.quadraticCurveTo(3, 0, 0, 3.4); ctx.quadraticCurveTo(-3, 0, 0, -3.4);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // ── Schmetterling (nur tagsüber, gaukelt durch die Lichtung) ──
+  if (dayF > 0.35) {
+    const bpx = ((t * 0.6 + 200 - camera.x * 0.14) % (W + 120) + W + 120) % (W + 120) - 60;
+    const bpy = H * 0.52 + Math.sin(t * 0.05) * H * 0.10 + Math.sin(t * 0.13) * 10;
+    const flap = Math.abs(Math.sin(t * 0.35));
+    ctx.save();
+    ctx.globalAlpha = dayF;
+    ctx.translate(bpx, bpy);
+    // Körper
+    ctx.fillStyle = '#3a2a1e';
+    ctx.fillRect(-0.8, -4, 1.6, 8);
+    // Flügel (öffnen/schließen über flap)
+    const wingW = 3 + flap * 5;
+    ctx.fillStyle = '#e8663a';
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(s * (wingW * 0.6), -1.5, wingW, 4.2, s * 0.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(s * (wingW * 0.55), 3, wingW * 0.75, 3, s * -0.4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(255,224,140,0.85)';
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * (wingW * 0.7), -1.5, wingW * 0.4, 1.8, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+
+  // ── Schwebende Pollen im Morgen-Gegenlicht (nur tagsüber, additiv) ──
+  // Winzige, warm leuchtende Staubkörnchen, die im Sonnenlicht treiben — dichter
+  // zur Sonnenseite (rechts, wo auch die God-Rays sitzen). Steigen leicht, mit
+  // sanftem Seitwärts-Pendeln. Verstärkt die „goldene Morgenluft".
+  if (dayF > 0.05) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 24; i++) {
+      const seed = i * 37.3;
+      const cycle = H + 120;
+      // langsames Aufsteigen (nach oben) + Pendeln
+      const py = H + 40 - ((t * (0.28 + (i % 4) * 0.08) + seed * 25) % cycle);
+      const baseX = pseudoRandom(i * 83 + 5) * (W + 100) - 50;
+      const px = baseX + Math.sin(t * 0.018 + seed) * 30 - camera.x * 0.05;
+      const sx = ((px % (W + 100)) + (W + 100)) % (W + 100) - 50;
+      // dichter/heller zur Sonnenseite (centerFrac 0.62 der God-Rays)
+      const sunBias = 1 - Math.min(1, Math.abs(sx / W - 0.62) * 1.6);
+      const twinkle = 0.4 + 0.6 * Math.abs(Math.sin(t * 0.06 + i * 1.3));
+      const a = dayF * (0.10 + 0.32 * sunBias) * twinkle;
+      if (a < 0.02) continue;
+      const r = 0.8 + (i % 3) * 0.5;
+      ctx.globalAlpha = a * 0.5;
+      ctx.fillStyle = 'rgba(255,240,190,1)';
+      ctx.beginPath(); ctx.arc(sx, py, r * 2, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = 'rgba(255,250,225,1)';
+      ctx.beginPath(); ctx.arc(sx, py, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
 }
 
 // BG-Aufwertung · wiederverwendbarer Bodennebel (aus Dschungel extrahiert).
@@ -1380,6 +1774,206 @@ function clearBgSpriteCaches(this: Renderer): void {
   _volcConeCache.clear();
   _godRayCache.clear();
   _spacePlanetCache.clear();
+  _uwShaftCache.clear();
+  _uwRockCache.clear();
+  _icePeakCache.clear();
+  _lightBeamCache.clear();
+}
+
+// Gemeinsames Cache-Muster für Innenraum-Lichtkegel (Hängelampen, Strahler,
+// Fenster-Strahlen, Bühnen-Scheinwerfer): ein nach unten ausblendendes Trapez mit
+// vertikalem Farb→transparent-Verlauf. Form ist statisch → EINMAL je Geometrie in
+// ein Sprite backen (baseDeviceScale-Anker) und pro Frame nur mit Deckkraft-Alpha
+// (Flackern) additiv-frei geblittet. topL/topR/botL/botR = x-Offsets vom Anker.
+const _lightBeamCache = new Map<string, HTMLCanvasElement>();
+function getLightBeam(
+  key: string, topL: number, topR: number, botL: number, botR: number,
+  height: number, colorRGB: string, scale: number,
+): { cv: HTMLCanvasElement; xMin: number; w: number; h: number } | null {
+  if (typeof document === 'undefined') return null;
+  const pad = 1;
+  const xMin = Math.min(topL, topR, botL, botR);
+  const xMax = Math.max(topL, topR, botL, botR);
+  const w = Math.ceil(xMax - xMin) + pad * 2;
+  const h = Math.ceil(height) + pad * 2;
+  const ck = `${key}|${w}x${h}|${scale.toFixed(2)}`;
+  const hit = _lightBeamCache.get(ck);
+  if (hit) return { cv: hit, xMin, w, h };
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(w * scale));
+  cv.height = Math.max(1, Math.round(h * scale));
+  const c = cv.getContext('2d');
+  if (!c) return { cv, xMin, w, h };
+  c.scale(scale, scale);
+  const ox = -xMin + pad; // Offset → lokale x
+  const g = c.createLinearGradient(0, pad, 0, pad + height);
+  g.addColorStop(0, `rgba(${colorRGB},1)`);
+  g.addColorStop(1, `rgba(${colorRGB},0)`);
+  c.fillStyle = g;
+  c.beginPath();
+  c.moveTo(topL + ox, pad);
+  c.lineTo(topR + ox, pad);
+  c.lineTo(botR + ox, pad + height);
+  c.lineTo(botL + ox, pad + height);
+  c.closePath();
+  c.fill();
+  _lightBeamCache.set(ck, cv);
+  return { cv, xMin, w, h };
+}
+
+/** Blittet einen gecachten Lichtkegel an (anchorX, topY) mit Deckkraft `alpha`
+ *  (source-over wie die Originale). Reference-Alpha 1 gebacken → alpha moduliert. */
+function blitLightBeam(
+  r: Renderer, key: string, anchorX: number, topY: number,
+  topL: number, topR: number, botL: number, botR: number,
+  height: number, colorRGB: string, alpha: number,
+): void {
+  if (alpha <= 0.003) return;
+  const beam = getLightBeam(key, topL, topR, botL, botR, height, colorRGB, r.baseDeviceScale || 1);
+  if (!beam) return;
+  const ctx = r.ctx;
+  const pad = 1;
+  const pa = ctx.globalAlpha;
+  const prevS = ctx.imageSmoothingEnabled;
+  ctx.globalAlpha = pa * (alpha > 1 ? 1 : alpha);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(beam.cv, 0, 0, beam.cv.width, beam.cv.height, anchorX + beam.xMin - pad, topY - pad, beam.w, beam.h);
+  ctx.imageSmoothingEnabled = prevS;
+  ctx.globalAlpha = pa;
+}
+
+// Eis-Gletscher-Spitzen: Körper (Verlaufs-Silhouette) + weißes Highlight + blaue
+// Eis-Spalten sind statisch je Index i, nur sx (Parallaxe) wandert. Einmal je
+// Spitze backen (baseDeviceScale-Anker, unten-bündig) und blitten; die
+// Glitzer-Funkeln bleiben live darüber. Spart 6 createLinearGradient/Frame.
+const _icePeakCache = new Map<string, HTMLCanvasElement>();
+function getIcePeak(i: number, baseW: number, peakH: number, scale: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const pad = 2;
+  const bw = Math.ceil(baseW) + pad * 2;
+  const bh = Math.ceil(peakH) + pad * 2;
+  const key = `ice|${i}|${bw}x${bh}|${scale.toFixed(2)}`;
+  const hit = _icePeakCache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(bw * scale));
+  cv.height = Math.max(1, Math.round(bh * scale));
+  const c = cv.getContext('2d');
+  if (!c) return cv;
+  c.scale(scale, scale);
+  const xL = baseW / 2 + pad;   // lokale Achse
+  const yL = peakH + pad;       // lokale Basislinie (unten)
+  // Körper (Verlauf).
+  const grad = c.createLinearGradient(0, yL - peakH, 0, yL);
+  grad.addColorStop(0, '#e8f4fa');
+  grad.addColorStop(0.4, '#a8c4e0');
+  grad.addColorStop(1, '#5878a8');
+  c.fillStyle = grad;
+  c.beginPath();
+  c.moveTo(xL - baseW / 2, yL);
+  c.lineTo(xL - baseW * 0.18, yL - peakH * 0.7);
+  c.lineTo(xL, yL - peakH);
+  c.lineTo(xL + baseW * 0.22, yL - peakH * 0.65);
+  c.lineTo(xL + baseW / 2, yL);
+  c.closePath();
+  c.fill();
+  // Weißes Highlight.
+  c.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  c.beginPath();
+  c.moveTo(xL - baseW * 0.16, yL - peakH * 0.7 + 4);
+  c.lineTo(xL, yL - peakH);
+  c.lineTo(xL + baseW * 0.18, yL - peakH * 0.65 + 4);
+  c.lineTo(xL + baseW * 0.06, yL - peakH * 0.5);
+  c.lineTo(xL - baseW * 0.06, yL - peakH * 0.55);
+  c.closePath();
+  c.fill();
+  // Blaue Eis-Spalten.
+  c.strokeStyle = 'rgba(80, 140, 205, 0.45)';
+  c.lineWidth = 1.5;
+  for (let cr = 0; cr < 2; cr++) {
+    const crX = xL + (cr === 0 ? -1 : 1) * baseW * 0.12;
+    c.beginPath();
+    c.moveTo(crX, yL - peakH * 0.55);
+    c.lineTo(crX + (cr === 0 ? -3 : 4), yL - peakH * 0.3);
+    c.lineTo(crX + (cr === 0 ? 1 : -1), yL - peakH * 0.08);
+    c.stroke();
+  }
+  _icePeakCache.set(key, cv);
+  return cv;
+}
+
+// Unterwasser-Felsformationen: der Körper (gezackte Silhouette + fester
+// Vertikal-Verlauf) ist statisch je Index i, nur sx (Parallaxe) wandert. Also je
+// Fels EINMAL backen (stabiler baseDeviceScale-Anker, unten-bündig) und blitten;
+// die bunten Korallen bleiben live darüber. Spart 5 createLinearGradient/Frame.
+const _uwRockCache = new Map<string, HTMLCanvasElement>();
+function getUwRock(i: number, baseW: number, peakH: number, scale: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const pad = 1;
+  const bw = Math.ceil(baseW) + pad * 2;
+  const bh = Math.ceil(peakH) + pad * 2;
+  const key = `uwrock|${i}|${bw}x${bh}|${scale.toFixed(2)}`;
+  const hit = _uwRockCache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(bw * scale));
+  cv.height = Math.max(1, Math.round(bh * scale));
+  const c = cv.getContext('2d');
+  if (!c) return cv;
+  c.scale(scale, scale);
+  const xL = baseW / 2 + pad;   // lokale Fels-Achse
+  const yL = peakH + pad;       // lokale Basislinie (unten)
+  const grad = c.createLinearGradient(0, yL - peakH, 0, yL);
+  grad.addColorStop(0, '#0a3050');
+  grad.addColorStop(1, '#03152a');
+  c.fillStyle = grad;
+  c.beginPath();
+  c.moveTo(xL - baseW / 2, yL);
+  const segs = 6;
+  for (let s = 1; s < segs; s++) {
+    const segX = xL - baseW / 2 + (s / segs) * baseW;
+    const segY = yL - peakH * (0.4 + Math.abs(Math.sin(s * 1.7 + i)) * 0.6);
+    c.lineTo(segX, segY);
+  }
+  c.lineTo(xL + baseW / 2, yL);
+  c.closePath();
+  c.fill();
+  _uwRockCache.set(key, cv);
+  return cv;
+}
+
+// Unterwasser-Sonnenschäfte: alle 7 Schäfte haben dieselbe Form + denselben
+// Verlauf, nur ihre X-Position (rx = Parallaxe + per-Schaft-Schimmer) ändert sich
+// pro Frame. Also EINE Schaft-Form einmal backen (stabiler baseDeviceScale-Anker,
+// Referenzhöhe REFH; vertikal wird beim Blitten auf die Live-Höhe H*0.8 gestreckt)
+// und 7× an rx blitten — rx trägt Schimmer/Parallaxe weiter, Optik bleibt erhalten.
+const _uwShaftCache = new Map<string, HTMLCanvasElement>();
+const UW_SHAFT_REFH = 800, UW_SHAFT_LW = 72, UW_SHAFT_LRX = 8;
+function getUnderwaterShaft(scale: number): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const key = `uw|${scale.toFixed(2)}`;
+  const hit = _uwShaftCache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(UW_SHAFT_LW * scale));
+  cv.height = Math.max(1, Math.round(UW_SHAFT_REFH * scale));
+  const c = cv.getContext('2d');
+  if (!c) return cv;
+  c.scale(scale, scale);
+  const grad = c.createLinearGradient(UW_SHAFT_LRX, 0, UW_SHAFT_LRX + 30, UW_SHAFT_REFH);
+  grad.addColorStop(0, 'rgba(180, 220, 255, 0.18)');
+  grad.addColorStop(0.5, 'rgba(140, 200, 240, 0.07)');
+  grad.addColorStop(1, 'rgba(50, 100, 160, 0)');
+  c.fillStyle = grad;
+  c.beginPath();
+  c.moveTo(UW_SHAFT_LRX, 0);
+  c.lineTo(UW_SHAFT_LRX + 24, 0);
+  c.lineTo(UW_SHAFT_LRX + 60, UW_SHAFT_REFH);
+  c.lineTo(UW_SHAFT_LRX - 6, UW_SHAFT_REFH);
+  c.closePath();
+  c.fill();
+  _uwShaftCache.set(key, cv);
+  return cv;
 }
 
 // Space-Planeten sind rein deterministisch aus (r, seed) → statisches Aussehen,
@@ -1713,40 +2307,19 @@ function drawIceBackground(this: Renderer, camera: Camera) {
     const baseW = 200 + pseudoRand(seed + 2) * 80;
     const baseY = H * 0.78;
 
-    const grad = ctx.createLinearGradient(0, baseY - peakH, 0, baseY);
-    grad.addColorStop(0, '#e8f4fa');
-    grad.addColorStop(0.4, '#a8c4e0');
-    grad.addColorStop(1, '#5878a8');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(sx - baseW / 2, baseY);
-    ctx.lineTo(sx - baseW * 0.18, baseY - peakH * 0.7);
-    ctx.lineTo(sx, baseY - peakH);
-    ctx.lineTo(sx + baseW * 0.22, baseY - peakH * 0.65);
-    ctx.lineTo(sx + baseW / 2, baseY);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-    ctx.beginPath();
-    ctx.moveTo(sx - baseW * 0.16, baseY - peakH * 0.7 + 4);
-    ctx.lineTo(sx, baseY - peakH);
-    ctx.lineTo(sx + baseW * 0.18, baseY - peakH * 0.65 + 4);
-    ctx.lineTo(sx + baseW * 0.06, baseY - peakH * 0.5);
-    ctx.lineTo(sx - baseW * 0.06, baseY - peakH * 0.55);
-    ctx.closePath();
-    ctx.fill();
-
-    // Blaue Eis-Spalten für kristalline Tiefe.
-    ctx.strokeStyle = 'rgba(80, 140, 205, 0.45)';
-    ctx.lineWidth = 1.5;
-    for (let cr = 0; cr < 2; cr++) {
-      const crX = sx + (cr === 0 ? -1 : 1) * baseW * 0.12;
-      ctx.beginPath();
-      ctx.moveTo(crX, baseY - peakH * 0.55);
-      ctx.lineTo(crX + (cr === 0 ? -3 : 4), baseY - peakH * 0.3);
-      ctx.lineTo(crX + (cr === 0 ? 1 : -1), baseY - peakH * 0.08);
-      ctx.stroke();
+    // Perf: statischer Gletscher-Körper (Verlauf + Highlight + Eis-Spalten) als
+    // Sprite gecacht (unten-bündig bei baseY), nur an sx geblittet statt je Frame
+    // Verlauf+Pfade zu zeichnen. Die Glitzer-Funkeln bleiben live darüber.
+    {
+      const pad = 2;
+      const peak = getIcePeak(i, baseW, peakH, this.baseDeviceScale || 1);
+      if (peak) {
+        const dw = Math.ceil(baseW) + pad * 2, dh = Math.ceil(peakH) + pad * 2;
+        const prevS = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(peak, 0, 0, peak.width, peak.height, sx - baseW / 2 - pad, baseY - peakH - pad, dw, dh);
+        ctx.imageSmoothingEnabled = prevS;
+      }
     }
     // Glitzer-Funkeln auf dem Eis.
     for (let g = 0; g < 3; g++) {
@@ -2036,23 +2609,19 @@ function drawUnderwaterBackground(this: Renderer, camera: Camera) {
   }, true);
   this.blitBgCache(seaCache);
 
+  // Perf: gecachte Schaft-Form 7× blitten statt 7 frische Verläufe/Frame.
+  // rx (Parallaxe + Schimmer) wird weiter pro Schaft/Frame berechnet → Optik 1:1.
   ctx.save();
-  for (let i = 0; i < 7; i++) {
-    const rx = (i * (W / 6) + Math.sin(t * 0.01 + i) * 18 - camera.x * 0.04 + W * 2) % (W + 80) - 40;
-    const ry0 = 0;
+  const uwShaft = getUnderwaterShaft(this.baseDeviceScale || 1);
+  if (uwShaft) {
     const ry1 = H * 0.8;
-    const grad = ctx.createLinearGradient(rx, ry0, rx + 30, ry1);
-    grad.addColorStop(0, 'rgba(180, 220, 255, 0.18)');
-    grad.addColorStop(0.5, 'rgba(140, 200, 240, 0.07)');
-    grad.addColorStop(1, 'rgba(50, 100, 160, 0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(rx, ry0);
-    ctx.lineTo(rx + 24, ry0);
-    ctx.lineTo(rx + 60, ry1);
-    ctx.lineTo(rx - 6, ry1);
-    ctx.closePath();
-    ctx.fill();
+    const prevS = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = true;
+    for (let i = 0; i < 7; i++) {
+      const rx = (i * (W / 6) + Math.sin(t * 0.01 + i) * 18 - camera.x * 0.04 + W * 2) % (W + 80) - 40;
+      ctx.drawImage(uwShaft, 0, 0, uwShaft.width, uwShaft.height, rx - UW_SHAFT_LRX, 0, UW_SHAFT_LW, ry1);
+    }
+    ctx.imageSmoothingEnabled = prevS;
   }
   ctx.restore();
 
@@ -2075,22 +2644,17 @@ function drawUnderwaterBackground(this: Renderer, camera: Camera) {
     const peakH = 80 + pseudoRand(seed + 1) * 50;
     const baseW = 130 + pseudoRand(seed + 2) * 60;
 
-    const grad = ctx.createLinearGradient(0, baseY - peakH, 0, baseY);
-    grad.addColorStop(0, '#0a3050');
-    grad.addColorStop(1, '#03152a');
-    ctx.fillStyle = grad;
-
-    ctx.beginPath();
-    ctx.moveTo(sx - baseW / 2, baseY);
-    const segs = 6;
-    for (let s = 1; s < segs; s++) {
-      const segX = sx - baseW / 2 + (s / segs) * baseW;
-      const segY = baseY - peakH * (0.4 + Math.abs(Math.sin(s * 1.7 + i)) * 0.6);
-      ctx.lineTo(segX, segY);
+    // Perf: statischer Fels-Körper als Sprite gecacht (unten-bündig bei baseY),
+    // nur an der Parallax-Position sx geblittet statt Verlauf+Pfad je Frame.
+    const pad = 1;
+    const rock = getUwRock(i, baseW, peakH, this.baseDeviceScale || 1);
+    if (rock) {
+      const dw = Math.ceil(baseW) + pad * 2, dh = Math.ceil(peakH) + pad * 2;
+      const prevS = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(rock, 0, 0, rock.width, rock.height, sx - baseW / 2 - pad, baseY - peakH - pad, dw, dh);
+      ctx.imageSmoothingEnabled = prevS;
     }
-    ctx.lineTo(sx + baseW / 2, baseY);
-    ctx.closePath();
-    ctx.fill();
 
     // Bunte Korallen auf der Felsformation (verschiedene Typen, volle Deckkraft).
     const coralN = 4;
@@ -2619,21 +3183,24 @@ function drawAerialHaze(this: Renderer, W: number, H: number) {
     plush: { c: '245,225,240', peak: 0.09 },
     bluefield: { c: '196,222,240', peak: 0.10 },
     dragon: { c: '40,70,48', peak: 0.11 },
+    forest: { c: '196,206,204', peak: 0.07 },
   };
   const h = HAZE[theme] || { c: '200,212,224', peak: 0.12 };
-  const ctx = this.ctx;
-  // Dunst als Band um den Horizont konzentriert (dort, wo die fernen
-  // Elemente an das Spielfeld stoßen), nach oben zum klaren Himmel und nach
-  // unten zum scharfen Vordergrund auslaufend. So bleibt der Himmel frei und
-  // nur die Distanz versinkt im Schleier.
-  const bandTop = H * 0.30;
-  const bandBot = H * 0.72;
-  const g = ctx.createLinearGradient(0, bandTop, 0, bandBot);
-  g.addColorStop(0, `rgba(${h.c},0)`);
-  g.addColorStop(0.5, `rgba(${h.c},${h.peak})`);
-  g.addColorStop(1, `rgba(${h.c},0)`);
-  ctx.fillStyle = g;
-  ctx.fillRect(0, bandTop, W, bandBot - bandTop);
+  // Dunst als Band um den Horizont konzentriert (dort, wo die fernen Elemente an
+  // das Spielfeld stoßen), nach oben/unten auslaufend. Statisch je Welt → EINMAL
+  // in einen (Geräte-Auflösungs-)Cache backen und pro Frame nur blitten statt je
+  // Frame einen Verlauf zu allokieren. Greift auf ALLEN 16 Welten (drawAerialHaze
+  // wird überall aufgerufen). getBgGradCache ist pro Level geleert → Theme stimmt.
+  const cache = this.getBgGradCache('aerialhaze', (cctx, cw, ch) => {
+    const bandTop = ch * 0.30, bandBot = ch * 0.72;
+    const g = cctx.createLinearGradient(0, bandTop, 0, bandBot);
+    g.addColorStop(0, `rgba(${h.c},0)`);
+    g.addColorStop(0.5, `rgba(${h.c},${h.peak})`);
+    g.addColorStop(1, `rgba(${h.c},0)`);
+    cctx.fillStyle = g;
+    cctx.fillRect(0, bandTop, cw, bandBot - bandTop);
+  }, true);
+  this.blitBgCache(cache);
 }
 
 function drawBeachPalm(this: Renderer, x: number, baseY: number, scale: number, seed: number): void {
@@ -3020,13 +3587,8 @@ function drawSchoolHallway(this: Renderer, camera: Camera, alpha: number) {
     ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, ceil + 6); ctx.stroke();
     ctx.fillStyle = '#fff6d8';
     ctx.beginPath(); ctx.ellipse(lx, ceil + 9, 13, 7, 0, 0, Math.PI * 2); ctx.fill();
-    const cone = ctx.createLinearGradient(0, ceil + 9, 0, sock);
-    cone.addColorStop(0, 'rgba(255,248,214,0.28)');
-    cone.addColorStop(1, 'rgba(255,248,214,0)');
-    ctx.fillStyle = cone;
-    ctx.beginPath();
-    ctx.moveTo(lx - 13, ceil + 9); ctx.lineTo(lx + 13, ceil + 9);
-    ctx.lineTo(lx + 40, sock); ctx.lineTo(lx - 40, sock); ctx.closePath(); ctx.fill();
+    // Lichtkegel gecacht (gemeinsames Muster).
+    blitLightBeam(this, 'lamp', lx, ceil + 9, -13, 13, -40, 40, sock - (ceil + 9), '255,248,214', 0.28);
   }
 
   // MITTLERE EBENE (0.25): Türen, Fenster, Uhr, Pinnwand.
@@ -3394,6 +3956,27 @@ function drawGymBackground(this: Renderer, camera: Camera) {
   }
   ctx.fillStyle = '#8a7a54'; ctx.fillRect(0, ceil - 3, W, 3);
 
+  // Grafik-Stimmung: warme Tageslicht-Schäfte aus den hohen Fenstern (gecacht,
+  // additiv — 1 Blit/Frame, perf-neutral). Machen aus der flachen Creme-Wand eine
+  // „lichtdurchflutete Halle" mit Tiefe. Die Ausrüstung davor liest sich gegen das
+  // Licht. Dezent gehalten, damit Münzen/Kisten nicht überstrahlen.
+  drawGodRays.call(this, 'gym', '255,232,176', 6, 0.06, 0.15, 0.62,
+    { spanFrac: 1.3, centerFrac: 0.5, driftAmp: 0.02, driftSpd: 0.0038 });
+  // Staub im Sonnenlicht — dezente, langsam schwebende warme Partikel, fangen das
+  // Fensterlicht ein. ~18 Arcs/Frame (vernachlässigbar), rein atmosphärisch.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 18; i++) {
+    const seed = i * 47.3;
+    const mx = ((i * 131 + pseudoRandom(seed) * 90 - camera.x * 0.05) % (W + 40) + W + 40) % (W + 40) - 20;
+    const my = H * 0.9 - ((t * 0.12 + seed * 5) % (H * 0.8)) + Math.sin(t * 0.02 + i) * 8;
+    const tw = 0.4 + Math.sin(t * 0.05 + i * 1.3) * 0.5;
+    const r = 0.8 + (i % 3) * 0.5;
+    ctx.fillStyle = `rgba(255,244,206,${(0.14 + tw * 0.20).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(mx, my, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
   // EBENE 1 (0.12): Sprossenwand (Wall Bars) an der Rückwand.
   const pxWB = camera.x * 0.12, wbSp = 340, wbW = 116, wbY0 = Math.round(H * 0.30), wbY1 = sock - 6;
   for (let i = Math.floor(pxWB / wbSp) - 1; i <= Math.floor((pxWB + W) / wbSp) + 1; i++) {
@@ -3691,19 +4274,10 @@ function drawGymBackground(this: Renderer, camera: Camera) {
       const ropeCols = [201, 206, 211, 216];
       for (let i = 0; i < ropeCols.length; i++) {
         const sxTop = X(ropeCols[i] + 0.5);
-        const sway = Math.sin(t * 0.05 + i * 1.4) * 16;
         const beamY = Math.round(H * 0.66);
         const flick = 0.28 + Math.sin(t * 0.11 + i) * 0.06;
-        const cone = ctx.createLinearGradient(sxTop, ceil + 26, sxTop, beamY);
-        cone.addColorStop(0, `rgba(255,236,150,${flick})`);
-        cone.addColorStop(1, 'rgba(255,236,150,0)');
-        ctx.fillStyle = cone;
-        ctx.beginPath();
-        ctx.moveTo(sxTop - 6, ceil + 26);
-        ctx.lineTo(sxTop + 6, ceil + 26);
-        ctx.lineTo(sxTop + 40 + sway, beamY);
-        ctx.lineTo(sxTop - 40 + sway, beamY);
-        ctx.closePath(); ctx.fill();
+        // Lichtkegel gecacht (gemeinsames Muster); Flackern bleibt live über alpha.
+        blitLightBeam(this, 'spot', sxTop, ceil + 26, -6, 6, -40, 40, beamY - (ceil + 26), '255,236,150', flick);
         // Scheinwerfer-Gehäuse (auf dem Banner).
         ctx.fillStyle = 'rgba(52,56,66,0.95)';
         ctx.fillRect(sxTop - 6, ceil + 22, 12, 8);
@@ -3863,14 +4437,8 @@ function drawPlushBackground(this: Renderer, camera: Camera) {
       const potx = wx + 18, poty = wTop + wH + 6;
       ctx.fillStyle = '#e08a6a'; roundRectPath(ctx, potx - 7, poty - 10, 14, 12, 2); ctx.fill();
       ctx.fillStyle = '#7fb98a'; ctx.beginPath(); ctx.arc(potx, poty - 15, 6, 0, Math.PI * 2); ctx.arc(potx - 5, poty - 12, 4, 0, Math.PI * 2); ctx.arc(potx + 5, poty - 12, 4, 0, Math.PI * 2); ctx.fill();
-      // Warme Lichtstrahlen ins Zimmer (unter dem Fenster).
-      const beam = ctx.createLinearGradient(wx, wTop + wH, wx + 40, wTop + wH + 150);
-      beam.addColorStop(0, 'rgba(255,240,205,0.15)'); beam.addColorStop(1, 'rgba(255,240,205,0)');
-      ctx.fillStyle = beam;
-      ctx.beginPath();
-      ctx.moveTo(wx + 24, wTop + wH); ctx.lineTo(wx + wW - 24, wTop + wH);
-      ctx.lineTo(wx + wW + 44, wTop + wH + 150); ctx.lineTo(wx - 24, wTop + wH + 150);
-      ctx.closePath(); ctx.fill();
+      // Warme Lichtstrahlen ins Zimmer (unter dem Fenster) — gecacht (gemeinsames Muster).
+      blitLightBeam(this, 'plushwin', wx, wTop + wH, 24, wW - 24, -24, wW + 44, 150, '255,240,205', 0.15);
     }
   }
 
@@ -4315,10 +4883,8 @@ function drawTrampolineBackground(this: Renderer, camera: Camera) {
     const lx = i * lSp + 130 - pxL;
     ctx.fillStyle = '#fff6d8';
     ctx.beginPath(); ctx.ellipse(lx, ceil + 2, 7, 4, 0, 0, Math.PI * 2); ctx.fill();
-    const cone = ctx.createLinearGradient(0, ceil, 0, sock);
-    cone.addColorStop(0, 'rgba(255,248,214,0.1)'); cone.addColorStop(1, 'rgba(255,248,214,0)');
-    ctx.fillStyle = cone;
-    ctx.beginPath(); ctx.moveTo(lx - 7, ceil + 2); ctx.lineTo(lx + 7, ceil + 2); ctx.lineTo(lx + 30, sock); ctx.lineTo(lx - 30, sock); ctx.closePath(); ctx.fill();
+    // Strahler-Lichtkegel gecacht (gemeinsames Muster).
+    blitLightBeam(this, 'strahler', lx, ceil + 2, -7, 7, -30, 30, sock - (ceil + 2), '255,248,214', 0.1);
   }
 
   // EBENE 3 (nah, 0.4): Polster-Sockel.
@@ -5834,4 +6400,5 @@ export const backgroundsMethods
   drawCastleBackground,
   drawUnderwaterBackground,
   drawSpaceBackground,
+  drawForestBackground,
 };

@@ -17,6 +17,7 @@ import type { HillSpec } from './terrain';
   import { createTrampolineLevel } from './levels/trampoline';
   import { createBluefieldLevel } from './levels/bluefield';
   import { createDragonLevel } from './levels/dragon';
+  import { createForestLevel } from './levels/forest';
 
   export {
     createJungleLevel, createPlushLevel, createCaveLevel, createSkyLevel, createBeachLevel,
@@ -158,20 +159,21 @@ import type { HillSpec } from './terrain';
   export const LEVELS: LevelInfo[] = [
     { id: 1, name: 'Dschungel Abenteuer', subtitle: 'Der Anfang', theme: 'jungle', create: createJungleLevel },
     { id: 2, name: 'Plüsch-Traumland', subtitle: 'Bei den Kuscheltieren', theme: 'plush', create: createPlushLevel },
-    { id: 3, name: 'Dunkle Höhle', subtitle: 'Unterirdisch', theme: 'cave', create: createCaveLevel },
-    { id: 4, name: 'Wolken Welt', subtitle: 'Hoch hinaus', theme: 'sky', create: createSkyLevel },
-    { id: 5, name: 'Strand Paradies', subtitle: 'Am Meer', theme: 'beach', create: createBeachLevel },
-    { id: 6, name: 'Australien Outback', subtitle: 'Down Under', theme: 'australia', create: createAustraliaLevel },
-    { id: 7, name: 'Vulkan Insel', subtitle: 'Heißes Pflaster', theme: 'volcano', create: createVulkanLevel },
-    { id: 8, name: 'Eis Königreich', subtitle: 'Glatteis', theme: 'ice', create: createEisLevel },
-    { id: 9, name: 'Geister Schloss', subtitle: 'Spukige Hallen', theme: 'castle', create: createSchlossLevel },
-    { id: 10, name: 'Tiefsee', subtitle: 'Unter Wasser', theme: 'underwater', create: createUnterwasserLevel },
-    { id: 11, name: 'Sterne Mission', subtitle: 'Im Weltraum', theme: 'space', create: createWeltraumLevel },
-    { id: 12, name: 'Schule', subtitle: 'Nach Schulschluss', theme: 'school', create: createSchoolLevel },
-    { id: 13, name: 'Turnen', subtitle: 'In der Turnhalle', theme: 'gym', create: createTurnenLevel },
-    { id: 14, name: 'Superfly', subtitle: 'Trampolinpark', theme: 'trampoline', create: createTrampolineLevel },
-    { id: 15, name: 'Die blaue Wiese', subtitle: 'Bluefield Labor', theme: 'bluefield', create: createBluefieldLevel },
-    { id: 16, name: 'Drachenhöhle', subtitle: 'Der grüne Drache', theme: 'dragon', create: createDragonLevel },
+    { id: 3, name: 'Wald der Dämmerung', subtitle: 'Vom Tag bis in die Nacht', theme: 'forest', create: createForestLevel },
+    { id: 4, name: 'Dunkle Höhle', subtitle: 'Unterirdisch', theme: 'cave', create: createCaveLevel },
+    { id: 5, name: 'Wolken Welt', subtitle: 'Hoch hinaus', theme: 'sky', create: createSkyLevel },
+    { id: 6, name: 'Strand Paradies', subtitle: 'Am Meer', theme: 'beach', create: createBeachLevel },
+    { id: 7, name: 'Australien Outback', subtitle: 'Down Under', theme: 'australia', create: createAustraliaLevel },
+    { id: 8, name: 'Vulkan Insel', subtitle: 'Heißes Pflaster', theme: 'volcano', create: createVulkanLevel },
+    { id: 9, name: 'Eis Königreich', subtitle: 'Glatteis', theme: 'ice', create: createEisLevel },
+    { id: 10, name: 'Geister Schloss', subtitle: 'Spukige Hallen', theme: 'castle', create: createSchlossLevel },
+    { id: 11, name: 'Tiefsee', subtitle: 'Unter Wasser', theme: 'underwater', create: createUnterwasserLevel },
+    { id: 12, name: 'Sterne Mission', subtitle: 'Im Weltraum', theme: 'space', create: createWeltraumLevel },
+    { id: 13, name: 'Schule', subtitle: 'Nach Schulschluss', theme: 'school', create: createSchoolLevel },
+    { id: 14, name: 'Turnen', subtitle: 'In der Turnhalle', theme: 'gym', create: createTurnenLevel },
+    { id: 15, name: 'Superfly', subtitle: 'Trampolinpark', theme: 'trampoline', create: createTrampolineLevel },
+    { id: 16, name: 'Die blaue Wiese', subtitle: 'Bluefield Labor', theme: 'bluefield', create: createBluefieldLevel },
+    { id: 17, name: 'Drachenhöhle', subtitle: 'Der grüne Drache', theme: 'dragon', create: createDragonLevel },
   ];
 
   export function isSolidTile(type: TileType): boolean {

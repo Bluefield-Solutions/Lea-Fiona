@@ -57,6 +57,10 @@ export interface Settings {
   unlockAllWorlds: boolean;
   /** Time-Attack-Geist der Bestzeit während des Spiels anzeigen (Default an). */
   showGhost: boolean;
+  /** Grillen-/Nacht-Ambient-Dichte im Waldlevel, 0..1 (0 = still, 1 = dichter
+   *  Chor). Wird zusätzlich zur automatischen Geräteklasse angewandt, sodass man
+   *  die Dichte von Hand feinregeln kann. Default 0.6. */
+  grillenDichte: number;
 }
 
 export interface Profile {
@@ -112,8 +116,11 @@ const DEFAULT_SETTINGS: Settings = {
   assistInvincible: false,
   assistGameSpeed: 1.0,
   dynamicLight: false,
-  unlockAllWorlds: false,
+  // Default: ALLE Level direkt spielbar (Umschalter in der Level-Auswahl).
+  // „Kampagne" (nach und nach freischalten) ist die Alternative.
+  unlockAllWorlds: true,
   showGhost: true,
+  grillenDichte: 0.6,
 };
 
 export const MAX_PROFILES = 4;
@@ -188,6 +195,8 @@ function sanitizeSettings(s: unknown): Settings {
     dynamicLight: typeof o.dynamicLight === 'boolean' ? o.dynamicLight : DEFAULT_SETTINGS.dynamicLight,
     unlockAllWorlds: typeof o.unlockAllWorlds === 'boolean' ? o.unlockAllWorlds : DEFAULT_SETTINGS.unlockAllWorlds,
     showGhost: typeof o.showGhost === 'boolean' ? o.showGhost : DEFAULT_SETTINGS.showGhost,
+    grillenDichte: typeof o.grillenDichte === 'number'
+      ? Math.max(0, Math.min(1, o.grillenDichte)) : DEFAULT_SETTINGS.grillenDichte,
   };
 }
 

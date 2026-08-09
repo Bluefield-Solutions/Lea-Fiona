@@ -493,11 +493,11 @@ export enum Direction {
 export type ThemeName =
   | 'jungle' | 'cave' | 'sky' | 'beach' | 'australia'
   | 'volcano' | 'ice' | 'castle' | 'underwater' | 'space' | 'school' | 'gym' | 'trampoline' | 'bluefield' | 'plush'
-  | 'dragon';
+  | 'dragon' | 'forest';
 
 export const THEME_NAMES: ThemeName[] = [
   'jungle', 'cave', 'sky', 'beach', 'australia',
-  'volcano', 'ice', 'castle', 'underwater', 'space', 'school', 'gym', 'trampoline', 'bluefield', 'plush', 'dragon',
+  'volcano', 'ice', 'castle', 'underwater', 'space', 'school', 'gym', 'trampoline', 'bluefield', 'plush', 'dragon', 'forest',
 ];
 
 // ---------------------------------------------------------------------------

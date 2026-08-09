@@ -45,6 +45,7 @@ import { tilesSchoolMethods } from './renderer/tiles-school.ts';
 import { tilesGymMethods } from './renderer/tiles-gym.ts';
 import { tilesPlushMethods } from './renderer/tiles-plush.ts';
 import { tilesTrampolineMethods } from './renderer/tiles-trampoline.ts';
+import { tilesForestMethods } from './renderer/tiles-forest.ts';
 import { playerMethods } from './renderer/player.ts';
 import { enemiesCoreMethods } from './renderer/enemies-core.ts';
 import { enemiesExtraMethods } from './renderer/enemies-extra.ts';
@@ -476,6 +477,7 @@ export class Renderer {
   getThemeAccent(): { rim: string; shadow: string; glint: string } {
     switch (this.currentTheme) {
       case 'jungle':     return { rim: 'rgba(140,230,140,0.35)', shadow: 'rgba(20,55,20,0.32)',  glint: 'rgba(225,255,210,0.95)' };
+      case 'forest':     return { rim: 'rgba(150,220,150,0.36)', shadow: 'rgba(16,40,18,0.36)',  glint: 'rgba(220,250,205,0.95)' };
       case 'cave':       return { rim: 'rgba(170,150,210,0.35)', shadow: 'rgba(15,10,35,0.40)',  glint: 'rgba(220,210,255,0.95)' };
       case 'dragon':     return { rim: 'rgba(120,235,150,0.40)', shadow: 'rgba(8,26,14,0.44)',   glint: 'rgba(210,255,220,0.95)' };
       case 'sky':        return { rim: 'rgba(190,225,255,0.40)', shadow: 'rgba(60,90,140,0.28)', glint: 'rgba(255,255,255,1)'    };
@@ -534,6 +536,7 @@ export interface Renderer
     Methods<typeof tilesGymMethods>,
     Methods<typeof tilesPlushMethods>,
     Methods<typeof tilesTrampolineMethods>,
+    Methods<typeof tilesForestMethods>,
     Methods<typeof playerMethods>,
     Methods<typeof enemiesCoreMethods>,
     Methods<typeof enemiesExtraMethods>,
@@ -556,6 +559,7 @@ Object.assign(
   tilesGymMethods,
   tilesPlushMethods,
   tilesTrampolineMethods,
+  tilesForestMethods,
   playerMethods,
   enemiesCoreMethods,
   enemiesExtraMethods,

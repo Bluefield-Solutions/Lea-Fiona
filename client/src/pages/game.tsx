@@ -598,7 +598,7 @@ export default function GamePage() {
     volcano: '#ffaa55', ice: '#dff6ff', castle: '#cccccc', underwater: '#aae0ff', space: '#c266ff',
     // v464: die drei neuen Welten bekommen eigene Akzente (vorher grauer Fallback).
     school: '#e0b45a', gym: '#4aa3e0', trampoline: '#b45ad8', bluefield: '#5a86f0',
-    plush: '#f0a6c8',
+    plush: '#f0a6c8', forest: '#5aa860',
   };
   // Mini-Vorschau je Welt: charakteristischer Verlauf + Symbol fürs Level-Grid.
   const themePreview: Record<string, { grad: string; icon: string }> = {
@@ -619,6 +619,7 @@ export default function GamePage() {
     trampoline: { grad: 'linear-gradient(160deg,#8a4fd8,#241848)', icon: '🎪' },
     bluefield:  { grad: 'linear-gradient(160deg,#5a86f0,#152a72)', icon: '💡' },
     plush:      { grad: 'linear-gradient(160deg,#f6c6dc,#b98fd0)', icon: '🧸' },
+    forest:     { grad: 'linear-gradient(160deg,#3e8e4e,#12351f)', icon: '🌲' },
   };
 
   // Keyboard navigation for the 5×2 level-select grid.
@@ -1065,6 +1066,11 @@ export default function GamePage() {
                 label="🔔 Effekte" value={settings.sfxVolume}
                 onChange={(v) => applySettingsPatch({ sfxVolume: v })}
               />
+              {/* Grillen-Dichte (Nacht-Ambient im Wald) */}
+              <QuickSlider
+                label="🦗 Grillen (Wald-Nacht)" value={settings.grillenDichte}
+                onChange={(v) => applySettingsPatch({ grillenDichte: v })}
+              />
               {/* Bildschirmwackeln */}
               <QuickToggle
                 label="📳 Wackeln" value={settings.screenShake}
@@ -1123,7 +1129,7 @@ export default function GamePage() {
                 color: 'rgba(255,255,255,0.78)', letterSpacing: '0.02em',
                 background: 'rgba(16,12,34,0.5)', padding: '3px 14px', borderRadius: 999,
               }}>
-                🏃 Renne, hüpfe &amp; sammle durch 16 bunte Welten
+                🏃 Renne, hüpfe &amp; sammle durch {LEVELS.length} bunte Welten
               </div>
             </div>
           )}

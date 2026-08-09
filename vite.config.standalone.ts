@@ -1,11 +1,24 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { viteSingleFile } from "vite-plugin-singlefile";
+import { execSync } from "child_process";
 import path from "path";
 
-// Build-Kennung (Bauzeit, UTC) — pro Deploy eindeutig. Wird als sichtbarer
-// Versions-Stempel im Titelbildschirm angezeigt („ist die neue Version live?").
-const BUILD_ID = new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC";
+// Build-Kennung: Commit-Kürzel + Bauzeit (UTC). Der Commit macht byte-genau
+// sichtbar, WELCHER Stand live ist (nicht nur DASS gebaut wurde). Wird als
+// dezenter Versions-Stempel unten rechts angezeigt. Der Commit wird direkt aus
+// git gelesen (im CI nach dem Commit-Back = der deployte Stand); fällt bei
+// fehlendem git sauber auf reine Bauzeit zurück.
+let COMMIT = "";
+try {
+  COMMIT = execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
+    .toString()
+    .trim();
+} catch {
+  COMMIT = "";
+}
+const BUILD_TIME = new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC";
+const BUILD_ID = COMMIT ? `${COMMIT} · ${BUILD_TIME}` : BUILD_TIME;
 
 // Standalone build: produces ONE self-contained index.html with all JS,
 // CSS and image assets inlined (base64). No server, no external requests

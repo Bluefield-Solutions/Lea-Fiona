@@ -26,4 +26,5 @@ export const WORLD_GRADE: Record<ThemeName, Grade> = {
   bluefield:  { r: 210, g: 226, b: 250, a: 0.12, ov: { r: 48, g: 88, b: 168, a: 0.12 } },   // technisch-kühl
   plush:      { r: 255, g: 240, b: 248, a: 0.12, ov: { r: 180, g: 130, b: 190, a: 0.12 } },  // weich-pastell, verträumt
   dragon:     { r: 214, g: 244, b: 220, a: 0.16, ov: { r: 30, g: 92, b: 46, a: 0.20 } },   // drachengrün, tief-höhlig
+  forest:     { r: 248, g: 248, b: 242, a: 0.04, ov: { r: 96, g: 104, b: 84, a: 0.05 } },   // bewusst NAHEZU neutral — der Tag→Dämmerung→Nacht-Verlauf im Hintergrund trägt die komplette Farbstimmung; ein starker Grün-Stich würde Morgen-Blau & Abend-Gold zerstören
 };

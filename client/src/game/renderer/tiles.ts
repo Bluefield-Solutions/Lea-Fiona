@@ -82,6 +82,10 @@ function drawTile(this: Renderer, tileType: TileType, screenX: number, screenY: 
     this.drawPlushProp(this.ctx, screenX, screenY, col);
     return;
   }
+  if (tileType === TileType.DECORATION_PROP && this.currentTheme === 'forest' && col >= 0) {
+    this.drawForestProp(this.ctx, screenX, screenY, col);
+    return;
+  }
   // Theme switches call tileCache.clear(), so the bare TileType enum value
   // is sufficient as a key. Avoids per-frame string allocation.
   let cached = this.tileCache.get(tileType);

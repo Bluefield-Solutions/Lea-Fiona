@@ -192,6 +192,20 @@ const THEMES: Record<ThemeName, ThemeSong> = {
     waveLead: 'triangle',
     waveBass: 'sawtooth',
   },
+  // Wald: ruhig-pastoral, warme Dur-Melodie, weiche Sinus-Töne — passt zum
+  // Tag→Dämmerung→Nacht-Bogen (sanft, verträumt, naturnah).
+  // „Wald der Dämmerung" — eigenes, ruhig-pastorales Stück statt des generischen
+  // Loops: eine 16-Schritt-Phrase über G–Em–C–D (I–vi–IV–V), fließende Sinus-
+  // Melodie, warmer Dreiecks-Bass. Langsam (100 bpm) für die verträumte,
+  // wandernde Waldstimmung, die zur Nacht hin ausklingt.
+  forest: {
+    bpm: 100,
+    bassNotes: [98, 98, 147, 98, 82, 82, 123, 82, 131, 131, 98, 131, 147, 147, 110, 147],
+    leadNotes: [392, 494, 440, 587, 494, 440, 392, 330, 330, 392, 440, 523, 494, 440, 392, 294],
+    chord: [196, 247, 294],
+    waveLead: 'sine',
+    waveBass: 'triangle',
+  },
 };
 
 class AudioEngine {
@@ -218,6 +232,15 @@ class AudioEngine {
   private musicLoopBuffers: Record<string, AudioBuffer> = {};
   /** Laufende Musik-Loop-Quelle (falls für das Theme eine Loop existiert). */
   private musicLoopSource: AudioBufferSourceNode | null = null;
+  /** Wald-Nacht: Grillenzirpen-Ambient. Timer + Ziel-Lautstärke (0..1). */
+  private cricketTimer: number | null = null;
+  private cricketLevel = 0;
+  /** Grillen-Dichte (0.3..1.5) — je Gerät fein einstellbar (schwache Geräte
+   *  bekommen weniger Zirpen). Skaliert Abstände & Zirpen-Anzahl je Schritt. */
+  private cricketDensity = 1;
+  /** Wald-Nacht: leises Windrauschen (Loop-Quelle + Gain), 2. Ambient-Schicht. */
+  private windSource: AudioBufferSourceNode | null = null;
+  private windGain: GainNode | null = null;
 
   init() {
     if (this.inited) return;
@@ -573,6 +596,135 @@ class AudioEngine {
     this.layerGain.gain.linearRampToValueAtTime(target, now + 0.4);
   }
 
+  /**
+   * Wald-Nacht-Ambient: Grillenzirpen. `level` (0..1) folgt dem Nacht-Anteil des
+   * Waldlevels (von der Engine je Frame gesetzt). Bei >0 läuft ein Timer, der in
+   * ruhigen Abständen kurze Zirp-Triller (~4.5 kHz, mehrere schnelle Amplituden-
+   * Pulse) mit zufälligem Panning schedult; bei 0 wird der Timer gestoppt.
+   */
+  setForestCrickets(level: number) {
+    this.cricketLevel = Math.max(0, Math.min(1, level));
+    if (!this.inited) return;
+    if (this.cricketLevel > 0.02 && this.cricketTimer === null) {
+      const step = () => {
+        this.chirp();
+        // bei hoher Dichte gelegentlich ein zweites, leicht versetztes Zirpen
+        if (this.cricketDensity > 1.05 && Math.random() < (this.cricketDensity - 1) * 1.4) {
+          window.setTimeout(() => this.chirp(), 70 + Math.random() * 90);
+        }
+        // gelegentlich ein Eulenruf als 2. Nachtschicht (selten, tief, ruhig)
+        if (Math.random() < 0.07 && this.cricketLevel > 0.4) this.owlHoot();
+        // leicht variierende Abstände (Dichte skaliert das Tempo) → Nachtchor
+        const next = (260 + Math.random() * 340) / Math.max(0.3, this.cricketDensity);
+        this.cricketTimer = window.setTimeout(step, next);
+      };
+      step();
+    } else if (this.cricketLevel <= 0.02 && this.cricketTimer !== null) {
+      window.clearTimeout(this.cricketTimer);
+      this.cricketTimer = null;
+    }
+    // Windrauschen (kontinuierlich, sehr leise) mit der Nacht ein-/ausblenden.
+    this.updateWind();
+  }
+
+  /** Grillen-Dichte je Gerät setzen (0.3 = sehr sparsam … 1.5 = dichter Chor). */
+  setCricketDensity(v: number) {
+    this.cricketDensity = Math.max(0.3, Math.min(1.5, v));
+  }
+
+  /** Eulenruf: zwei weiche, tiefe Sinus-Töne „huu … huu". */
+  private owlHoot() {
+    if (!this.ctx || !this.sfxGain) return;
+    const now = this.ctx.currentTime;
+    const vol = 0.04 + this.cricketLevel * 0.05;
+    const notes: [number, number][] = [[0, 380], [0.42, 320]];
+    for (const [dt, f] of notes) {
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f * 0.96, now + dt);
+      osc.frequency.linearRampToValueAtTime(f, now + dt + 0.08);
+      g.gain.setValueAtTime(0, now + dt);
+      g.gain.linearRampToValueAtTime(vol, now + dt + 0.06);
+      g.gain.linearRampToValueAtTime(0.0001, now + dt + 0.3);
+      osc.connect(g); g.connect(this.sfxGain);
+      osc.start(now + dt); osc.stop(now + dt + 0.36);
+    }
+  }
+
+  /** Sehr leises, gefiltertes Windrauschen als Grundschicht der Waldnacht. */
+  private updateWind() {
+    if (!this.ctx || !this.sfxGain) return;
+    const want = this.cricketLevel > 0.02;
+    if (want && !this.windSource) {
+      // 2s Rauschen, nahtlos geloopt, durch einen Tiefpass → sanftes Wehen.
+      const sr = this.ctx.sampleRate;
+      const buf = this.ctx.createBuffer(1, sr * 2, sr);
+      const ch = buf.getChannelData(0);
+      let last = 0;
+      for (let i = 0; i < ch.length; i++) { const w = Math.random() * 2 - 1; last = last * 0.96 + w * 0.04; ch[i] = last; }
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf; src.loop = true;
+      const g = this.ctx.createGain();
+      g.gain.value = 0;
+      if (this.ctx.createBiquadFilter) {
+        const lp = this.ctx.createBiquadFilter();
+        lp.type = 'lowpass'; lp.frequency.value = 620;
+        src.connect(lp); lp.connect(g);
+      } else {
+        src.connect(g);
+      }
+      g.connect(this.sfxGain);
+      src.start();
+      this.windSource = src; this.windGain = g;
+    }
+    if (this.windGain) {
+      const now = this.ctx.currentTime;
+      const target = want ? this.cricketLevel * 0.05 : 0;
+      this.windGain.gain.cancelScheduledValues(now);
+      this.windGain.gain.setValueAtTime(this.windGain.gain.value, now);
+      this.windGain.gain.linearRampToValueAtTime(target, now + 0.8);
+    }
+    if (!want && this.windSource) {
+      const src = this.windSource; this.windSource = null; const g = this.windGain;
+      // nach dem Ausblenden stoppen
+      window.setTimeout(() => { try { src.stop(); } catch { /* noop */ } if (g) g.disconnect(); }, 900);
+      this.windGain = null;
+    }
+  }
+
+  /** Ein einzelnes Grillen-Zirpen: kurzer Triller aus schnellen Amplituden-Pulsen. */
+  private chirp() {
+    if (!this.ctx || !this.sfxGain || this.cricketLevel <= 0.02) return;
+    const now = this.ctx.currentTime;
+    const base = 4200 + Math.random() * 900;
+    const pulses = 3 + (Math.random() < 0.5 ? 0 : 1);
+    const vol = 0.02 + this.cricketLevel * 0.05;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(base, now);
+    g.gain.setValueAtTime(0, now);
+    // schnelle Pulse (An/Aus) über ~0.28s
+    let tt = now + 0.005;
+    for (let i = 0; i < pulses; i++) {
+      g.gain.linearRampToValueAtTime(vol, tt);
+      g.gain.linearRampToValueAtTime(0.0001, tt + 0.028);
+      tt += 0.06;
+    }
+    osc.connect(g);
+    if (this.ctx.createStereoPanner) {
+      const pan = this.ctx.createStereoPanner();
+      pan.pan.setValueAtTime(Math.random() * 1.6 - 0.8, now);
+      g.connect(pan);
+      pan.connect(this.sfxGain);
+    } else {
+      g.connect(this.sfxGain);
+    }
+    osc.start(now);
+    osc.stop(tt + 0.05);
+  }
+
   private tone(freq: number, dur: number, type: OscillatorType, gain: number, when: number, attack = 0.005, release = 0.04) {
     if (!this.ctx || !this.sfxGain) return;
     const osc = this.ctx.createOscillator();
@@ -765,6 +917,17 @@ class AudioEngine {
       this.musicTimer = null;
     }
     this.stopMusicLoop();
+    // Grillen-Ambient beenden (z. B. beim Levelwechsel weg vom Wald).
+    if (this.cricketTimer !== null) {
+      window.clearTimeout(this.cricketTimer);
+      this.cricketTimer = null;
+    }
+    this.cricketLevel = 0;
+    if (this.windSource) {
+      const src = this.windSource; this.windSource = null; const g = this.windGain; this.windGain = null;
+      try { src.stop(); } catch { /* noop */ }
+      if (g) g.disconnect();
+    }
     this.currentTheme = null;
   }
 

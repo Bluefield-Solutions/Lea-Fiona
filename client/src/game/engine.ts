@@ -89,6 +89,8 @@ export class GameEngine {
   accumulator = 0;
   /** AP 1.9: zuletzt gesetzte Musik-Intensität (-1 = noch nie). */
   private lastMusicIntensity = -1;
+  private lastCricketLevel = -1;
+  private lastCricketDensity = -1;
   fixedDt = 1000 / 60;
   running = false;
   // Handle of the in-flight requestAnimationFrame so stop() can cancel it
@@ -195,7 +197,7 @@ export class GameEngine {
   // damit sie ihr eigenes Alter/Ausblenden führen.
   wingFlutters: Array<{ x: number; y: number; age: number; max: number; dir: number }> = [];
   // Feinschliff: Coin-Pop-Ringe beim Münzeinsammeln (eigenes Alter/Ausblenden).
-  coinPops: Array<{ x: number; y: number; age: number; max: number }> = [];
+  coinPops: Array<{ x: number; y: number; age: number; max: number; combo: number }> = [];
   // Aktive Note-Block-Einsack-Animationen: key `col,row` → verbleibende Frames.
   noteBounceTimers: Map<string, number> = new Map();
   // Warp-Röhren: Cooldown verhindert sofortiges Zurück-Warpen, Flash blendet
@@ -617,6 +619,7 @@ export class GameEngine {
       case 'plush':      return ['#ecdfea', '#f4ecf2', '#ddd0db', '#f0e3ec'];
       case 'space':      return ['#b7add0', '#cabfe0', '#9a8fbe', '#d6ccea'];
       case 'underwater': return ['#bcd6df', '#d2e6ec', '#a6c4cf', '#c8dee5'];
+      case 'forest':     return ['#8a7a5c', '#9c8a68', '#6e5f45', '#b0a07e']; // Waldboden: Erde + Laub
       case 'jungle':
       case 'bluefield':
       case 'school':
@@ -823,6 +826,31 @@ export class GameEngine {
           if (intensity !== this.lastMusicIntensity) {
             audio.setMusicIntensity(intensity);
             this.lastMusicIntensity = intensity;
+          }
+        }
+        // Wald-Nacht: Grillenzirpen folgt dem Fortschritt (Nacht-Anteil). Nur im
+        // Wald aktiv; sonst auf 0 (setForestCrickets stoppt den Timer selbst).
+        {
+          let crickets = 0;
+          if (this.level.theme === 'forest') {
+            const span = Math.max(1, (this.camera.worldWidth || this.camera.width) - this.camera.width);
+            const p = Math.max(0, Math.min(1, this.camera.x / span));
+            // gleiche Kurve wie nightF im Hintergrund (voll ab ~0.80)
+            const k = Math.max(0, Math.min(1, (p - 0.52) / (0.80 - 0.52)));
+            crickets = k * k * (3 - 2 * k);
+          }
+          // Handregler (Optionsmenü, 0..1). Ganz links = Nacht-Ambient komplett
+          // aus (auch Eule/Wind, da an cricketLevel gekoppelt).
+          const grillen = getSettings().grillenDichte;
+          if (grillen < 0.04) crickets = 0;
+          // Dichte = Regler (0..1 → 0..1.5), gedeckelt durch die Geräteklasse,
+          // damit schwache Geräte trotz hoher Einstellung nicht gebremst werden.
+          const cap = this.effectiveQuality === 'low' ? 0.6 : this.effectiveQuality === 'mid' ? 1.0 : 1.5;
+          const density = Math.min(grillen * 1.5, cap);
+          if (density !== this.lastCricketDensity) { audio.setCricketDensity(density); this.lastCricketDensity = density; }
+          if (Math.abs(crickets - this.lastCricketLevel) > 0.05 || (crickets === 0 && this.lastCricketLevel !== 0)) {
+            audio.setForestCrickets(crickets);
+            this.lastCricketLevel = crickets;
           }
         }
         break;

@@ -436,7 +436,10 @@ export function runEntityCollisions(engine: GameEngine): void {
         // Feinschliff: goldener Pop-Ring am Sammelpunkt (skaliert kurz auf).
         // Gedeckelt, damit dichte Münzreihen die Ringe nicht überladen.
         if (engine.coinPops.length < 24) {
-          engine.coinPops.push({ x: entity.x + entity.width / 2, y: entity.y + entity.height / 2, age: 0, max: 12 });
+          // combo mitgeben: der Pop-Ring wächst/leuchtet mit der Sammel-Serie
+          // (visuelles Pendant zur steigenden Tonhöhe). combo wird direkt darunter
+          // aktualisiert; hier bewusst der Stand VOR dem Inkrement der aktuellen Münze.
+          engine.coinPops.push({ x: entity.x + entity.width / 2, y: entity.y + entity.height / 2, age: 0, max: 12, combo: engine.coinCombo });
         }
         engine.particles.push(engine.acquireFloatingText(entity.x, entity.y - 10, '+100'));
         // Game-Feel: schnelles Aufsammeln (Münzreihe) → steigende Tonhöhe.
