@@ -695,44 +695,14 @@ function buildJungleSignature(): HTMLCanvasElement {
 
 // Cave: glowing crystal cluster on the horizon.
 function buildCaveSignature(): HTMLCanvasElement {
+  // Auf Wunsch (Stephan) KOMPLETT entfernt: die großen lila-fliederfarbigen
+  // Kristall-Spitzen als Höhlen-Wahrzeichen gefielen nicht. Die Signatur bleibt
+  // als leere (transparente) Ebene bestehen — Höhle & Drachenhöhle behalten ihre
+  // übrige Atmosphäre (alte Mine, Stalaktiten, Dunst). Kein Neuzeichnen nötig.
   const w = 120; const h = 140;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  const ctx = c.getContext('2d')!;
-  const aura = ctx.createRadialGradient(w / 2, h * 0.55, 4, w / 2, h * 0.55, w * 0.65);
-  aura.addColorStop(0, 'rgba(170, 90, 220, 0.28)');
-  aura.addColorStop(0.5, 'rgba(110, 60, 180, 0.12)');
-  aura.addColorStop(1, 'rgba(40, 20, 60, 0)');
-  ctx.fillStyle = aura;
-  ctx.fillRect(0, 0, w, h);
-  const shards = [
-    { bx: 0.50, tipx: 0.50, tipy: 0.05, sw: 0.16, hue: 280 },
-    { bx: 0.32, tipx: 0.30, tipy: 0.20, sw: 0.13, hue: 270 },
-    { bx: 0.68, tipx: 0.72, tipy: 0.18, sw: 0.12, hue: 290 },
-    { bx: 0.18, tipx: 0.20, tipy: 0.45, sw: 0.10, hue: 260 },
-    { bx: 0.84, tipx: 0.86, tipy: 0.40, sw: 0.10, hue: 300 },
-  ];
-  for (const s of shards) {
-    const bx = s.bx * w; const by = h * 0.96;
-    const tx = s.tipx * w; const ty = s.tipy * h;
-    const half = (s.sw * w) / 2;
-    const grad = ctx.createLinearGradient(bx - half, 0, bx + half, 0);
-    grad.addColorStop(0, `hsla(${s.hue}, 75%, 22%, 0.9)`);
-    grad.addColorStop(0.5, `hsla(${s.hue}, 85%, 65%, 0.85)`);
-    grad.addColorStop(1, `hsla(${s.hue}, 70%, 18%, 0.9)`);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(bx - half, by); ctx.lineTo(bx + half, by); ctx.lineTo(tx, ty);
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = `hsla(${s.hue}, 95%, 85%, 0.55)`;
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
-  }
-  const core = ctx.createRadialGradient(w / 2, h * 0.7, 1, w / 2, h * 0.7, 18);
-  core.addColorStop(0, 'rgba(230, 200, 255, 0.55)');
-  core.addColorStop(1, 'rgba(120, 60, 180, 0)');
-  ctx.fillStyle = core;
-  ctx.fillRect(w / 2 - 18, h * 0.7 - 18, 36, 36);
+  // absichtlich leer lassen (nur transparente Fläche)
   return c;
 }
 

@@ -595,22 +595,35 @@ function drawForestBackground(this: Renderer, camera: Camera) {
     for (const [dx, dy, r] of blobs) { ctx.beginPath(); ctx.arc(x + dx - r * 0.22, cy + dy - r * 0.26, r * 0.6, 0, Math.PI * 2); ctx.fill(); }
   };
 
-  // ── Mittlere Baum-Ebene (Parallaxe 0.12) — mit LICHTUNGEN (Lücken) ──
-  const midDark = phC([40, 92, 52], [52, 54, 74], [14, 26, 40]);
+  // ── Dichter Wald: mehrere Ebenen VIELER kleiner, dicht stehender Bäume ──
+  // WICHTIG: Jede Ebene hat eine STABILE Grundlinie (kein vertikaler Jitter),
+  // sonst „fliegen" die Bäume hoch/runter. Variiert wird nur Größe & x-Versatz.
+  const farDark = phC([52, 96, 60], [62, 60, 82], [15, 25, 40]);
+  const farLit = phC([78, 128, 72], [116, 92, 104], [24, 40, 54]);
+  const midDark = phC([38, 90, 50], [50, 52, 72], [13, 23, 37]);
   const midLit = phC([96, 156, 82], [150, 110, 110], [30, 48, 62]);
-  const trunkCol = phC([78, 58, 40], [70, 50, 46], [18, 22, 34]);
-  // Maße relativ zur (kleinen) logischen Viewport-Höhe (~369px), sonst werden
-  // die Kronen riesig und bilden eine Decke über dem ganzen Himmel.
-  const midBaseY = H * 0.78;
-  const midSp = 132;
-  const pxm = camera.x * 0.12;
-  for (let i = Math.floor(pxm / midSp) - 1; i <= Math.floor((pxm + W) / midSp) + 1; i++) {
-    // Lichtung: jeder 4. Slot bleibt frei (Sonne/Sterne scheinen durch).
-    if (((i % 4) + 4) % 4 === 2) continue;
-    const jitter = pseudoRandom(i * 31 + 3);
-    const x = i * midSp + 40 + jitter * 30 - pxm;
-    const scale = 0.72 + pseudoRandom(i * 17 + 9) * 0.30;
-    drawTree(x, midBaseY + jitter * 8, H * 0.20 * scale, H * 0.30 * scale, midDark, midLit, trunkCol);
+  const trunkCol = phC([70, 52, 36], [64, 46, 44], [16, 20, 30]);
+
+  // Ebene 1 — ferne, DICHTE Baumwand: viele kleine Bäume, praktisch lückenlos.
+  {
+    const baseY = H * 0.70, sp = 44, px = camera.x * 0.06;
+    for (let i = Math.floor(px / sp) - 1; i <= Math.floor((px + W) / sp) + 1; i++) {
+      const j = pseudoRandom(i * 31 + 3);
+      const x = i * sp + 6 + j * 18 - px;
+      const s = 0.52 + pseudoRandom(i * 17 + 9) * 0.26;
+      drawTree(x, baseY, H * 0.13 * s, H * 0.20 * s, farDark, farLit, trunkCol);
+    }
+  }
+  // Ebene 2 — mittlere Bäume, dicht gestaffelt, stabile Grundlinie, seltene Lücke.
+  {
+    const baseY = H * 0.79, sp = 72, px = camera.x * 0.13;
+    for (let i = Math.floor(px / sp) - 1; i <= Math.floor((px + W) / sp) + 1; i++) {
+      if (((i % 7) + 7) % 7 === 3) continue;   // nur gelegentlich eine kleine Lichtung
+      const j = pseudoRandom(i * 29 + 5);
+      const x = i * sp + 10 + j * 22 - px;
+      const s = 0.70 + pseudoRandom(i * 13 + 7) * 0.30;
+      drawTree(x, baseY, H * 0.16 * s, H * 0.24 * s, midDark, midLit, trunkCol);
+    }
   }
 
   // ── Nebelschwaden zwischen den Stämmen (weiche, langsam driftende Schleier) ──
@@ -796,6 +809,52 @@ function drawForestBackground(this: Renderer, camera: Camera) {
   }
 }
 
+// Wald-VORDERGRUND: einzelne große, dunkle Bäume, die NACH der Spielfigur
+// gezeichnet werden — die Spielerin läuft also kurz DAHINTER (verschwindet
+// teilweise). Nahezu welt-fest (hohe Parallaxe 0.85), sparsam gesetzt.
+function drawForestForeground(this: Renderer, camera: Camera, forbidden?: number[][]) {
+  const ctx = this.ctx;
+  const W = this.viewportW, H = this.viewportH;
+  const span = Math.max(1, (camera.worldWidth || W) - (camera.width || W));
+  const p = Math.max(0, Math.min(1, camera.x / span));
+  const toNight = (() => { const k = Math.max(0, Math.min(1, (p - 0.50) / 0.30)); return k * k * (3 - 2 * k); })();
+  const mixC = (a: number[], b: number[], k: number) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+  const rgb = (c: number[]) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+  const dark = mixC([26, 54, 32], [9, 15, 24], toNight);
+  const litE = mixC([40, 74, 44], [14, 22, 32], toNight);
+  const trunk = mixC([48, 34, 22], [12, 15, 22], toNight);
+
+  // Welt-fest verankert (Parallaxe 1.0): der Baum steht an einer festen Welt-
+  // position, die Figur läuft exakt dahinter durch statt daran „vorbeizugleiten".
+  const baseY = H * 1.14, sp = 560, px = camera.x;
+  for (let i = Math.floor(px / sp) - 1; i <= Math.floor((px + W) / sp) + 1; i++) {
+    if (pseudoRandom(i * 89 + 7) < 0.5) continue;   // nur an manchen Stellen ein Baum
+    const wx = i * sp + pseudoRandom(i * 53 + 2) * 240;   // feste Welt-x
+    // Kritische Zonen meiden (Wassergräben/Sprünge, Checkpoint, Zielfahne),
+    // damit ein Vordergrundbaum nie eine Landung oder wichtige Sicht verdeckt.
+    if (forbidden && forbidden.some(([a, b]) => wx >= a && wx <= b)) continue;
+    const x = wx - px;
+    const s = 1.05 + pseudoRandom(i * 19 + 3) * 0.5;
+    const w = H * 0.30 * s, h = H * 0.66 * s;
+    // Stamm (breit, mit Andeutung von Wurzeln)
+    const tw = w * 0.16;
+    ctx.fillStyle = rgb(trunk);
+    ctx.beginPath();
+    ctx.moveTo(x - tw * 0.8, baseY);
+    ctx.lineTo(x - tw * 0.42, baseY - h * 0.55);
+    ctx.lineTo(x + tw * 0.42, baseY - h * 0.55);
+    ctx.lineTo(x + tw * 0.8, baseY);
+    ctx.closePath(); ctx.fill();
+    // Krone (geschichtete Blobs)
+    const cy = baseY - h * 0.62;
+    const blobs: number[][] = [[0, -h * 0.30, w * 0.52], [-w * 0.36, -h * 0.10, w * 0.42], [w * 0.36, -h * 0.12, w * 0.42], [0, -h * 0.02, w * 0.5]];
+    ctx.fillStyle = rgb(dark);
+    for (const [dx, dy, r] of blobs) { ctx.beginPath(); ctx.arc(x + dx, cy + dy, r, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = rgb(litE);
+    for (const [dx, dy, r] of blobs) { ctx.beginPath(); ctx.arc(x + dx - r * 0.2, cy + dy - r * 0.24, r * 0.5, 0, Math.PI * 2); ctx.fill(); }
+  }
+}
+
 // BG-Aufwertung · wiederverwendbarer Bodennebel (aus Dschungel extrahiert).
 // Weiche, langsam driftende Schwaden am unteren Bildrand über gebackene Disc
 // (kein Per-Frame-Gradient, safari-sicher). Farbe/Deckkraft/Höhe pro Welt.
@@ -865,8 +924,8 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
   ctx.lineTo(W, H);
   ctx.closePath();
   ctx.fill();
-  // Leuchtender Fels-Grat (subtiler Kristall-Schimmer auf der Kante).
-  ctx.strokeStyle = 'rgba(120,90,170,0.32)';
+  // Fels-Grat: dezenter, NEUTRAL-kühler Schimmer (kein Lila mehr, auf Wunsch entfernt).
+  ctx.strokeStyle = 'rgba(150,162,178,0.16)';
   ctx.lineWidth = 1.6;
   ctx.beginPath();
   for (let x = 0; x <= W; x += 14) { const y = lowerY(x); if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
@@ -925,11 +984,12 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
     const scrollX = (cx - camera.x * 0.03) % (W + 40) - 20;
     const cy = pseudoRand(i * 2287) * H * 0.6 + H * 0.1;
     const pulse = Math.sin(this.time * 0.02 + i * 1.7) * 0.3 + 0.7;
-    const hue = pseudoRand(i * 2491) > 0.5 ? 270 : 190;
+    // Kein Lila/Flieder mehr (Stephan-Wunsch): alle Kristalle kühl-cyan.
+    const hue = 190;
     const r = 2 + pseudoRand(i * 2693) * 3;
 
     // Perf-Paket 2: gebackene Disc je Farbton statt je Frame neuer Radial-Gradient.
-    const cdisc = hue === 270 ? getGlowDisc(128, 178, 133, 235, 1) : getGlowDisc(128, 112, 214, 230, 1);
+    const cdisc = getGlowDisc(128, 112, 214, 230, 1);
     drawGlowDisc(ctx, cdisc, scrollX, cy, r * 6, r * 6, 0.12 * pulse, false);
     ctx.fillStyle = `hsla(${hue}, 90%, 75%, ${0.5 * pulse})`;
     ctx.beginPath();
@@ -956,9 +1016,8 @@ function drawCaveBackground(this: Renderer, camera: Camera) {
     if (bx > -90 && bx < W + 90) drawCaveMine(ctx, bx, by, t);
   }
 
-  // BG-Aufwertung · Bodennebel Höhle: kühler violett-blauer Kristall-Dunst,
-  // etwas subtiler als im Dschungel (dunkle Welt).
-  this.drawGroundFog(camera, 138, 122, 178, { baseAlpha: 0.11, yFrac: 0.82 });
+  // BG-Aufwertung · Bodennebel Höhle: kühl-neutraler Gesteinsdunst (kein Lila mehr).
+  this.drawGroundFog(camera, 120, 128, 142, { baseAlpha: 0.11, yFrac: 0.82 });
 
   // Welt 16 · Drachenhöhle: zusätzliche Nahfeld-Höhlenkulisse für das Gefühl,
   // wirklich IN der Höhle zu stehen — umschließender Felsrahmen, große
@@ -2975,8 +3034,8 @@ function drawCaveMine(ctx: CanvasRenderingContext2D, bx: number, by: number, t: 
   ctx.strokeStyle = ironLite; ctx.lineWidth = 1.4; ctx.stroke();
   ctx.fillStyle = 'rgba(0,0,0,0.28)';             // Innenschatten
   ctx.fillRect(cxc - 16, cartTop + 2, 32, 5);
-  // Erz-Ladung (glitzernde Kristalle).
-  for (const [ox, oy, oc] of [[-8, -2, '#9a6cff'], [2, -4, '#c49bff'], [10, -1, '#7a52d8']] as [number, number, string][]) {
+  // Erz-Ladung (glitzernde Kristalle) — kühl-teal statt Lila (Stephan-Wunsch).
+  for (const [ox, oy, oc] of [[-8, -2, '#4fb8b0'], [2, -4, '#8fe0da'], [10, -1, '#358f8a']] as [number, number, string][]) {
     ctx.fillStyle = oc;
     ctx.beginPath();
     ctx.moveTo(cxc + ox, cartTop + oy); ctx.lineTo(cxc + ox + 3, cartTop - 5 + oy); ctx.lineTo(cxc + ox + 6, cartTop + oy);
@@ -6401,4 +6460,5 @@ export const backgroundsMethods
   drawUnderwaterBackground,
   drawSpaceBackground,
   drawForestBackground,
+  drawForestForeground,
 };

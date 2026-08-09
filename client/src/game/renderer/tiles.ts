@@ -1028,8 +1028,9 @@ function drawThemedProp(this: Renderer, ctx: CanvasRenderingContext2D) {
   const t = this.time;
   ctx.save();
   if (theme === 'cave' || theme === 'space') {
-    // Kristall-Cluster (Höhle: violett, Weltraum: cyan).
-    const base = theme === 'space' ? ['#7fd0ff', '#4f9fe0'] : ['#a87fe8', '#7d4fd0'];
+    // Kristall-Cluster — Höhle jetzt kühl-teal statt Lila (Stephan-Wunsch),
+    // Weltraum bleibt cyan.
+    const base = theme === 'space' ? ['#7fd0ff', '#4f9fe0'] : ['#5fc7c0', '#3a9a95'];
     for (let i = 0; i < 3; i++) {
       const bx = S * 0.28 + i * S * 0.22;
       const h = S * (0.36 + (i === 1 ? 0.24 : 0.08));

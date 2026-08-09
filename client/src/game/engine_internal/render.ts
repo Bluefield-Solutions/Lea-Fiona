@@ -99,7 +99,7 @@ function renderWorldLayer(engine: GameEngine): void {
   // Bodenband (Etappe 1): In Gras-Welten liefert die durchgehende Kurve die
   // Oberfläche; die oberste Boden-Reihe wird daher als reine Erde gezeichnet.
   const groundBaseRow = groundRowOf(engine.level);
-  const grassBand = engine.level.theme === 'jungle' || engine.level.theme === 'beach' || engine.level.theme === 'australia' || engine.level.theme === 'bluefield';
+  const grassBand = engine.level.theme === 'jungle' || engine.level.theme === 'beach' || engine.level.theme === 'australia' || engine.level.theme === 'bluefield' || engine.level.theme === 'forest';
 
   // Waldbach-Schimmer: Tageslicht-Anteil aus dem Level-Fortschritt (wie im
   // Wald-Hintergrund), damit die Reflexe tags hell und nachts kühl-silbrig sind.
@@ -734,6 +734,12 @@ function renderWorldLayer(engine: GameEngine): void {
     engine.renderer.drawTrampolineForeground(engine.camera.x, VW, VH);
   } else if (theme === 'bluefield') {
     engine.renderer.drawBluefieldAmbient(engine.camera.x, engine.camera.y, VW, VH);
+  } else if (theme === 'forest') {
+    // Wald: einzelne große Vordergrund-Bäume ÜBER der Spielfigur — sie läuft
+    // kurz dahinter und verschwindet dabei teilweise. Kritische Zonen (Wasser-
+    // gräben, Checkpoint, Zielfahne) werden ausgespart, damit nie eine Landung
+    // oder wichtige Sicht verdeckt wird.
+    engine.renderer.drawForestForeground(engine.camera, forestFgForbidden(engine.level));
   }
 
   // Phase 3: dynamisches Licht/Dunkelheit in dunklen Welten (experimentell,
@@ -747,6 +753,30 @@ function renderWorldLayer(engine: GameEngine): void {
     engine.renderer.drawDynamicLighting([{ x: ps.x, y: ps.y, r: 150 }], darkness);
   }
 
+}
+
+// Verbotszonen für Wald-Vordergrundbäume: Welt-x-Intervalle (px), in denen KEIN
+// Baum stehen darf — Wassergräben/Sprünge, Checkpoint, Zielfahne. Pro Level
+// einmal berechnet (gecacht), da statisch.
+const _fgForbiddenCache = new WeakMap<object, number[][]>();
+function forestFgForbidden(level: GameEngine['level']): number[][] {
+  const cached = _fgForbiddenCache.get(level);
+  if (cached) return cached;
+  const TS = TILE_SIZE;
+  const zones: number[][] = [];
+  const W = level.width, H = level.height;
+  for (let c = 0; c < W; c++) {
+    let hazard = false;
+    for (let r = 0; r < H; r++) {
+      const t = level.tiles[r][c];
+      if (t === TileType.WATER_TOP || t === TileType.WATER || t === TileType.DEEP_WATER) { hazard = true; break; }
+    }
+    if (hazard) zones.push([(c - 4) * TS, (c + 5) * TS]);   // Graben + Kronen-Rand
+  }
+  if (level.checkpoint) zones.push([(level.checkpoint.col - 3) * TS, (level.checkpoint.col + 4) * TS]);
+  if (level.flagPosition) { const fc = level.flagPosition.x / TS; zones.push([(fc - 3) * TS, (fc + 4) * TS]); }
+  _fgForbiddenCache.set(level, zones);
+  return zones;
 }
 
 // ===========================================================================
@@ -1214,7 +1244,7 @@ function decorRock(ctx: CanvasRenderingContext2D, bx: number, by: number, pal: s
 }
 
 function decorCrystal(ctx: CanvasRenderingContext2D, bx: number, by: number, _pal: string[], theme: string): void {
-  const glow = theme === 'space' ? '#5be0ff' : theme === 'ice' ? '#bfeeff' : '#b06bff';
+  const glow = theme === 'space' ? '#5be0ff' : theme === 'ice' ? '#bfeeff' : '#4fc7c0';
   const spikes: [number, number, number][] = [[0, 14, 3], [-5, 9, 2.5], [5, 10, 2.5]];
   for (const [dx, h, w] of spikes) {
     ctx.fillStyle = glow;
@@ -1298,7 +1328,7 @@ function tintBluefieldGround(engine: GameEngine): void {
 let _terrainCache: HTMLCanvasElement | null = null;
 let _terrainToken = '';
 let _terrainTopY = 0;
-const TERRAIN_CACHE_THEMES = new Set(['jungle', 'beach', 'australia', 'bluefield', 'sky', 'ice']);
+const TERRAIN_CACHE_THEMES = new Set(['jungle', 'beach', 'australia', 'bluefield', 'sky', 'ice', 'forest']);
 
 function terrainCacheToken(engine: GameEngine): string {
   const l = engine.level;
@@ -1372,7 +1402,7 @@ function renderTerrainHills(
 ): void {
   const ctx = engine.renderer.ctx;
   const theme = engine.level.theme;
-  const isGrassWorld = theme === 'jungle' || theme === 'beach' || theme === 'australia' || theme === 'bluefield';
+  const isGrassWorld = theme === 'jungle' || theme === 'beach' || theme === 'australia' || theme === 'bluefield' || theme === 'forest';
   const isDry = theme === 'australia' || theme === 'beach'; // Sandkruste statt Gras (Outback/Strand)
   const isCloud = theme === 'sky';
   const isIce = theme === 'ice';
@@ -1412,6 +1442,14 @@ function renderTerrainHills(
       narbe: ['#4a7be0', '#3a64c8', '#2d52b0', '#264596', '#2a3a5a'],
       pebble: ['#5a6a8a', '#4a5a7a', '#3a4a6a', '#6a7a9a'],
       grass: { deep: '#1e3a8a', base: '#2d52c4', mid: '#3f6fe0', hi: '#6b9bf5' },
+    },
+    forest: {
+      // Waldboden: warme, dunkle Erde + sattes Moosgrün (etwas tiefer als Dschungel).
+      soilBot: '#2e1b0e',
+      soil: ['#6f4a2e', '#623f26', '#573620', '#4c2e1a', '#432814', '#382010', '#2e1b0e'],
+      narbe: ['#4e9e3e', '#3f8a32', '#347a2a', '#2c6a24', '#6f4a2e'],
+      pebble: ['#8a7a6a', '#7a6a5a', '#6a5a4a', '#9a8a7a'],
+      grass: { deep: '#25601e', base: '#367e2a', mid: '#4aa23a', hi: '#74c85a' },
     },
   };
   const pal = PAL[theme] ?? PAL.jungle;
