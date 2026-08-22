@@ -516,6 +516,7 @@ jobs:
             unzip -o /tmp/payload.zip -d .
             git config user.name "lea-fiona-bot"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git checkout -- .github 2>/dev/null || true
             git add -A
             git commit -m "Versions-Stempel nachgeliefert (eingebettetes Paket)" || echo "nichts zu committen"
             git pull --rebase --autostash origin main || true
@@ -542,6 +543,11 @@ jobs:
             rm -f "${zips[@]}"
             git config user.name "lea-fiona-bot"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            # Von Paketen mitgelieferte .github/-Aenderungen verwerfen: der
+            # GITHUB_TOKEN darf Workflow-Dateien nicht pushen -> sonst scheitert
+            # der ganze Cleanup-Push und alte bundle-*.b64 sammeln sich an.
+            # Der Workflow bleibt so, wie er im Repo committet ist.
+            git checkout -- .github 2>/dev/null || true
             git add -A
             git commit -m "Paket angewendet + aufgeraeumt" || echo "nichts zu committen"
             git pull --rebase --autostash origin main || true
@@ -558,6 +564,27 @@ jobs:
         run: npm run build:standalone
       - name: Web-App-Ordner bauen (Icons/Splash/Manifest/SW)
         run: node tools/build-webapp.mjs
+      - name: Versions-Info schreiben (byte-genau pruefbar via /version.json)
+        run: |
+          node -e '
+            const { execSync } = require("child_process");
+            const fs = require("fs");
+            const lines = execSync("git ls-tree -r HEAD -- client/src/game").toString().trim().split("\n");
+            const files = {};
+            for (const l of lines) {
+              const m = l.match(/^\d+ blob ([0-9a-f]+)\t(.+)$/);
+              if (m) files[m[2].replace("client/src/game/", "")] = m[1];
+            }
+            const info = {
+              built: new Date().toISOString(),
+              commit: execSync("git rev-parse HEAD").toString().trim(),
+              short: execSync("git rev-parse --short HEAD").toString().trim(),
+              fileCount: Object.keys(files).length,
+              files,
+            };
+            fs.writeFileSync("webapp/version.json", JSON.stringify(info));
+            console.log("version.json geschrieben:", info.short, info.fileCount, "Dateien");
+          '
       - name: Pages-Artefakt hochladen
         uses: actions/upload-pages-artifact@v3
         with:
