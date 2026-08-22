@@ -1,5 +1,6 @@
 import type { Renderer } from '../renderer.ts';
 import { TILE_SIZE, TileType } from '../constants.ts';
+import { USE_VACATION_PHOTO } from './backgrounds.ts';
 
 // W3.3 · Kanten-Highlight-Farben (rim light) pro Welt — jeweils heller als der
 // Boden, damit die Oberkante als beleuchtete Kante liest (Plastizität).
@@ -19,6 +20,8 @@ const TOP_RIM: Record<string, string> = {
   gym: 'rgba(255,238,200,0.42)',
   trampoline: 'rgba(255,220,245,0.40)',
   plush: 'rgba(255,244,250,0.5)',
+  city: 'rgba(150,170,205,0.30)',   // P4: kühle, dezente Dachkante (Nacht)
+  vacation: 'rgba(190,235,160,0.42)', // Urlaub: heller, grasig-warmer Kantenlichtsaum
 };
 
 // AP 1.5: Kacheln, auf denen sichtbare Wiederholung am störendsten ist und
@@ -31,6 +34,377 @@ const VARIABLE_TILES = new Set<number>([
   TileType.BRICK, TileType.STONE, TileType.MOSS_GROUND,
   TileType.CASTLE_STONE, TileType.CASTLE_TOP, TileType.SPACE_METAL, TileType.SPACE_TOP,
 ]);
+
+// Welt 19: Boden-Tiles, die abschnittsweise (Fels/Sand/Holz) gezeichnet werden.
+const VACATION_GROUND = new Set<number>([
+  TileType.GROUND, TileType.GROUND_TOP, TileType.GROUND_LEFT, TileType.GROUND_RIGHT,
+  TileType.GROUND_TOP_LEFT, TileType.GROUND_TOP_RIGHT,
+]);
+
+// ── Welt 19 „Urlaub": Lagune (Wasser-Passage im Sandweg) ─────────────────────
+// Palette an die Foto-See angeglichen (kein Neon-Türkis), damit die Passage nicht
+// als Fremdkörper auf dem fotorealistischen Strand liegt. Oberfläche mit feinen
+// Glitzer-Reflexen (Tiefe), Grund satt-dunkel; die tiefste Reihe bekommt eine
+// abgedunkelte Unterkante, damit die Lagune nicht als heller Kasten „schwebt".
+function drawVacationLagoon(ctx: CanvasRenderingContext2D, top: boolean) {
+  const S = TILE_SIZE;
+  if (top) {
+    const g = ctx.createLinearGradient(0, 0, 0, S);
+    g.addColorStop(0, '#79c7c6'); g.addColorStop(0.5, '#3d9db8'); g.addColorStop(1, '#2b7fa0');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, S, S);
+    // sandiger Uferschimmer + Schaumkante an der Oberkante (kein harter Schnitt)
+    ctx.fillStyle = 'rgba(238,222,168,0.5)'; ctx.fillRect(0, 0, S, 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fillRect(0, 2, S, 1.5);
+    // zwei kleine Schaum-/Wellenlinien
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 7); for (let x = 0; x <= S; x += 4) ctx.lineTo(x, 7 + Math.sin(x * 0.6) * 1.1); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, 13); for (let x = 0; x <= S; x += 4) ctx.lineTo(x, 13 + Math.sin(x * 0.6 + 2) * 1.0); ctx.stroke();
+    // feine Glitzer-Reflexe auf der Oberfläche (statisch, positions-stabil) → Tiefe
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    for (let i = 0; i < 5; i++) {
+      const gx = ((i * 61 + 13) % (S - 4)) + 2;
+      const gy = 5 + ((i * 37 + 7) % (S - 9));
+      ctx.fillRect(gx, gy, 2, 1);
+    }
+  } else {
+    const g = ctx.createLinearGradient(0, 0, 0, S);
+    g.addColorStop(0, '#2b7fa0'); g.addColorStop(1, '#1c5f80');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, S, S);
+    ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, S * 0.5); for (let x = 0; x <= S; x += 4) ctx.lineTo(x, S * 0.5 + Math.sin(x * 0.5) * 1.2); ctx.stroke();
+  }
+}
+
+// Lagunen-Kanten (positions-/nachbarabhängig, daher NACH dem Kachel-Blit):
+//  • senkrechte Ufer (Wasser trifft Sandweg) → weich in nassen Sand + Brandung
+//    auslaufen lassen (echtes Ufer statt hartem Türkis-Block).
+//  • Unterkante (kein Wasser darunter) → abdunkeln, damit die Lagune satt im
+//    Boden sitzt und nicht als heller Kasten „schwebt".
+function drawVacationShore(
+  this: Renderer, screenX: number, screenY: number,
+  leftShore: boolean, rightShore: boolean, bottomEdge: boolean,
+) {
+  const S = TILE_SIZE;
+  const ctx = this.ctx;
+  const W = 13;
+  const drawSide = (x0: number, dir: 1 | -1) => {
+    const g = ctx.createLinearGradient(x0, 0, x0 + dir * W, 0);
+    g.addColorStop(0, 'rgba(226,204,150,0.95)');
+    g.addColorStop(0.45, 'rgba(214,190,140,0.55)');
+    g.addColorStop(1, 'rgba(214,190,140,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(dir === 1 ? x0 : x0 - W, screenY, W, S);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    const wx = x0 + dir * (W - 2);
+    ctx.moveTo(wx, screenY + 1);
+    for (let y = 0; y <= S; y += 4) ctx.lineTo(wx + Math.sin(y * 0.5 + x0) * 1.4, screenY + y);
+    ctx.stroke();
+  };
+  if (leftShore) drawSide(screenX, 1);
+  if (rightShore) drawSide(screenX + S, -1);
+  if (bottomEdge) {
+    const d = ctx.createLinearGradient(0, screenY + S - 8, 0, screenY + S);
+    d.addColorStop(0, 'rgba(6,26,40,0)'); d.addColorStop(1, 'rgba(6,26,40,0.5)');
+    ctx.fillStyle = d; ctx.fillRect(screenX, screenY + S - 8, S, 8);
+  }
+}
+
+// Zeichnet EINE Urlaubs-Boden-Kachel je Abschnitt: 0 Alpen (Fels + Grasnarbe),
+// 1 Tropen (heller Sand), 2 Küste (Holzsteg-Planken). Abschnitt aus der Spalte.
+function drawVacationGroundColumn(
+  ctx: CanvasRenderingContext2D, x: number, y: number, col: number, row: number, isTop: boolean, groundRow: number,
+) {
+  // Abschnitts-Grenzen an das durchgehende Panorama ausgerichtet (Fels/Weg bis
+  // zum Wasserfall-Ende ~126, Sand an der Lagune, Holz zur Küstenstadt ~216).
+  const B1 = 126, B2 = 216, WBLEND = 3;
+  const sec = col < B1 ? 0 : col < B2 ? 1 : 2;
+  const h = tileVarHash(col + 3, row + 5);
+  const depth = Math.max(0, row - groundRow);   // 0 = begehbare Weg-Oberfläche, >0 = Erdreich darunter
+  drawVacSectionMaterial(ctx, x, y, col, row, isTop, sec, h, depth);
+  // Weiche Verzahnung an den Materialgrenzen: Nachbar-Material einblenden (mit
+  // Hash-Jitter → organisch verzahnte Kante statt schnurgerade).
+  for (const [B, left, right] of [[B1, 0, 1], [B2, 1, 2]] as const) {
+    if (col >= B - WBLEND && col < B + WBLEND) {
+      const f = smoothstep01((col - (B - WBLEND)) / (2 * WBLEND));
+      const over = col < B ? right : left;
+      let a = col < B ? f : 1 - f;
+      a += (tileVarHash(col * 3.1, row * 2.7) - 0.5) * 0.28;
+      a = Math.max(0, Math.min(1, a));
+      if (a > 0.02) {
+        ctx.save(); ctx.globalAlpha = a;
+        drawVacSectionMaterial(ctx, x, y, col, row, isTop, over, h, depth);
+        ctx.restore();
+      }
+    }
+  }
+}
+
+function smoothstep01(v: number): number { const c = Math.max(0, Math.min(1, v)); return c * c * (3 - 2 * c); }
+
+// Welt 19 · Einweg-Plattform (Steg/Sims) als DÜNNE, bewusst gebaute Leiste statt
+// vollflächiger Holzklotz — so liest sie als schwebende Plattform (mit
+// Schlagschatten darunter), nicht als „Boden in der Luft". Material je Abschnitt:
+// Alpen = graue Stein-/Holzbohle, Tropen = helle Bambus-Planke, Küste = warmes Holz.
+function drawVacationPlatform(ctx: CanvasRenderingContext2D, col = -1) {
+  const S = TILE_SIZE;
+  const H = 12;                          // Dicke der Leiste (Rest der Kachel bleibt frei)
+  // Schlagschatten unter der Leiste → hebt sie sichtbar von der Kulisse ab.
+  const sh = ctx.createLinearGradient(0, H, 0, H + 12);
+  sh.addColorStop(0, 'rgba(0,0,0,0.28)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh; ctx.fillRect(0, H, S, 12);
+  // Material je Roadtrip-Abschnitt: Alpen = kühle Stein-Holz-Bohle, Tropen = heller
+  // Bambus, Küste = warmes Holz. (col<0 = HUD/Fallback → warmes Holz.)
+  const sec = col < 0 ? 2 : col < 91 ? 0 : col < 182 ? 1 : 2;
+  // Deutlich unterschiedliche Materialien je Abschnitt (nicht mehr drei Braun-Töne):
+  // Alpen = kühler GRAUER STEIN, Tropen = grünlicher BAMBUS, Küste = warmes TREIBHOLZ.
+  const pal = sec === 0
+    ? { a: '#9aa3ab', b: '#626a74', rim: 'rgba(232,238,244,0.7)', seam: 'rgba(38,44,52,0.55)' }
+    : sec === 1
+      ? { a: '#cfd07a', b: '#93a544', rim: 'rgba(246,255,196,0.7)', seam: 'rgba(64,80,28,0.5)' }
+      : { a: '#c58540', b: '#87501f', rim: 'rgba(255,232,190,0.65)', seam: 'rgba(46,26,10,0.55)' };
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, pal.a); g.addColorStop(1, pal.b);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, S, H);
+  // beleuchtete Oberkante
+  ctx.fillStyle = pal.rim; ctx.fillRect(0, 0, S, 2);
+  if (sec === 0) {
+    // ── Alpen: STEINPLATTE — unregelmäßige Risse + Sprenkel, kein Holz ──
+    ctx.strokeStyle = pal.seam; ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(S * 0.34, 2); ctx.lineTo(S * 0.4, H * 0.5); ctx.lineTo(S * 0.3, H - 2);
+    ctx.moveTo(S * 0.68, 2); ctx.lineTo(S * 0.62, H * 0.55); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.fillRect(S * 0.12, H * 0.3, 3, 1.4); ctx.fillRect(S * 0.8, H * 0.6, 3, 1.4);
+    ctx.fillStyle = 'rgba(0,0,0,0.14)';
+    ctx.fillRect(S * 0.5, H * 0.4, 2, 1.4);
+  } else if (sec === 1) {
+    // ── Tropen: BAMBUS — gebündelte horizontale Rohre + Knoten-Ringe ──
+    ctx.strokeStyle = pal.seam; ctx.lineWidth = 0.7;
+    ctx.beginPath(); ctx.moveTo(0, H * 0.36); ctx.lineTo(S, H * 0.36);
+    ctx.moveTo(0, H * 0.68); ctx.lineTo(S, H * 0.68); ctx.stroke();
+    for (const nx of [S * 0.28, S * 0.72]) {
+      ctx.strokeStyle = pal.seam; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(nx, 1); ctx.lineTo(nx, H - 1); ctx.stroke();
+      ctx.strokeStyle = 'rgba(245,255,206,0.55)'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(nx + 1.1, 1.5); ctx.lineTo(nx + 1.1, H - 1.5); ctx.stroke();
+    }
+  } else {
+    // ── Küste: TREIBHOLZ — Maserung, Planken-Quernaht + zwei Nägel ──
+    ctx.strokeStyle = pal.seam; ctx.lineWidth = 0.7;
+    ctx.beginPath(); ctx.moveTo(0, H * 0.5); ctx.lineTo(S, H * 0.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(S * 0.5, 1); ctx.lineTo(S * 0.5, H - 1); ctx.stroke();
+    ctx.fillStyle = pal.seam;
+    ctx.beginPath(); ctx.arc(4, 4, 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(S - 4, 4, 0.9, 0, Math.PI * 2); ctx.fill();
+  }
+  // Unterkante-Schattenlinie (Dicke der Bohle lesbar)
+  ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(0, H - 1.5, S, 1.5);
+}
+
+// Welt 19 · Weg-Kurven & Breite: pro Spalte ein glattes, deterministisches Profil,
+// wie dick der begrünte/angewehte Saum oben und der erdige Rand-Schulter unten in
+// die begehbare Kachel hineinragen. Beide laufen mit unterschiedlicher Frequenz →
+// der freie Weg dazwischen wandert (mäandert) und wird enger/breiter, statt
+// schnurgerade zu sein. (Nur Natur-Wege Alpen/Tropen; der Holzsteg bleibt gerade.)
+function vacPathEdges(col: number): { top: number; bot: number } {
+  const p = col * 0.19;
+  const top = 2 + (Math.sin(p) * 0.5 + Math.sin(p * 2.3 + 1.1) * 0.25 + 0.375) * 5;        // ~2..7 px
+  const bot = 1.5 + (Math.sin(p * 0.83 + 2.2) * 0.5 + Math.sin(p * 1.7 + 0.4) * 0.2 + 0.35) * 5.5; // ~1.5..7 px
+  return { top, bot };
+}
+
+// Zeichnet EINE Urlaubs-Boden-Kachel als echter WEG: `depth`===0 ist die begehbare
+// Oberfläche (Kiesweg / Sandweg / Holzsteg mit Grasrand oben), depth>0 ist das
+// Erdreich/Unterbau darunter, das mit der Tiefe dunkler wird und zurücktritt.
+function drawVacSectionMaterial(
+  ctx: CanvasRenderingContext2D, x: number, y: number, col: number, row: number, isTop: boolean, sec: number, h: number, depth: number,
+) {
+  const S = TILE_SIZE;
+  const dark = Math.min(0.5, depth * 0.14);        // Tiefen-Abdunklung fürs Erdreich
+  if (sec === 0) {
+    // ── Alpen · Bergpfad (Kies/Erde) ──
+    if (depth === 0) {
+      const g = ctx.createLinearGradient(x, y, x, y + S);
+      g.addColorStop(0, '#a48f68'); g.addColorStop(1, '#87714f');
+      ctx.fillStyle = g; ctx.fillRect(x, y, S, S);
+      // #1 Ausgetretener Pfad: dezente Mittel-Aufhellung (heller getretene Spur)
+      ctx.fillStyle = 'rgba(200,184,150,0.11)'; ctx.fillRect(x, y + S * 0.30, S, S * 0.42);
+      // Kiesel/Steinchen (hell & dunkel), Hash-platziert
+      for (let i = 0; i < 5; i++) {
+        const gx = x + 3 + tileVarHash(col * 2 + i, row + 1) * (S - 6);
+        const gy = y + 6 + tileVarHash(col + 7, row * 2 + i) * (S - 8);
+        const r = 1 + tileVarHash(col + i, row) * 1.4;
+        ctx.fillStyle = i % 2 ? 'rgba(210,196,160,0.5)' : 'rgba(70,58,40,0.45)';
+        ctx.beginPath(); ctx.ellipse(gx, gy, r, r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      // #1 Rand-Trittsteine: vereinzelt ein größerer Stein am Wegrand
+      if (h > 0.63) {
+        const sx = x + (h > 0.82 ? S - 5 : 5);
+        ctx.fillStyle = 'rgba(120,104,74,0.42)'; ctx.beginPath(); ctx.ellipse(sx, y + S * 0.66, 2.6, 1.7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(214,200,164,0.4)'; ctx.beginPath(); ctx.ellipse(sx - 0.6, y + S * 0.62, 1.2, 0.8, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      if (isTop) { // Grasrand mit ein paar Halmen an der Oberkante
+        // #1 Weg-Kurven & Breite: begrünter Saum oben mit spaltenweise variabler Dicke
+        const e = vacPathEdges(col);
+        ctx.fillStyle = '#3d7a33'; ctx.fillRect(x, y, S, e.top);
+        ctx.fillStyle = '#57993f'; ctx.fillRect(x, y, S, Math.max(1.5, e.top * 0.5));
+        // #1 erdige Rand-Schulter unten (gegenläufig) → freier Weg wandert/verengt sich
+        ctx.fillStyle = 'rgba(106,86,64,0.55)'; ctx.fillRect(x, y + S - e.bot, S, e.bot);
+        ctx.strokeStyle = '#57993f'; ctx.lineWidth = 1;
+        for (let i = 0; i < 3; i++) { const bx = x + 4 + i * 9 + tileVarHash(col + i, row) * 4; ctx.beginPath(); ctx.moveTo(bx, y + e.top - 1); ctx.lineTo(bx + (tileVarHash(col, i) - 0.5) * 3, y - 3); ctx.stroke(); }
+        // #2 Vordergrund-Büschel: vereinzelt ein Grasbüschel (Alpen-Wiese) am Wegsaum
+        if (tileVarHash(col * 1.9 + 4, row + 2) > 0.72) {
+          const bx = x + 6 + tileVarHash(col + 3, row) * (S - 12);
+          ctx.strokeStyle = '#4c8a3a'; ctx.lineWidth = 1;
+          for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(bx, y + 2); ctx.lineTo(bx + k * 2, y - 6 - Math.abs(k)); ctx.stroke(); }
+          if (tileVarHash(col + 8, row + 5) > 0.6) { ctx.fillStyle = '#f0d84a'; ctx.beginPath(); ctx.arc(bx, y - 7, 1.4, 0, Math.PI * 2); ctx.fill(); }
+        }
+        // #2 Boden-Requisiten: ganz selten ein größerer Findling oder ein Enzian-Tuff
+        const pr = tileVarHash(col * 2.7 + 11, row + 9);
+        if (pr > 0.93) {   // Findling (Felsbrocken am Wegrand)
+          const bx = x + (tileVarHash(col + 2, row) > 0.5 ? S - 8 : 8);
+          const g2 = ctx.createLinearGradient(bx - 5, y - 8, bx + 5, y);
+          g2.addColorStop(0, '#9a9488'); g2.addColorStop(1, '#6d6659');
+          ctx.fillStyle = g2; ctx.beginPath(); ctx.ellipse(bx, y - 1, 5.5, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = 'rgba(230,226,214,0.35)'; ctx.beginPath(); ctx.ellipse(bx - 1.6, y - 3, 2, 1.4, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = 'rgba(70,110,60,0.5)'; ctx.beginPath(); ctx.ellipse(bx + 1.5, y + 1, 3, 1.2, 0, 0, Math.PI); ctx.fill();   // Moosansatz
+        } else if (pr < 0.05) {   // Enzian-Tuff (kleine blaue Blüten)
+          const bx = x + 5 + tileVarHash(col + 6, row) * (S - 10);
+          ctx.strokeStyle = '#3f7a34'; ctx.lineWidth = 1;
+          for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(bx + k * 2, y + 1); ctx.lineTo(bx + k * 3, y - 5); ctx.stroke(); }
+          for (let k = -1; k <= 1; k++) { ctx.fillStyle = '#3b6fd6'; ctx.beginPath(); ctx.arc(bx + k * 3, y - 6, 1.5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'rgba(180,210,255,0.8)'; ctx.beginPath(); ctx.arc(bx + k * 3 - 0.4, y - 6.4, 0.6, 0, Math.PI * 2); ctx.fill(); }
+        }
+      }
+    } else {
+      const g = ctx.createLinearGradient(x, y, x, y + S);
+      g.addColorStop(0, '#6a5640'); g.addColorStop(1, '#54432f');
+      ctx.fillStyle = g; ctx.fillRect(x, y, S, S);
+      if (h > 0.55) { ctx.fillStyle = 'rgba(60,50,38,0.6)'; ctx.beginPath(); ctx.ellipse(x + S * 0.5, y + S * 0.5, 4, 3, 0, 0, Math.PI * 2); ctx.fill(); }
+    }
+  } else if (sec === 1) {
+    // ── Tropen · Sandweg ──
+    if (depth === 0) {
+      const g = ctx.createLinearGradient(x, y, x, y + S);
+      g.addColorStop(0, '#ecdcac'); g.addColorStop(1, '#d8c286');
+      ctx.fillStyle = g; ctx.fillRect(x, y, S, S);
+      // #1 Ausgetretener Sandweg: leichte Mittel-Aufhellung (getretene Spur)
+      ctx.fillStyle = 'rgba(255,246,214,0.12)'; ctx.fillRect(x, y + S * 0.30, S, S * 0.42);
+      for (let i = 0; i < 4; i++) {
+        const gx = x + 4 + tileVarHash(col * 2 + i, row + 1) * (S - 8);
+        const gy = y + 4 + tileVarHash(col + 7, row * 2 + i) * (S - 8);
+        ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.20)' : 'rgba(150,120,70,0.20)';
+        ctx.fillRect(gx, gy, 1.5, 1.5);
+      }
+      // #1 Fußspur-Mulde im Sand: vereinzelt eine flache dunklere Delle am Wegrand
+      if (h > 0.66) {
+        const fx = x + (h > 0.84 ? S - 5 : 5);
+        ctx.fillStyle = 'rgba(188,160,108,0.32)'; ctx.beginPath(); ctx.ellipse(fx, y + S * 0.64, 2.4, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      if (isTop) {
+        // #1 Weg-Kurven & Breite: angewehter Sandkamm oben mit variabler Dicke + feuchter Sandrand unten
+        const e = vacPathEdges(col);
+        ctx.fillStyle = '#f6ecc2'; ctx.fillRect(x, y, S, Math.max(2, e.top * 0.6));
+        ctx.fillStyle = 'rgba(194,168,110,0.5)'; ctx.fillRect(x, y + S - e.bot, S, e.bot);   // feuchter/dunklerer Sandrand → Weg mäandert
+        // #2 Vordergrund-Büschel: Strandgras oder vereinzelt eine kleine Muschel am Saum
+        const th = tileVarHash(col * 1.7 + 6, row + 3);
+        if (th > 0.78) {
+          const bx = x + 6 + tileVarHash(col + 2, row) * (S - 12);
+          ctx.strokeStyle = '#7fae5c'; ctx.lineWidth = 1;
+          for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(bx, y + 2); ctx.lineTo(bx + k * 2.4, y - 6 - Math.abs(k)); ctx.stroke(); }
+        } else if (th < 0.10) {
+          const sx = x + 6 + tileVarHash(col + 5, row) * (S - 12);
+          ctx.fillStyle = 'rgba(242,222,226,0.92)'; ctx.beginPath(); ctx.ellipse(sx, y - 1, 2.2, 1.6, 0, Math.PI, 0); ctx.fill();
+          ctx.strokeStyle = 'rgba(200,170,180,0.7)'; ctx.lineWidth = 0.5;
+          ctx.beginPath(); ctx.moveTo(sx - 1.5, y - 1); ctx.lineTo(sx, y - 2.5); ctx.lineTo(sx + 1.5, y - 1); ctx.stroke();
+        }
+        // #2 Boden-Requisiten: ganz selten eine Kokosnuss oder ein Seestern
+        const pr = tileVarHash(col * 2.7 + 11, row + 9);
+        if (pr > 0.93) {   // Kokosnuss
+          const bx = x + (tileVarHash(col + 2, row) > 0.5 ? S - 7 : 7);
+          const g2 = ctx.createLinearGradient(bx - 4, y - 6, bx + 4, y);
+          g2.addColorStop(0, '#6e4a28'); g2.addColorStop(1, '#3f2914');
+          ctx.fillStyle = g2; ctx.beginPath(); ctx.ellipse(bx, y - 1, 4, 3.6, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = 'rgba(30,18,8,0.6)'; ctx.lineWidth = 0.6;
+          ctx.beginPath(); ctx.moveTo(bx, y - 4.4); ctx.lineTo(bx, y + 2); ctx.moveTo(bx - 3.4, y - 1); ctx.lineTo(bx + 3.4, y - 1); ctx.stroke();
+          ctx.fillStyle = 'rgba(240,220,180,0.4)'; ctx.beginPath(); ctx.ellipse(bx - 1.4, y - 2.6, 1.2, 0.9, 0, 0, Math.PI * 2); ctx.fill();
+        } else if (pr < 0.05) {   // Seestern
+          const bx = x + 6 + tileVarHash(col + 6, row) * (S - 12), byy = y - 1.5;
+          ctx.fillStyle = '#e8823a';
+          ctx.beginPath();
+          for (let a = 0; a < 5; a++) {
+            const ang = -Math.PI / 2 + a * (Math.PI * 2 / 5);
+            const ox = bx + Math.cos(ang) * 4.4, oy = byy + Math.sin(ang) * 4.4;
+            const iang = ang + Math.PI / 5;
+            const ix = bx + Math.cos(iang) * 1.9, iy = byy + Math.sin(iang) * 1.9;
+            if (a === 0) ctx.moveTo(ox, oy); else ctx.lineTo(ox, oy);
+            ctx.lineTo(ix, iy);
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.fillStyle = 'rgba(255,210,150,0.6)'; ctx.beginPath(); ctx.arc(bx, byy, 1.1, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    } else {
+      const g = ctx.createLinearGradient(x, y, x, y + S);
+      g.addColorStop(0, '#c2a86e'); g.addColorStop(1, '#a68a54');
+      ctx.fillStyle = g; ctx.fillRect(x, y, S, S);
+      if (h > 0.7) { ctx.fillStyle = 'rgba(120,96,58,0.4)'; ctx.beginPath(); ctx.ellipse(x + S * 0.4, y + S * 0.45, 3, 2, 0, 0, Math.PI * 2); ctx.fill(); }
+    }
+  } else {
+    // ── Küste · Holzsteg ──
+    if (depth === 0) {
+      const g = ctx.createLinearGradient(x, y, x, y + S);
+      g.addColorStop(0, '#bd8746'); g.addColorStop(1, '#996b34');
+      ctx.fillStyle = g; ctx.fillRect(x, y, S, S);
+      // #1 Ausgetretener Steg: dezent heller getretene Planken-Mitte
+      ctx.fillStyle = 'rgba(255,234,186,0.10)'; ctx.fillRect(x, y + S * 0.30, S, S * 0.42);
+      // Maserung
+      ctx.strokeStyle = 'rgba(255,232,184,0.10)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, y + S * 0.5); ctx.lineTo(x + S, y + S * 0.5 + (h - 0.5) * 3); ctx.stroke();
+      // Planken-Quernaht + versetzte Längsnaht + Nägel
+      ctx.strokeStyle = 'rgba(40,26,12,0.5)';
+      const seam = x + ((row % 2) ? S * 0.5 : 0);
+      ctx.beginPath(); ctx.moveTo(seam, y); ctx.lineTo(seam, y + S); ctx.stroke();
+      ctx.fillStyle = 'rgba(40,26,12,0.55)';
+      ctx.beginPath(); ctx.arc(x + 4, y + 4, 1, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + S - 4, y + 4, 1, 0, Math.PI * 2); ctx.fill();
+      if (isTop) {
+        ctx.fillStyle = 'rgba(255,238,198,0.32)'; ctx.fillRect(x, y, S, 2);
+        // #2 Vordergrund-Büschel: vereinzelt Dünengras/Strandhafer zwischen den Planken
+        if (tileVarHash(col * 2.1 + 3, row + 4) > 0.82) {
+          const bx = x + 6 + tileVarHash(col + 4, row) * (S - 12);
+          ctx.strokeStyle = '#8fa25a'; ctx.lineWidth = 1;
+          for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(bx, y + 2); ctx.lineTo(bx + k * 2, y - 5 - Math.abs(k)); ctx.stroke(); }
+        }
+        // #2 Boden-Requisiten: ganz selten ein Poller mit Tau-Rolle am Steg-Rand
+        const pr = tileVarHash(col * 2.7 + 11, row + 9);
+        if (pr > 0.94) {   // Vertäu-Poller
+          const bx = x + (tileVarHash(col + 2, row) > 0.5 ? S - 8 : 8);
+          const g2 = ctx.createLinearGradient(bx - 3, y - 9, bx + 3, y);
+          g2.addColorStop(0, '#4a4640'); g2.addColorStop(1, '#26231e');
+          ctx.fillStyle = g2; ctx.fillRect(bx - 2.6, y - 8, 5.2, 8);
+          ctx.beginPath(); ctx.ellipse(bx, y - 8, 3.4, 1.8, 0, 0, Math.PI * 2); ctx.fill();   // pilzförmiger Kopf
+          ctx.strokeStyle = '#b79862'; ctx.lineWidth = 1.4;   // Tau
+          ctx.beginPath(); ctx.ellipse(bx, y - 3.5, 3.6, 1.6, 0, 0, Math.PI * 2); ctx.stroke();
+        } else if (pr < 0.04) {   // liegende Tau-Rolle
+          const bx = x + 6 + tileVarHash(col + 6, row) * (S - 12);
+          ctx.strokeStyle = '#c1a066'; ctx.lineWidth = 1.6;
+          ctx.beginPath(); ctx.ellipse(bx, y - 1.5, 4.4, 2.2, 0, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.ellipse(bx, y - 1.5, 2.4, 1.2, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+    } else {
+      // Unterbau: dunkles Holz/Schatten unter dem Steg
+      const g = ctx.createLinearGradient(x, y, x, y + S);
+      g.addColorStop(0, '#5a3f1e'); g.addColorStop(1, '#3f2c14');
+      ctx.fillStyle = g; ctx.fillRect(x, y, S, S);
+      ctx.fillStyle = 'rgba(20,12,4,0.35)'; ctx.fillRect(x + (row % 2 ? 2 : S - 6), y, 4, S);   // Pfosten-Schatten
+    }
+  }
+  if (depth > 0 && dark > 0.01) { ctx.fillStyle = `rgba(0,0,0,${dark.toFixed(3)})`; ctx.fillRect(x, y, S, S); }
+}
 
 function tileVarHash(a: number, b: number): number {
   const n = Math.sin(a * 73.13 + b * 41.79) * 21357.913;
@@ -63,6 +437,54 @@ function applyTileVariation(ctx: CanvasRenderingContext2D, x: number, y: number,
   }
 }
 
+// P4 · Stadt-Dachflächen: statt der erdigen Sprenkel eine dach-typische
+// Material-Variation (Bitumen / Kies / Beton-Panel), Fugen, Kabel, Moos und
+// feuchte Ränder — bricht die eine graue Einheitskachel auf. Deterministisch
+// aus (col,row) → stabil beim Scrollen, kein Flimmern.
+function applyCityRoofVariation(ctx: CanvasRenderingContext2D, x: number, y: number, col: number, row: number, isTop: boolean) {
+  const S = TILE_SIZE;
+  // Makro-Tönung je Kachel (Material-Helligkeit, kühl)
+  const tone = tileVarHash(col + 3, row + 5);
+  const shade = (tone - 0.5) * 0.10;
+  ctx.fillStyle = shade >= 0 ? `rgba(150,162,188,${shade.toFixed(3)})` : `rgba(0,0,0,${(-shade).toFixed(3)})`;
+  ctx.fillRect(x, y, S, S);
+  const mat = Math.floor(tileVarHash(col * 1.7 + 2, row * 1.3 + 9) * 3); // 0 Bitumen, 1 Kies, 2 Beton
+  if (mat === 0) {
+    ctx.fillStyle = 'rgba(20,22,28,0.18)';
+    const bx = x + tileVarHash(col + 4, row + 2) * S * 0.5;
+    ctx.fillRect(bx, y + S * 0.3, S * 0.42, S * 0.14);
+  } else if (mat === 1) {
+    for (let i = 0; i < 4; i++) {
+      const gx = x + 4 + tileVarHash(col * 2 + i, row + 1) * (S - 8);
+      const gy = y + 4 + tileVarHash(col + 7, row * 2 + i) * (S - 8);
+      ctx.fillStyle = i % 2 ? 'rgba(210,214,224,0.16)' : 'rgba(28,30,36,0.20)';
+      ctx.fillRect(gx, gy, 1.5, 1.5);
+    }
+  } else {
+    ctx.strokeStyle = 'rgba(24,26,32,0.30)'; ctx.lineWidth = 1;
+    const sy = y + S * (0.35 + tileVarHash(col + 5, row + 6) * 0.3);
+    ctx.beginPath(); ctx.moveTo(x, sy); ctx.lineTo(x + S, sy); ctx.stroke();
+  }
+  if (isTop) {
+    const d = tileVarHash(col + 13, row + 17);
+    if (d < 0.15) {
+      // Moos an einer Ecke
+      ctx.fillStyle = 'rgba(90,120,70,0.35)';
+      const mx = x + (d < 0.075 ? 3 : S - 6);
+      ctx.beginPath(); ctx.ellipse(mx, y + 3, 4, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (d < 0.27) {
+      // Kabel quer über die Dachkante
+      ctx.strokeStyle = 'rgba(16,16,20,0.5)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(x - 2, y + 6); ctx.quadraticCurveTo(x + S * 0.5, y + 11, x + S + 2, y + 6); ctx.stroke();
+    } else if (d < 0.41) {
+      // feuchter Fleck/Rand
+      ctx.fillStyle = 'rgba(30,40,55,0.20)';
+      const wx = x + tileVarHash(col + 9, row + 4) * S * 0.4;
+      ctx.beginPath(); ctx.ellipse(wx + S * 0.3, y + S * 0.5, S * 0.26, 3, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
 function drawTile(this: Renderer, tileType: TileType, screenX: number, screenY: number, col = -1, row = -1) {
   // Schul-Deko: positions-abhängige Variante (Pult/Bücher/Pflanze/Eimer),
   // daher nicht über den per-TileType-Cache, sondern direkt gezeichnet.
@@ -86,6 +508,29 @@ function drawTile(this: Renderer, tileType: TileType, screenX: number, screenY: 
     this.drawForestProp(this.ctx, screenX, screenY, col);
     return;
   }
+  // Welt 19 „Urlaub": Boden je Roadtrip-Abschnitt (Alpen-Fels · Tropen-Sand ·
+  // Küsten-Holzsteg) — spaltenabhängig, daher direkt gezeichnet (nicht über den
+  // per-TileType-Cache).
+  if (this.currentTheme === 'vacation' && col >= 0 && VACATION_GROUND.has(tileType)) {
+    // Foto-Modus: der Weg ist in der Kulisse eingearbeitet → Boden-Tiles NICHT
+    // zeichnen (Kollision bleibt über die Level-Daten erhalten), das Bild ist der Weg.
+    // (Ein per-Abschnitt-Tint an der Gehlinie wurde getestet und verworfen: über dem
+    // Foto-Sandweg entweder unsichtbar oder als Fleck störend. Abschnitts-Charakter
+    // kommt aus der Foto-Kulisse + den themenfarbenen Stufen.)
+    if (USE_VACATION_PHOTO) return;
+    const isTop = tileType === TileType.GROUND_TOP
+      || tileType === TileType.GROUND_TOP_LEFT || tileType === TileType.GROUND_TOP_RIGHT;
+    drawVacationGroundColumn(this.ctx, screenX, screenY, col, row, isTop, this.currentGroundRow);
+    return;
+  }
+  // Welt 19: Einweg-Plattformen (Stege/Sims) spaltenabhängig je Abschnitt gefärbt
+  // (Alpen Stein-Holz · Tropen Bambus · Küste Holz) — daher direkt, nicht gecacht.
+  if (this.currentTheme === 'vacation' && col >= 0 && tileType === TileType.WOOD_PLATFORM) {
+    this.ctx.save(); this.ctx.translate(screenX, screenY);
+    drawVacationPlatform(this.ctx, col);
+    this.ctx.restore();
+    return;
+  }
   // Theme switches call tileCache.clear(), so the bare TileType enum value
   // is sufficient as a key. Avoids per-frame string allocation.
   let cached = this.tileCache.get(tileType);
@@ -98,7 +543,13 @@ function drawTile(this: Renderer, tileType: TileType, screenX: number, screenY: 
   // Spiel-Tile-Pass (col/row gesetzt), ab Qualitätsstufe 'mid', auf erdigen
   // Flächen. HUD-Deko ruft ohne col/row → keine Variation.
   if (col >= 0 && this.quality !== 'low' && VARIABLE_TILES.has(tileType)) {
-    applyTileVariation(this.ctx, screenX, screenY, col, row);
+    if (this.currentTheme === 'city') {
+      const isTop = tileType === TileType.GROUND_TOP
+        || tileType === TileType.GROUND_TOP_LEFT || tileType === TileType.GROUND_TOP_RIGHT;
+      applyCityRoofVariation(this.ctx, screenX, screenY, col, row, isTop);
+    } else {
+      applyTileVariation(this.ctx, screenX, screenY, col, row);
+    }
   }
   // Tiefe Erdschichten (deutlich unter dem Hauptboden) abdunkeln, damit der
   // unnötig sichtbare Untergrund optisch zurücktritt ("fast weg"). Greift nur
@@ -131,6 +582,8 @@ function renderTileToCache(this: Renderer, type: TileType): HTMLCanvasElement {
   const isGym = theme === 'gym';
   const isTrampoline = theme === 'trampoline';
   const isPlush = theme === 'plush';
+  const isCity = theme === 'city';
+  const isVacation = theme === 'vacation';
   switch (type) {
     case TileType.GROUND:
       if (isCave) this.drawCaveGroundTile(ctx, false);
@@ -143,6 +596,7 @@ function renderTileToCache(this: Renderer, type: TileType): HTMLCanvasElement {
       else if (isGym) this.drawGymFloorTile(ctx, false);
       else if (isPlush) this.drawPlushFloorTile(ctx, false);
       else if (isTrampoline) this.drawTrampolineGroundTile(ctx, false);
+      else if (isCity) this.drawCityRoofTile(ctx, false);
       else this.drawGroundTile(ctx, false, false, false, false);
       break;
     case TileType.GROUND_TOP:
@@ -156,6 +610,7 @@ function renderTileToCache(this: Renderer, type: TileType): HTMLCanvasElement {
       else if (isGym) this.drawGymFloorTile(ctx, true);
       else if (isPlush) this.drawPlushFloorTile(ctx, true);
       else if (isTrampoline) this.drawTrampolineGroundTile(ctx, true);
+      else if (isCity) this.drawCityRoofTile(ctx, true);
       else this.drawGroundTile(ctx, true, false, false, false);
       // W3.3 · Kanten-Highlight (rim light) an der Oberkante, theme-abhängig.
       ctx.fillStyle = TOP_RIM[theme] ?? 'rgba(255,255,255,0.30)';
@@ -172,6 +627,7 @@ function renderTileToCache(this: Renderer, type: TileType): HTMLCanvasElement {
       else if (isGym) this.drawGymFloorTile(ctx, false);
       else if (isPlush) this.drawPlushFloorTile(ctx, false);
       else if (isTrampoline) this.drawTrampolineGroundTile(ctx, false);
+      else if (isCity) this.drawCityRoofTile(ctx, false);
       else this.drawGroundTile(ctx, false, true, false, false);
       break;
     case TileType.GROUND_RIGHT:
@@ -185,6 +641,7 @@ function renderTileToCache(this: Renderer, type: TileType): HTMLCanvasElement {
       else if (isGym) this.drawGymFloorTile(ctx, false);
       else if (isPlush) this.drawPlushFloorTile(ctx, false);
       else if (isTrampoline) this.drawTrampolineGroundTile(ctx, false);
+      else if (isCity) this.drawCityRoofTile(ctx, false);
       else this.drawGroundTile(ctx, false, false, true, false);
       break;
     case TileType.GROUND_TOP_LEFT:
@@ -286,6 +743,7 @@ function renderTileToCache(this: Renderer, type: TileType): HTMLCanvasElement {
       else if (isGym) this.drawGymBarTile(ctx);
       else if (isPlush) this.drawPlushLedge(ctx);
       else if (isTrampoline) this.drawTrampolinePlatformTile(ctx);
+      else if (isVacation) drawVacationPlatform(ctx);
       else this.drawWoodPlatform(ctx);
       break;
     case TileType.SLOPE_RIGHT_45:
@@ -314,20 +772,24 @@ function renderTileToCache(this: Renderer, type: TileType): HTMLCanvasElement {
       break;
     case TileType.WATER_TOP:
       if (isCave) this.drawCaveLava(ctx, true);
+      else if (isVacation) drawVacationLagoon(ctx, true);
       else if (isBeach) this.drawBeachWater(ctx, true, !isUnderwater);
       else this.drawWater(ctx, true, !isUnderwater);
       break;
     case TileType.WATER:
       if (isCave) this.drawCaveLava(ctx, false);
+      else if (isVacation) drawVacationLagoon(ctx, false);
       else if (isBeach) this.drawBeachWater(ctx, false, !isUnderwater);
       else this.drawWater(ctx, false, !isUnderwater);
       break;
     // --- New themed tile fallbacks (volcano / ice / castle / underwater / space) ---
     case TileType.LAVA_TOP:
-      this.drawCaveLava(ctx, true);
+      if (isCity) this.drawCityGarbage(ctx, true);
+      else this.drawCaveLava(ctx, true);
       break;
     case TileType.LAVA:
-      this.drawCaveLava(ctx, false);
+      if (isCity) this.drawCityGarbage(ctx, false);
+      else this.drawCaveLava(ctx, false);
       break;
     case TileType.ICE_TOP:
       this.drawIceTile(ctx, true);
@@ -1179,6 +1641,8 @@ function drawNoteBlock(this: Renderer, ctx: CanvasRenderingContext2D) {
 function drawMovingPlatform(this: Renderer, x: number, y: number, w: number, h: number) {
   const ctx = this.ctx;
   const theme = this.currentTheme;
+  // Welt 19: natürliches Holzfloß (passt zur illustrierten Foto-Kulisse).
+  if (theme === 'vacation') { drawWoodenRaft(ctx, x, y, w, h, this.time); return; }
   const PAL: Record<string, { top: string; body: string; edge: string }> = {
     jungle: { top: '#b07c44', body: '#7d4f29', edge: '#52331b' },
     beach: { top: '#cb9d64', body: '#9a6f3e', edge: '#6c4c2a' },
@@ -1209,6 +1673,71 @@ function drawMovingPlatform(this: Renderer, x: number, y: number, w: number, h: 
     const bx = Math.round(x + w * (0.22 + i * 0.28));
     ctx.fillRect(bx - 1, y + Math.round(h * 0.55), 2, 2);
   }
+  ctx.restore();
+}
+
+// Welt 19: natürliches Holzfloß — gebündelte Rundhölzer (Seitenansicht), mit
+// zwei Seil-Verzurrungen, sonnenbeschienener Oberkante und feuchter Wasserlinie.
+// Warme Braun-/Sandtöne, damit es sich in die illustrierte Foto-Kulisse einfügt.
+function drawWoodenRaft(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, time = 0) {
+  ctx.save();
+  // Lebendige, nasse Wasserlinie direkt unter dem Floß: leicht wandernde
+  // Schaum-/Reflex-Tupfer (mit der Zeit versetzt) → das Floß „liegt" im Wasser.
+  const ph = time * 0.06;
+  ctx.fillStyle = 'rgba(20,55,65,0.24)';
+  ctx.fillRect(x + 2, y + h - 1, w - 4, 3);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  for (let i = 0; i < Math.max(3, Math.round(w / 14)); i++) {
+    const bx = x + 5 + i * 14 + Math.sin(ph + i * 1.7) * 3;
+    const bw = 4 + Math.sin(ph * 1.3 + i) * 2;
+    ctx.globalAlpha = 0.28 + 0.22 * (0.5 + 0.5 * Math.sin(ph * 1.6 + i * 2.1));
+    ctx.fillRect(bx, y + h + 1.5, Math.max(2, bw), 1);
+  }
+  ctx.globalAlpha = 1;
+  // Grundkörper: Holz-Verlauf (sonnig oben → feucht/dunkel unten)
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, '#c79a5f'); g.addColorStop(0.55, '#a97338'); g.addColorStop(1, '#7c5228');
+  ctx.fillStyle = g;
+  ctx.fillRect(x, y, w, h);
+  // Einzelne Rundhölzer: senkrechte Fugen + je ein Glanz/Schatten-Paar → Wölbung
+  const n = Math.max(3, Math.round(w / 12));
+  const lw = w / n;
+  for (let i = 0; i < n; i++) {
+    const lx = x + i * lw;
+    // Wölbungs-Glanz links, Schattenfuge rechts
+    ctx.fillStyle = 'rgba(255,238,200,0.28)';
+    ctx.fillRect(Math.round(lx + 1), y + 1, Math.max(1, lw * 0.28), h - 2);
+    ctx.fillStyle = 'rgba(60,36,16,0.5)';
+    ctx.fillRect(Math.round(lx + lw - 1.2), y + 1, 1.2, h - 2);
+  }
+  // Sonnenbeschienene Oberkante (nasses Holz glänzt)
+  ctx.fillStyle = 'rgba(255,244,214,0.5)';
+  ctx.fillRect(x, y, w, 1.5);
+  // Zwei Seil-Verzurrungen quer über die Hölzer (Bast/Tau)
+  ctx.fillStyle = '#6b5334';
+  for (const fx of [0.24, 0.76]) {
+    const rx = Math.round(x + w * fx) - 1;
+    ctx.fillRect(rx, y + 1, 3, h - 2);
+    // kleine Kreuz-Wicklung (heller Faden)
+    ctx.strokeStyle = 'rgba(214,188,140,0.7)'; ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(rx - 1, y + h * 0.3); ctx.lineTo(rx + 4, y + h * 0.55);
+    ctx.moveTo(rx + 4, y + h * 0.3); ctx.lineTo(rx - 1, y + h * 0.55);
+    ctx.stroke();
+  }
+  // feuchte, leicht abgedunkelte Unterkante
+  ctx.fillStyle = 'rgba(40,26,14,0.45)';
+  ctx.fillRect(x, y + h - 1.5, w, 1.5);
+  // Nasser Glanz-Streif, der sanft über das Holz wandert (nasses, im Wasser
+  // liegendes Floß glänzt) — schmale, weiche Lichtsäule, Position mit der Zeit.
+  const gx = x + ((ph * 9) % (w + 24)) - 12;
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();     // Glanz bleibt auf dem Holz
+  const sheen = ctx.createLinearGradient(gx - 7, 0, gx + 7, 0);
+  sheen.addColorStop(0, 'rgba(255,252,235,0)');
+  sheen.addColorStop(0.5, 'rgba(255,252,235,0.32)');
+  sheen.addColorStop(1, 'rgba(255,252,235,0)');
+  ctx.fillStyle = sheen;
+  ctx.fillRect(gx - 7, y + 1, 14, h - 3);
   ctx.restore();
 }
 
@@ -1395,7 +1924,52 @@ function drawFireBarrier(this: Renderer, x: number, y: number, w: number, h: num
   ctx.restore();
 }
 
+// Stadt: Beton-/Dach-Kachel (Hausdach). `top` = Dachkante mit heller Leiste.
+function drawCityRoofTile(this: Renderer, ctx: CanvasRenderingContext2D, top: boolean) {
+  const S = TILE_SIZE;
+  const g = ctx.createLinearGradient(0, 0, 0, S);
+  g.addColorStop(0, top ? '#6b6f78' : '#565a63');
+  g.addColorStop(1, '#3f434b');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+  // Panel-/Ziegel-Fugen
+  ctx.strokeStyle = 'rgba(28,30,35,0.45)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, S * 0.5); ctx.lineTo(S, S * 0.5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(S * 0.5, S * 0.5); ctx.lineTo(S * 0.5, S); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(S * 0.25, 0); ctx.lineTo(S * 0.25, S * 0.5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(S * 0.75, 0); ctx.lineTo(S * 0.75, S * 0.5); ctx.stroke();
+  if (top) {
+    // helle Dachleiste + Parapet-Schatten
+    ctx.fillStyle = 'rgba(190,196,205,0.6)'; ctx.fillRect(0, 0, S, 2);
+    ctx.fillStyle = 'rgba(20,22,26,0.35)'; ctx.fillRect(0, 3, S, 2);
+  }
+}
+
+// Stadt: Müllgrube (statt Lava/Wasser) — trübe grün-braune Brühe mit Müll.
+function drawCityGarbage(this: Renderer, ctx: CanvasRenderingContext2D, top: boolean) {
+  const S = TILE_SIZE;
+  const g = ctx.createLinearGradient(0, 0, 0, S);
+  if (top) { g.addColorStop(0, '#5a6b34'); g.addColorStop(1, '#3c4826'); }
+  else { g.addColorStop(0, '#3c4826'); g.addColorStop(1, '#2b331d'); }
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+  if (top) {
+    // Schaum-/Schleimlinie (kräftigeres Giftgrün = Warnkontrast) + Müllstückchen
+    ctx.fillStyle = 'rgba(170,205,80,0.65)'; ctx.fillRect(0, 0, S, 2.5);
+    ctx.fillStyle = 'rgba(120,150,55,0.5)'; ctx.fillRect(0, 2.5, S, 2);
+    ctx.fillStyle = '#8a6b3a'; ctx.fillRect(S * 0.2, 5, 5, 3);          // Karton
+    ctx.fillStyle = '#b7c0c8'; ctx.fillRect(S * 0.6, 6, 4, 4);          // Dose
+    ctx.fillStyle = 'rgba(230,245,150,0.35)'; ctx.fillRect(S * 0.45, 4, 3, 2); // giftiger Glanz
+  } else {
+    ctx.fillStyle = 'rgba(20,26,14,0.5)';
+    ctx.fillRect(S * 0.3, S * 0.4, 6, 4);
+    ctx.fillRect(S * 0.65, S * 0.7, 5, 3);
+  }
+}
+
 export const tilesMethods = {
+  drawCityRoofTile,
+  drawCityGarbage,
   drawTile,
   drawMovingPlatform,
   drawSpring,
@@ -1416,4 +1990,5 @@ export const tilesMethods = {
   drawUnderwaterBrickTile,
   drawUnderwaterStoneTile,
   drawSpikeTile,
+  drawVacationShore,
 };

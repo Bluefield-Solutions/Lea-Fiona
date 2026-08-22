@@ -18,6 +18,8 @@ import type { HillSpec } from './terrain';
   import { createBluefieldLevel } from './levels/bluefield';
   import { createDragonLevel } from './levels/dragon';
   import { createForestLevel } from './levels/forest';
+  import { createCityLevel } from './levels/city';
+  import { createVacationLevel } from './levels/vacation';
 
   export {
     createJungleLevel, createPlushLevel, createCaveLevel, createSkyLevel, createBeachLevel,
@@ -174,6 +176,8 @@ import type { HillSpec } from './terrain';
     { id: 15, name: 'Superfly', subtitle: 'Trampolinpark', theme: 'trampoline', create: createTrampolineLevel },
     { id: 16, name: 'Die blaue Wiese', subtitle: 'Bluefield Labor', theme: 'bluefield', create: createBluefieldLevel },
     { id: 17, name: 'Drachenhöhle', subtitle: 'Der grüne Drache', theme: 'dragon', create: createDragonLevel },
+    { id: 18, name: 'Stadt', subtitle: 'Über den Dächern', theme: 'city', create: createCityLevel },
+    { id: 19, name: 'Stephans Urlaub', subtitle: 'Endlich Ferien!', theme: 'vacation', create: createVacationLevel },
   ];
 
   export function isSolidTile(type: TileType): boolean {

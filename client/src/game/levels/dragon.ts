@@ -113,7 +113,7 @@ export function createDragonLevel(): LevelData {
   for (let r = gateTop; r <= gateBot; r++) set(gateCol, r, TileType.GROUND);
 
   return {
-    name: 'World 16: Drachenhöhle',
+    name: 'Drachenhöhle',
     theme: 'dragon',
     width,
     height,

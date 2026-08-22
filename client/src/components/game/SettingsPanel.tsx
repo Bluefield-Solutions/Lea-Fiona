@@ -27,6 +27,24 @@ export function SettingsPanel({
         onChange={(v) => onChange({ screenShake: v })}
       />
       <ToggleRow
+        testId="toggle-stadt-gewitter"
+        label="Stadt: Blitze & Donner"
+        checked={settings.stadtGewitter}
+        onChange={(v) => onChange({ stadtGewitter: v })}
+      />
+      <SliderRow
+        testId="slider-regen-dichte"
+        label="Stadt: Regen-Stärke"
+        value={settings.regenDichte}
+        onChange={(v) => onChange({ regenDichte: v })}
+      />
+      <SliderRow
+        testId="slider-stadt-effekte"
+        label="Stadt: Effekt-Stärke"
+        value={settings.stadtEffekte}
+        onChange={(v) => onChange({ stadtEffekte: v })}
+      />
+      <ToggleRow
         testId="toggle-vibration"
         label="Vibration (Mobile)"
         checked={settings.vibration}

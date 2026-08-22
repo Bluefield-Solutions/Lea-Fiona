@@ -322,7 +322,7 @@ export function createJungleLevel(): LevelData {
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 83, roomL: 79 });
 
   return {
-    name: 'World 1-1: Dschungel Abenteuer',
+    name: 'Dschungel Abenteuer',
     theme: 'jungle',
     width,
     height,

@@ -1160,22 +1160,31 @@ function drawTurtle(
 function drawMouse(
   this: Renderer, x: number, y: number, w: number, h: number,
   frame: number, isDead: boolean, direction: number, velY = 0, onGround = true,
-  sniffing = false, fleeing = false,
+  sniffing = false, fleeing = false, sink = 0, nibbling = false,
 ) {
   let idx: number;
   let yOff = 0;
   if (isDead) idx = 9;                                  // Landing-Crouch als „getroffen"
   else if (!onGround) idx = velY < 0 ? 5 : 8;           // Takeoff (steigend) / Falling (fallend)
-  else if (fleeing) idx = 7;                            // Renn-Pose beim Flüchten
-  else if (sniffing) {
+  else if (fleeing || sink > 0) idx = 7;               // Renn-Pose beim Flüchten/Reinflitzen
+  else if (nibbling) {
+    idx = 0;                                            // am Käse: Idle-Pose mit schnellem Knabber-Wippen
+    yOff = Math.abs(Math.sin(frame * 0.9)) * 1.3;
+  } else if (sniffing) {
     idx = 0;                                            // Idle-Pose beim Schnuppern
     yOff = Math.abs(Math.sin(frame * 0.45)) * 1.6;      // sanftes Nasen-/Kopf-Wippen
   } else idx = 1 + (Math.floor(frame * 0.22) % 2) * 2;  // Contact A / Contact B, flink
   // Feines Schnurrhaar-/Nasen-Zucken beim Schnuppern (leichte horizontale Stauchung).
-  const wig = sniffing ? 1 + Math.sin(frame * 0.9) * 0.03 : 1;
+  const wig = (sniffing || nibbling) ? 1 + Math.sin(frame * 0.9) * 0.03 : 1;
   const drawW = w * wig, drawX = x + (w - drawW) / 2;
-  if (blitReh(this, this.mausFrames, drawX, y + yOff, drawW, h, idx, direction, isDead, 1.45)) return;
   const ctx = this.ctx;
+  // Reinflitzen/Auftauchen: nach unten ins Loch schieben, schrumpfen & ausblenden.
+  let sc = 1.45, alpha = 1;
+  if (sink > 0) { yOff += sink * h * 0.9; sc = 1.45 * (1 - sink * 0.45); alpha = 1 - sink * 0.6; }
+  if (alpha < 1) { ctx.save(); ctx.globalAlpha = alpha; }
+  const ok = blitReh(this, this.mausFrames, drawX, y + yOff, drawW, h, idx, direction, isDead, sc);
+  if (alpha < 1) ctx.restore();
+  if (ok) return;
   ctx.save(); ctx.fillStyle = '#b9b2ad';
   ctx.beginPath(); ctx.ellipse(x + w / 2, y + h * 0.55, w * 0.4, h * 0.36, 0, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
@@ -1232,10 +1241,245 @@ function drawSnakeBoss(
   }
 }
 
+// --- Kanalratte (Stadt) — flinker grauer Boden-Gegner, links blickend. ---
+function drawRat(this: Renderer, x: number, y: number, w: number, h: number, frame: number, isDead: boolean, direction = -1) {
+  const ctx = this.ctx;
+  // P4 · Kontaktschatten (vor der Figur, in Welt-/Fußkoordinaten, nicht gespiegelt).
+  softShadowEllipse(ctx, x + w / 2, y + h + 1, w * 0.42, 3, this.getThemeAccent().shadow);
+  ctx.save();
+  ctx.translate(x + w / 2, y + h);
+  if (direction === 1) ctx.scale(-1, 1);
+  const bh = isDead ? h * 0.45 : h;
+  // Schwanz (hinten rechts)
+  ctx.strokeStyle = '#d98fa8'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(w * 0.34, -bh * 0.35); ctx.quadraticCurveTo(w * 0.72, -bh * 0.55, w * 0.6, -bh * 0.02); ctx.stroke();
+  // Beine (Trab)
+  const sw = isDead ? 0 : Math.sin(frame * 0.5) * 2.2;
+  ctx.strokeStyle = '#6f747c'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-w * 0.12, -bh * 0.06); ctx.lineTo(-w * 0.12 + sw, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(w * 0.14, -bh * 0.06); ctx.lineTo(w * 0.14 - sw, 0); ctx.stroke();
+  // Körper
+  const body = ctx.createLinearGradient(0, -bh, 0, 0);
+  body.addColorStop(0, '#969ba3'); body.addColorStop(1, '#787e86');
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.ellipse(0, -bh * 0.42, w * 0.42, bh * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+  // Kopf vorne links
+  ctx.beginPath(); ctx.ellipse(-w * 0.34, -bh * 0.5, w * 0.22, bh * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+  // Ohr
+  ctx.beginPath(); ctx.arc(-w * 0.26, -bh * 0.82, w * 0.13, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#e69ab0'; ctx.beginPath(); ctx.arc(-w * 0.26, -bh * 0.82, w * 0.07, 0, Math.PI * 2); ctx.fill();
+  // Schnauze + Nase
+  ctx.fillStyle = '#787e86';
+  ctx.beginPath(); ctx.moveTo(-w * 0.52, -bh * 0.46); ctx.lineTo(-w * 0.42, -bh * 0.4); ctx.lineTo(-w * 0.43, -bh * 0.6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e69ab0'; ctx.beginPath(); ctx.arc(-w * 0.53, -bh * 0.47, 1.7, 0, Math.PI * 2); ctx.fill();
+  // Auge
+  if (!isDead) { ctx.fillStyle = '#141414'; ctx.beginPath(); ctx.arc(-w * 0.34, -bh * 0.56, 1.7, 0, Math.PI * 2); ctx.fill(); }
+  // P8 · Mondlicht-Rim auf dem Rücken + Augen-Glint (Nacht-Einbettung).
+  const ra = this.getThemeAccent();
+  ctx.strokeStyle = ra.rim; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.ellipse(0, -bh * 0.42, w * 0.42, bh * 0.4, 0, Math.PI * 1.12, Math.PI * 1.96); ctx.stroke();
+  if (!isDead) { ctx.fillStyle = ra.glint; ctx.beginPath(); ctx.arc(-w * 0.35, -bh * 0.585, 0.7, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
+// --- Wander-Mülltonne (Stadt) — schwerfälliger Blech-Gegner, hüpfender Deckel. ---
+function drawTrashCan(this: Renderer, x: number, y: number, w: number, h: number, frame: number, isDead: boolean, _direction = -1) {
+  const ctx = this.ctx;
+  // P4 · Kontaktschatten
+  softShadowEllipse(ctx, x + w / 2, y + h + 1, w * 0.4, 3, this.getThemeAccent().shadow);
+  ctx.save();
+  ctx.translate(x + w / 2, y + h);
+  const bh = isDead ? h * 0.5 : h;
+  const bw = w * 0.72;
+  // Füße
+  if (!isDead) {
+    const sw = Math.sin(frame * 0.4) * 2;
+    ctx.fillStyle = '#3f444b';
+    ctx.beginPath(); ctx.ellipse(-w * 0.18 + sw, -1.5, w * 0.12, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(w * 0.18 - sw, -1.5, w * 0.12, 3, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // Tonne (Blech mit Rippen)
+  const body = ctx.createLinearGradient(-bw / 2, 0, bw / 2, 0);
+  body.addColorStop(0, '#6b727b'); body.addColorStop(0.5, '#949ba3'); body.addColorStop(1, '#646b74');
+  ctx.fillStyle = body;
+  rrPath(ctx, -bw / 2, -bh * 0.82, bw, bh * 0.8, 4);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(40,44,50,0.5)'; ctx.lineWidth = 1;
+  for (const rx of [-0.22, 0, 0.22]) { ctx.beginPath(); ctx.moveTo(bw * rx, -bh * 0.78); ctx.lineTo(bw * rx, -bh * 0.06); ctx.stroke(); }
+  // horizontale Reifen
+  for (const ry of [0.6, 0.28]) { ctx.beginPath(); ctx.moveTo(-bw / 2, -bh * ry); ctx.lineTo(bw / 2, -bh * ry); ctx.stroke(); }
+  // Deckel (hüpft leicht)
+  const lift = isDead ? 0 : Math.abs(Math.sin(frame * 0.2)) * 2;
+  ctx.fillStyle = '#aab2ba';
+  ctx.beginPath(); ctx.ellipse(0, -bh * 0.82 - lift, bw * 0.56, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#7a828b';
+  ctx.beginPath(); ctx.ellipse(0, -bh * 0.86 - lift, w * 0.06, 3, 0, 0, Math.PI * 2); ctx.fill();
+  // Augen (grimmig)
+  if (!isDead) {
+    ctx.fillStyle = '#fff';
+    for (const ex of [-w * 0.14, w * 0.14]) { ctx.beginPath(); ctx.ellipse(ex, -bh * 0.5, 3.2, 3.6, 0, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#141414';
+    for (const ex of [-w * 0.13, w * 0.15]) { ctx.beginPath(); ctx.arc(ex, -bh * 0.48, 1.6, 0, Math.PI * 2); ctx.fill(); }
+    ctx.strokeStyle = '#3a3f45'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(-w * 0.2, -bh * 0.62); ctx.lineTo(-w * 0.08, -bh * 0.56); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(w * 0.2, -bh * 0.62); ctx.lineTo(w * 0.08, -bh * 0.56); ctx.stroke();
+  }
+  // P8 · Mondlicht-Rim an linker Blechkante + Deckelbogen, Augen-Glint.
+  const ta = this.getThemeAccent();
+  ctx.strokeStyle = ta.rim; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-bw / 2, -bh * 0.76); ctx.lineTo(-bw / 2, -bh * 0.1); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, -bh * 0.82 - lift, bw * 0.56, 5, 0, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+  if (!isDead) {
+    ctx.fillStyle = ta.glint;
+    for (const ex of [-w * 0.14, w * 0.14]) { ctx.beginPath(); ctx.arc(ex - 0.9, -bh * 0.51, 0.7, 0, Math.PI * 2); ctx.fill(); }
+  }
+  ctx.restore();
+}
+
+// --- Sprengbrunnen/Geysir (Stadt) — Gully mit periodischem Dampfstrahl. ---
+function drawGeyser(this: Renderer, x: number, y: number, w: number, h: number, phase: number, blastH: number, time: number) {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(blastH)) return;
+  const ctx = this.ctx;
+  // P4 · Kontaktschatten unter dem Gully
+  softShadowEllipse(ctx, x + w / 2, y + h + 1, w * 0.5, 2.5, this.getThemeAccent().shadow);
+  ctx.save();
+  const cx = x + w / 2, base = y + h;
+  // Gully-Basis (immer)
+  ctx.fillStyle = '#4a4f57';
+  rrPath(ctx, x, y, w, h, 3); ctx.fill();
+  ctx.strokeStyle = '#2c3036'; ctx.lineWidth = 1;
+  for (const gx of [0.3, 0.5, 0.7]) { ctx.beginPath(); ctx.moveTo(x + w * gx, y + 2); ctx.lineTo(x + w * gx, base - 2); ctx.stroke(); }
+  if (phase === 1) {
+    // Vorwarnung: kleine Blubber-Wölkchen am Gully
+    ctx.fillStyle = 'rgba(200,225,240,0.7)';
+    for (let i = 0; i < 3; i++) {
+      const px = cx + Math.sin(time * 0.5 + i) * 4;
+      ctx.beginPath(); ctx.arc(px, y - 2 - (i * 3), 1.6 + i * 0.4, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (phase === 2) {
+    // Aktiver Strahl: heller Dampf-/Wasserstoß nach oben
+    const top = base - blastH;
+    // P8 · additiver Glow um den Strahl (leuchtet in die Nacht).
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const jg = ctx.createRadialGradient(cx, base - blastH * 0.5, 2, cx, base - blastH * 0.5, w * 1.3);
+    jg.addColorStop(0, 'rgba(180,226,246,0.26)');
+    jg.addColorStop(1, 'rgba(180,226,246,0)');
+    ctx.fillStyle = jg;
+    ctx.fillRect(cx - w * 1.3, top - 6, w * 2.6, blastH + 12);
+    ctx.restore();
+    const g = ctx.createLinearGradient(0, base, 0, top);
+    g.addColorStop(0, 'rgba(210,235,248,0.9)');
+    g.addColorStop(1, 'rgba(210,235,248,0.15)');
+    ctx.fillStyle = g;
+    const wob = Math.sin(time * 0.8) * 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.32, base);
+    ctx.quadraticCurveTo(cx - w * 0.5 + wob, base - blastH * 0.5, cx - w * 0.16, top);
+    ctx.lineTo(cx + w * 0.16, top);
+    ctx.quadraticCurveTo(cx + w * 0.5 + wob, base - blastH * 0.5, cx + w * 0.32, base);
+    ctx.closePath(); ctx.fill();
+    // Tröpfchen an der Spitze
+    ctx.fillStyle = 'rgba(230,244,252,0.85)';
+    for (let i = 0; i < 4; i++) {
+      const dx = Math.sin(time * 0.9 + i * 1.7) * w * 0.4;
+      ctx.beginPath(); ctx.arc(cx + dx, top + Math.abs(Math.cos(time + i)) * 6, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+// --- Riesenratten-Boss (Stadt-Finale) — große, grimmige Ratte mit HP-Anzeige. ---
+function drawRatBoss(this: Renderer, x: number, y: number, w: number, h: number, frame: number, isDead: boolean, direction: number, velY = 0, onGround = true, hp = 3, maxHp = 3, rearing = false) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  if (!Number.isFinite(frame)) frame = 0;
+  const ctx = this.ctx;
+  // P4 · Kontaktschatten (nur am Boden, damit er beim Sprung nicht „klebt").
+  if (onGround) softShadowEllipse(ctx, x + w / 2, y + h + 2, w * 0.46, 3.5, this.getThemeAccent().shadow);
+  // Gefahren-Aura (solange sie lebt) — beim Auftritt kräftiger.
+  if (rearing && !isDead) {
+    ctx.save();
+    const gx = x + w / 2, gy = y + h * 0.4;
+    const g = ctx.createRadialGradient(gx, gy, w * 0.15, gx, gy, w * 1.1);
+    g.addColorStop(0, 'rgba(200,70,90,0.4)'); g.addColorStop(1, 'rgba(200,70,90,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(gx, gy, w * 1.1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  if (!isDead) {
+    ctx.save();
+    const gx = x + w / 2, gy = y + h * 0.5;
+    const g = ctx.createRadialGradient(gx, gy, w * 0.2, gx, gy, w * 0.9);
+    g.addColorStop(0, 'rgba(120,60,80,0.28)'); g.addColorStop(1, 'rgba(120,60,80,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(gx, gy, w * 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.translate(x + w / 2, y + h);
+  if (direction === 1) ctx.scale(-1, 1);
+  const bh = isDead ? h * 0.45 : h;
+  // Aufbäumen beim Auftritt: Kopf/Körper heben sich, leichtes Zittern.
+  const rear = rearing ? -7 + Math.sin(frame * 0.9) * 1.2 : 0;
+  const jump = (!isDead && !onGround ? (velY < 0 ? -2 : 1) : 0) + rear;
+  // Schwanz
+  ctx.strokeStyle = '#c98198'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(w * 0.36, -bh * 0.35); ctx.quadraticCurveTo(w * 0.66, -bh * 0.55, w * 0.58, -bh * 0.02); ctx.stroke();
+  // Beine
+  const sw = isDead ? 0 : Math.sin(frame * 0.4) * 3;
+  ctx.strokeStyle = '#5a5058'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-w * 0.14, -bh * 0.08); ctx.lineTo(-w * 0.14 + sw, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(w * 0.16, -bh * 0.08); ctx.lineTo(w * 0.16 - sw, 0); ctx.stroke();
+  // Körper
+  const body = ctx.createLinearGradient(0, -bh, 0, 0);
+  body.addColorStop(0, '#7d7480'); body.addColorStop(1, '#5f5763');
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.ellipse(0, -bh * 0.42 + jump, w * 0.44, bh * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+  // Kopf
+  ctx.beginPath(); ctx.ellipse(-w * 0.34, -bh * 0.52 + jump, w * 0.24, bh * 0.32, 0, 0, Math.PI * 2); ctx.fill();
+  // Ohr
+  ctx.beginPath(); ctx.arc(-w * 0.24, -bh * 0.86 + jump, w * 0.13, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#c98198'; ctx.beginPath(); ctx.arc(-w * 0.24, -bh * 0.86 + jump, w * 0.07, 0, Math.PI * 2); ctx.fill();
+  // Schnauze + Nase
+  ctx.fillStyle = '#5f5763';
+  ctx.beginPath(); ctx.moveTo(-w * 0.54, -bh * 0.48 + jump); ctx.lineTo(-w * 0.42, -bh * 0.42 + jump); ctx.lineTo(-w * 0.43, -bh * 0.62 + jump); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#c98198'; ctx.beginPath(); ctx.arc(-w * 0.55, -bh * 0.49 + jump, 2.4, 0, Math.PI * 2); ctx.fill();
+  // rotes Auge (grimmig) + Zähne
+  if (!isDead) {
+    ctx.fillStyle = '#e8433f'; ctx.beginPath(); ctx.arc(-w * 0.33, -bh * 0.58 + jump, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.moveTo(-w * 0.46, -bh * 0.4 + jump); ctx.lineTo(-w * 0.43, -bh * 0.33 + jump); ctx.lineTo(-w * 0.4, -bh * 0.4 + jump); ctx.closePath(); ctx.fill();
+  }
+  // P8 · Mondlicht-Rim auf Rücken & Kopf + Augen-Glint.
+  const ba = this.getThemeAccent();
+  ctx.strokeStyle = ba.rim; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.ellipse(0, -bh * 0.42 + jump, w * 0.44, bh * 0.42, 0, Math.PI * 1.1, Math.PI * 1.98); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(-w * 0.34, -bh * 0.52 + jump, w * 0.24, bh * 0.32, 0, Math.PI * 1.05, Math.PI * 2.0); ctx.stroke();
+  if (!isDead) { ctx.fillStyle = ba.glint; ctx.beginPath(); ctx.arc(-w * 0.335, -bh * 0.60 + jump, 0.9, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+  // HP-Pips über dem Boss
+  if (!isDead) {
+    ctx.save();
+    const pipR = 3.4, gap = 4;
+    const totalW = maxHp * (pipR * 2) + (maxHp - 1) * gap;
+    const startX = x + w / 2 - totalW / 2 + pipR;
+    const py = y - 8;
+    for (let i = 0; i < maxHp; i++) {
+      const px = startX + i * (pipR * 2 + gap);
+      ctx.beginPath(); ctx.arc(px, py, pipR, 0, Math.PI * 2);
+      ctx.fillStyle = i < hp ? '#ff5a7a' : 'rgba(255,255,255,0.25)'; ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 export const enemiesCoreMethods = {
   getCachedGoomba,
   drawGoomba,
   drawBoss,
+  drawRat,
+  drawTrashCan,
+  drawGeyser,
+  drawRatBoss,
   getCachedKoopa,
   drawKoopa,
   getCachedBatBody,

@@ -206,7 +206,7 @@ export function createAustraliaLevel(): LevelData {
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 55, roomL: 51 });
 
   return {
-    name: 'World 5: Australien Outback',
+    name: 'Australien Outback',
     theme: 'australia',
     width,
     height,

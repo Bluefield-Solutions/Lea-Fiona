@@ -202,7 +202,7 @@ export function createCaveLevel(): LevelData {
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 18, roomL: 14 });
 
   return {
-    name: 'World 2: Dunkle Hoehle',
+    name: 'Dunkle Höhle',
     theme: 'cave',
     width,
     height,

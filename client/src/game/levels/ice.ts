@@ -203,7 +203,7 @@ export function createEisLevel(): LevelData {
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 67, roomL: 63 });
 
   return {
-    name: 'World 7: Eis Königreich',
+    name: 'Eis Königreich',
     theme: 'ice',
     width,
     height,

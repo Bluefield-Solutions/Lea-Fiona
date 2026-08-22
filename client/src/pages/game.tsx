@@ -22,10 +22,17 @@ import type { HudStats, LevelInfo, ModalKind } from '../components/game/types';
 import { formatTime, isTouchDevice, vibrate } from '../components/game/ui-helpers';
 import { HudButton, PrimaryButton, PadButton } from '../components/game/Buttons';
 import { ModalOverlay } from '../components/game/ModalOverlay';
+import { MathQuiz } from '../components/game/MathQuiz';
 import { ProfilesPanel } from '../components/game/ProfilesPanel';
 import { SettingsPanel } from '../components/game/SettingsPanel';
 import runSheetFiona from '@assets/run_sheet_fiona.webp';
 import runSheetLea from '@assets/run_sheet_lea.webp';
+import heroSky from '@assets/lyr_sky.webp';
+import heroHillsFar from '@assets/lyr_hillsfar.webp';
+import heroHillsNear from '@assets/lyr_hillsnear.webp';
+import heroGround from '@assets/lyr_ground.webp';
+import heroCollect from '@assets/lyr_collect.webp';
+import heroForeground from '@assets/lyr_foreground.webp';
 import { AlbumPanel } from '../components/game/AlbumPanel';
 
 // Height (CSS px) reserved at the bottom of the screen for the touch
@@ -83,42 +90,47 @@ function QuickSlider({ label, value, onChange }: { label: string; value: number;
 function CharacterChooser({ value, onChange, variant = 'compact', noSelection = false }: { value: 'fiona' | 'lea'; onChange: (c: 'fiona' | 'lea') => void; variant?: 'compact' | 'hero'; noSelection?: boolean }) {
   const opts: { id: 'fiona' | 'lea'; label: string; emoji: string; sheet: string; fw: number; fh: number; sheetW: number; color: string; anim: string }[] = [
     { id: 'fiona', label: 'Fiona', emoji: '🌸', sheet: runSheetFiona, fw: 47, fh: 72, sheetW: 188, color: '#ff86c8', anim: 'lf-run-fiona 0.5s steps(4) infinite' },
-    { id: 'lea', label: 'Lea', emoji: '⭐', sheet: runSheetLea, fw: 71, fh: 84, sheetW: 284, color: '#ffcf4a', anim: 'lf-run-lea 0.55s steps(4) infinite' },
+    { id: 'lea', label: 'Lea', emoji: '💛', sheet: runSheetLea, fw: 71, fh: 84, sheetW: 284, color: '#ffcf4a', anim: 'lf-run-lea 0.55s steps(4) infinite' },
   ];
   if (variant === 'hero') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-        <span style={{ color: '#fff', fontSize: 'clamp(15px,2.6vw,20px)', fontWeight: 900, letterSpacing: '0.12em', textShadow: '0 2px 12px rgba(0,0,0,0.6)' }}>WÄHLE DEINE FIGUR</span>
-        <div style={{ display: 'flex', gap: 'clamp(14px,3vw,26px)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+        <span style={{ color: '#fff', fontSize: 'clamp(14px,2.4vw,19px)', fontWeight: 900, letterSpacing: '0.12em', textShadow: '0 2px 12px rgba(0,0,0,0.6)' }}>WÄHLE DEINE FIGUR</span>
+        <div style={{ display: 'flex', gap: 'clamp(12px,2.6vw,20px)' }}>
           {opts.map((o) => {
             const sel = !noSelection && value === o.id;
+            // Kompakte, elegante Auswahl-Pille: gerahmtes Mini-Porträt + Name.
+            // Das große Hero-Bild oben trägt die Show; hier reicht ein klarer,
+            // platzsparender Wähler, der auf jedem Bildschirm passt.
             return (
               <button
                 key={o.id} type="button" className="lf-hero-card" aria-pressed={sel} aria-label={`Figur ${o.label}`}
                 onClick={() => onChange(o.id)}
                 style={{
-                  width: 'clamp(140px,30vw,184px)', padding: '16px 12px 14px', borderRadius: 22, cursor: 'pointer', fontFamily: 'inherit',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
-                  background: sel ? `linear-gradient(165deg, ${o.color}42, rgba(16,12,34,0.78))` : 'linear-gradient(165deg, rgba(255,255,255,0.10), rgba(16,12,34,0.5))',
-                  border: `2px solid ${sel ? o.color : 'rgba(255,255,255,0.16)'}`,
-                  boxShadow: sel ? `0 14px 34px ${o.color}55, inset 0 1px 0 rgba(255,255,255,0.25)` : '0 10px 26px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
+                  padding: '9px 16px 9px 9px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 12,
+                  background: sel ? `linear-gradient(165deg, ${o.color}42, rgba(16,12,34,0.82))` : 'linear-gradient(165deg, rgba(255,255,255,0.12), rgba(16,12,34,0.55))',
+                  border: `2px solid ${sel ? o.color : 'rgba(255,255,255,0.18)'}`,
+                  boxShadow: sel ? `0 12px 30px ${o.color}55, inset 0 1px 0 rgba(255,255,255,0.25)` : '0 8px 22px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
+                  transition: 'all 160ms cubic-bezier(.2,.8,.3,1)',
                 }}
               >
-                <div aria-hidden style={{ position: 'relative', height: 142, width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                  <div style={{ position: 'absolute', bottom: 6, width: '80%', height: 24, borderRadius: '50%', background: `radial-gradient(50% 60% at 50% 50%, ${o.color}66 0%, ${o.color}00 70%)` }} />
-                  <div style={{ position: 'absolute', bottom: 10, width: '54%', height: 9, borderRadius: '50%', background: 'rgba(0,0,0,0.35)', filter: 'blur(2px)' }} />
+                <div aria-hidden style={{
+                  position: 'relative', width: 62, height: 62, borderRadius: 18, overflow: 'hidden', flex: '0 0 auto',
+                  background: `radial-gradient(120% 120% at 50% 20%, ${o.color}33 0%, rgba(10,8,26,0.55) 75%)`,
+                  border: `2px solid ${sel ? o.color : 'rgba(255,255,255,0.22)'}`,
+                  display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+                }}>
                   <div style={{
-                    position: 'relative', width: o.fw * 1.5, height: o.fh * 1.5,
-                    backgroundImage: `url(${o.sheet})`, backgroundSize: `${o.sheetW * 1.5}px ${o.fh * 1.5}px`, backgroundRepeat: 'no-repeat',
-                    imageRendering: 'pixelated',
+                    width: o.fw * 1.28, height: o.fh * 1.28, marginTop: -3,
+                    backgroundImage: `url(${o.sheet})`, backgroundSize: `${o.sheetW * 1.28}px ${o.fh * 1.28}px`, backgroundRepeat: 'no-repeat',
                     animation: sel ? `${o.anim}, lf-hero-hop 1.05s ease-in-out infinite` : 'lf-hero-idle 2.6s ease-in-out infinite',
-                    filter: 'drop-shadow(0 6px 8px rgba(0,0,0,0.45))',
+                    filter: 'drop-shadow(0 3px 5px rgba(0,0,0,0.45))',
                   }} />
                 </div>
                 <span style={{
-                  padding: '3px 16px', borderRadius: 999,
-                  background: sel ? o.color : 'rgba(255,255,255,0.12)',
-                  color: sel ? '#1a1230' : '#fff', fontWeight: 800, fontSize: 15, letterSpacing: '0.02em',
+                  color: sel ? '#fff' : 'rgba(255,255,255,0.92)', fontWeight: 800,
+                  fontSize: 'clamp(16px,2.4vw,20px)', letterSpacing: '0.01em',
                 }}>{o.label}</span>
               </button>
             );
@@ -190,6 +202,9 @@ export default function GamePage() {
   const [activeProfile, setActiveProfile] = useState<Profile>(() => getActiveProfile());
   const [settings, setSettings] = useState<Settings>(() => getSettings());
   const [showQuickSettings, setShowQuickSettings] = useState<boolean>(false);
+  // Mathe-Modus: Quiz-Overlay nach Levelende + kurze Ergebnis-Meldung.
+  const [showQuiz, setShowQuiz] = useState<boolean>(false);
+  const [mathMsg, setMathMsg] = useState<string | null>(null);
   // Debug-Overlay-Telemetrie (AP 0.3) — alle 80 ms aus der Engine gepollt.
   const [debugInfo, setDebugInfo] = useState<ReturnType<GameEngine['getDebugInfo']> | null>(null);
   // Floating Virtual Stick (AP 1.8): Sicht-State + Ref auf den aktiven Finger.
@@ -283,6 +298,7 @@ export default function GamePage() {
     // logic in the test. Harmless inert reference in production.
     (window as unknown as { __storage?: unknown }).__storage = {
       getSettings,
+      updateSettings,     // E2E: Settings deterministisch umschalten (QA-Matrix)
       getStickers,
       getActiveProfile,
       listProfiles,
@@ -395,10 +411,13 @@ export default function GamePage() {
   }, [hud.lives]);
 
   // --- Action handlers (also bind for touch via pointerdown) ---
+  // Effektiver Freischalt-Stand: im Mathe-Modus die eigene, quiz-gesteuerte
+  // Progression (settings.mathUnlocked), sonst die normale Kampagne.
+  const effUnlocked = settings.mathMode ? settings.mathUnlocked : unlocked;
   const startLevel = (i: number) => {
     const engine = engineRef.current;
     if (!engine) return;
-    if (i >= unlocked) return;
+    if (i >= effUnlocked) return;
     engine.startLevelByIndex(i);
     forceTick(n => n + 1);
   };
@@ -412,6 +431,26 @@ export default function GamePage() {
   const goTitle = () => engineRef.current?.returnToTitle();
   const restart = () => engineRef.current?.restartCurrentLevel();
   const nextLevel = () => engineRef.current?.continueToNextLevel();
+  // Mathe-Modus: Quiz nach dem Level bestanden → nächstes Level freischalten und
+  // hineingehen. Nicht bestanden → kompletter Reset auf Level 1.
+  const onQuizPass = () => {
+    const idx = engineRef.current?.currentLevelIndex ?? 0;
+    const next = Math.min(LEVELS.length, idx + 2);
+    applySettingsPatch({ mathUnlocked: Math.max(settings.mathUnlocked, next) });
+    setShowQuiz(false);
+    if (idx + 1 < LEVELS.length) nextLevel();
+    else {
+      // Letztes Level des Spiels geschafft → kurzer Extra-Tusch obendrauf.
+      try { audio.playSfx('oneUp'); } catch { /* Audio evtl. nicht init – egal */ }
+      setMathMsg('Fantastisch — du hast ALLE Level geschafft! 🎉'); goTitle();
+    }
+  };
+  const onQuizFail = () => {
+    applySettingsPatch({ mathUnlocked: 1 });
+    setShowQuiz(false);
+    setMathMsg('Leider nicht geschafft — wir fangen wieder bei Level 1 an. Du schaffst das! 💪');
+    goTitle();
+  };
   // Pause→Levelauswahl: same as Quit-to-Title for engine semantics, but
   // worded "Levelauswahl" so kids understand they go back to the picker.
   const goLevelSelect = () => engineRef.current?.returnToTitle();
@@ -598,7 +637,7 @@ export default function GamePage() {
     volcano: '#ffaa55', ice: '#dff6ff', castle: '#cccccc', underwater: '#aae0ff', space: '#c266ff',
     // v464: die drei neuen Welten bekommen eigene Akzente (vorher grauer Fallback).
     school: '#e0b45a', gym: '#4aa3e0', trampoline: '#b45ad8', bluefield: '#5a86f0',
-    plush: '#f0a6c8', forest: '#5aa860',
+    plush: '#f0a6c8', forest: '#5aa860', city: '#8a93a6', vacation: '#37b6c2',
   };
   // Mini-Vorschau je Welt: charakteristischer Verlauf + Symbol fürs Level-Grid.
   const themePreview: Record<string, { grad: string; icon: string }> = {
@@ -620,6 +659,8 @@ export default function GamePage() {
     bluefield:  { grad: 'linear-gradient(160deg,#5a86f0,#152a72)', icon: '💡' },
     plush:      { grad: 'linear-gradient(160deg,#f6c6dc,#b98fd0)', icon: '🧸' },
     forest:     { grad: 'linear-gradient(160deg,#3e8e4e,#12351f)', icon: '🌲' },
+    city:       { grad: 'linear-gradient(160deg,#3d3357,#1a1626)', icon: '🏙️' },
+    vacation:   { grad: 'linear-gradient(160deg,#7ec8f2,#2f8f5a)', icon: '🏔️' },
   };
 
   // Keyboard navigation for the 5×2 level-select grid.
@@ -742,6 +783,26 @@ export default function GamePage() {
           0%,100% { transform: translateY(0) rotate(-1deg); }
           50%     { transform: translateY(-8px) rotate(1deg); }
         }
+        /* Hero-Bühne: Figuren laufen echt (4 Frames), dazu feiner Lauf-Hüpfer,
+           Wolken driften. */
+        @keyframes lf-hero-legcycle {
+          from { background-position-x: 0%; }
+          to   { background-position-x: 100%; }
+        }
+        @keyframes lf-hero-hopC {
+          0%,100% { transform: translateX(-50%) translateY(0); }
+          50%     { transform: translateX(-50%) translateY(-3%); }
+        }
+        @keyframes lf-hero-cloud {
+          from { transform: translateX(-130%); }
+          to   { transform: translateX(520%); }
+        }
+        /* Parallax-Spur: 200% breit (zwei nahtlose Kacheln), eine Kachelbreite
+           nach links = nahtlose Endlosschleife. */
+        @keyframes lf-parscroll {
+          from { transform: translateX(0); }
+          to   { transform: translateX(-50%); }
+        }
         @keyframes lf-sheen {
           0%   { background-position: -200% center; }
           100% { background-position: 200% center; }
@@ -794,7 +855,7 @@ export default function GamePage() {
         .lf-continue-btn:active { transform: scale(0.96); animation: none; }
         @media (prefers-reduced-motion: reduce) { .lf-continue-btn { animation: none !important; } }
         @media (prefers-reduced-motion: reduce) {
-          .lf-floaty, .lf-title { animation: none !important; }
+          .lf-floaty, .lf-title, .lf-hero-stage, .lf-hero-cloud, .lf-hero-stage img, .lf-par-track { animation: none !important; }
         }
         /* Querformat auf niedrigen Geräten (z.B. iPhone quer): kompakteres
            Layout, damit Titel, Button und Levelraster ohne Abschneiden in die
@@ -807,6 +868,15 @@ export default function GamePage() {
           .lf-level-grid { max-height: 72vh !important; gap: 8px !important; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)) !important; }
           .lf-level-card { min-height: 92px !important; padding: 7px 8px !important; }
           .lf-card-preview { height: 24px !important; margin-bottom: 5px !important; font-size: 16px !important; }
+          /* Figurenwahl: Hero kleiner + beschreibenden Tag ausblenden, damit die
+             Auswahl-Pillen sicher im Bild bleiben und gut tappbar sind. */
+          .lf-hero-stage { width: min(40vw, 200px) !important; margin-top: 0 !important; }
+          .lf-title-tag { display: none !important; }
+        }
+        /* Sehr flaches Querformat (iPhone quer): Hero noch kompakter. */
+        @media (orientation: landscape) and (max-height: 430px) {
+          .lf-hero-stage { width: min(30vw, 150px) !important; }
+          .lf-title { font-size: clamp(16px, 4.4vh, 24px) !important; }
         }
       `}</style>
 
@@ -935,7 +1005,7 @@ export default function GamePage() {
           </div>
           {/* Schwebende Deko — steigt langsam auf (rein dekorativ). */}
           <div aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
-            {['🪙','⭐','🍬','✨','💛','🎈','🌟','🪙','🍬','⭐','✨','🌟','💫','🎈'].map((em, i) => {
+            {['🪙','🌈','🍬','🦋','💛','🎈','🌸','🪙','🍭','💫','🍬','🎈','🦋','💛'].map((em, i) => {
               const left = (i * 67 + 9) % 100;
               const dur = 13 + (i % 5) * 2.4;
               const delay = -((i * 1.9) % dur);
@@ -953,7 +1023,9 @@ export default function GamePage() {
             })}
           </div>
 
-          {/* Laufende Figuren am unteren Rand (dekorativ). */}
+          {/* Laufende Figuren am unteren Rand (dekorativ). Auf der Figurenwahl
+              ausgeblendet, da das große Hero-Bild die Figuren bereits zeigt. */}
+          {charPicked && (
           <div aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
             <div className="lf-runwrap" style={{
               left: 0, bottom: 'clamp(4px, 1.5vh, 16px)', width: 47, height: 72,
@@ -978,6 +1050,7 @@ export default function GamePage() {
               }} />
             </div>
           </div>
+          )}
 
           {/* Top-Bar: Profil (links) + Einstellungen (rechts). */}
           <div style={{
@@ -1124,12 +1197,103 @@ export default function GamePage() {
               }}>
                 im Abenteuerland
               </div>
-              <div style={{
+              <div className="lf-title-tag" style={{
                 marginTop: 4, fontSize: 'clamp(10px, 2vw, 13px)', fontWeight: 600,
                 color: 'rgba(255,255,255,0.78)', letterSpacing: '0.02em',
                 background: 'rgba(16,12,34,0.5)', padding: '3px 14px', borderRadius: 999,
               }}>
                 🏃 Renne, hüpfe &amp; sammle durch {LEVELS.length} bunte Welten
+              </div>
+            </div>
+          )}
+
+          {/* Hero-Key-Art: professionelles Titelbild beider Figuren (löst die
+              alte Stern-/Emoji-Deko als Blickfang ab). Nur auf der Figurenwahl.
+              Animiert: die Figuren „laufen" mit sanftem Lauf-Bob, Wolken driften,
+              das Bild schwebt leicht (Parallaxe). Alle Ebenen skalieren über die
+              feste Seitenverhältnis-Bühne responsiv mit. */}
+          {!charPicked && (
+            <div style={{
+              position: 'relative', zIndex: 1, width: '100%', display: 'flex',
+              justifyContent: 'center', pointerEvents: 'none',
+              marginTop: 'clamp(2px, 1.2vh, 10px)',
+            }}>
+              <div
+                className="lf-hero-stage"
+                role="img"
+                aria-label="Lea und Fiona rennen zusammen ins Abenteuer"
+                style={{
+                  position: 'relative', width: 'min(86vw, 620px, 72vh)', aspectRatio: '1600 / 820',
+                  borderRadius: 24, overflow: 'hidden',
+                  boxShadow: '0 18px 40px rgba(20,10,50,0.55), 0 0 0 1px rgba(255,255,255,0.10) inset',
+                  animation: 'lf-title-float 6s ease-in-out infinite',
+                }}
+              >
+                {/* Ebene 0 — Himmel (statisch) */}
+                <img src={heroSky} alt="" aria-hidden draggable={false}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                {/* Driftende Wolken (eigene Geschwindigkeit) */}
+                <div aria-hidden className="lf-hero-cloud" style={{
+                  position: 'absolute', top: '13%', width: '26%', height: '11%', borderRadius: '50%',
+                  background: 'radial-gradient(closest-side, rgba(255,255,255,0.72), rgba(255,255,255,0))',
+                  filter: 'blur(2px)', animation: 'lf-hero-cloud 46s linear infinite',
+                }} />
+                <div aria-hidden className="lf-hero-cloud" style={{
+                  position: 'absolute', top: '24%', width: '20%', height: '9%', borderRadius: '50%',
+                  background: 'radial-gradient(closest-side, rgba(255,255,255,0.6), rgba(255,255,255,0))',
+                  filter: 'blur(2px)', animation: 'lf-hero-cloud 63s linear infinite', animationDelay: '-24s',
+                }} />
+                {/* Parallax-Ebenen: je zwei nahtlose Kacheln in einer 200%-Spur,
+                    die nach links läuft. Tiefe = Tempo: ferne Hügel langsam,
+                    nahe schneller, Boden schnell (Vorwärts-Illusion), und
+                    Sammel-Objekte (Münzen/Sterne) auf Figuren-Ebene ziehen mit
+                    der Welt vorbei. Alle „Welt"-Ebenen teilen ein kohärentes,
+                    lebhaftes Tempo, damit die Schritte passen (kein Rutschen). */}
+                {[
+                  { src: heroHillsFar, dur: '38s' },
+                  { src: heroHillsNear, dur: '20s' },
+                  { src: heroGround, dur: '8s' },
+                  { src: heroCollect, dur: '7s' },
+                ].map((L, i) => (
+                  <div key={i} aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+                    <div className="lf-par-track" style={{ display: 'flex', width: '200%', height: '100%', animation: `lf-parscroll ${L.dur} linear infinite` }}>
+                      <img src={L.src} alt="" draggable={false} style={{ width: '50%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      <img src={L.src} alt="" draggable={false} style={{ width: '50%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    </div>
+                  </div>
+                ))}
+                {/* Warme Halos hinter den Figuren (statisch) */}
+                <div aria-hidden style={{ position: 'absolute', left: '40%', bottom: '11%', width: '26%', height: '56%', transform: 'translateX(-50%)',
+                  background: 'radial-gradient(50% 55% at 50% 46%, rgba(255,236,180,0.42), rgba(255,236,180,0))', filter: 'blur(4px)' }} />
+                <div aria-hidden style={{ position: 'absolute', left: '58.5%', bottom: '11%', width: '22%', height: '50%', transform: 'translateX(-50%)',
+                  background: 'radial-gradient(50% 55% at 50% 46%, rgba(255,224,190,0.42), rgba(255,224,190,0))', filter: 'blur(4px)' }} />
+                {/* Kontaktschatten unter den Figuren (statisch, bleiben am Platz) */}
+                <div aria-hidden style={{ position: 'absolute', left: '40%', bottom: '10.2%', width: '13%', height: '4%', transform: 'translateX(-50%)',
+                  background: 'radial-gradient(50% 50% at 50% 50%, rgba(15,25,20,0.4), rgba(15,25,20,0))', filter: 'blur(2px)' }} />
+                <div aria-hidden style={{ position: 'absolute', left: '58.5%', bottom: '10.4%', width: '11%', height: '3.6%', transform: 'translateX(-50%)',
+                  background: 'radial-gradient(50% 50% at 50% 50%, rgba(15,25,20,0.4), rgba(15,25,20,0))', filter: 'blur(2px)' }} />
+                {/* Figuren: echter 4-Frame-Laufzyklus (responsiv), fester Standort.
+                    Bein-Takt auf das lebhafte Welt-Tempo abgestimmt (flotter Jog). */}
+                <div aria-hidden style={{
+                  position: 'absolute', left: '40%', bottom: '10.2%', height: '64%', aspectRatio: '153 / 180',
+                  backgroundImage: `url(${runSheetLea})`, backgroundSize: '400% 100%', backgroundRepeat: 'no-repeat',
+                  transformOrigin: 'center bottom', willChange: 'background-position, transform',
+                  animation: 'lf-hero-legcycle 0.44s steps(4, jump-none) infinite, lf-hero-hopC 0.44s ease-in-out infinite',
+                }} />
+                <div aria-hidden style={{
+                  position: 'absolute', left: '58.5%', bottom: '10.4%', height: '69%', aspectRatio: '118 / 180',
+                  backgroundImage: `url(${runSheetFiona})`, backgroundSize: '400% 100%', backgroundRepeat: 'no-repeat',
+                  transformOrigin: 'center bottom', willChange: 'background-position, transform',
+                  animation: 'lf-hero-legcycle 0.4s steps(4, jump-none) infinite, lf-hero-hopC 0.4s ease-in-out infinite',
+                }} />
+                {/* Vordergrund-Deko (Büsche/Blumen): ganz vorne, am schnellsten —
+                    zieht vor den Figuren vorbei und verstärkt die Tiefe. */}
+                <div aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+                  <div className="lf-par-track" style={{ display: 'flex', width: '200%', height: '100%', animation: 'lf-parscroll 5.5s linear infinite' }}>
+                    <img src={heroForeground} alt="" draggable={false} style={{ width: '50%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    <img src={heroForeground} alt="" draggable={false} style={{ width: '50%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1190,6 +1354,33 @@ export default function GamePage() {
                 );
               })}
             </div>
+            {/* Sehr dezenter Mathe-Modus-Umschalter: klein, gedämpft. Gesperrte
+                Progression ab Level 1 + Rechen-Quiz nach jedem Level. Default AN. */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={settings.mathMode}
+              aria-label={`Mathe-Modus ${settings.mathMode ? 'an' : 'aus'}`}
+              data-testid="toggle-math-mode"
+              title="Mathe-Modus: nach jedem Level 3 Rechenaufgaben (Lea bis 50, Fiona bis 10). Start ab Level 1."
+              onClick={() => applySettingsPatch(settings.mathMode ? { mathMode: false } : { mathMode: true, mathUnlocked: 1 })}
+              style={{
+                pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '2px 8px', borderRadius: 999, cursor: 'pointer', background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)',
+                color: settings.mathMode ? 'rgba(150,225,175,0.75)' : 'rgba(255,255,255,0.38)',
+                fontSize: 10.5, fontWeight: 600, letterSpacing: '0.01em', opacity: 0.8,
+                transition: 'color 120ms, opacity 120ms',
+              }}
+            >
+              <span aria-hidden style={{ fontSize: 11 }}>🧮</span>
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%',
+                background: settings.mathMode ? '#7fe0a2' : 'rgba(255,255,255,0.25)',
+                boxShadow: settings.mathMode ? '0 0 5px rgba(127,224,162,0.8)' : 'none',
+              }} />
+              Mathe
+            </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13 }}>Du spielst als <b style={{ color: '#fff' }}>{character === 'fiona' ? 'Fiona' : 'Lea'}</b></span>
               <button className="lf-topbtn" type="button" onClick={() => setCharPicked(false)} style={{ pointerEvents: 'auto', padding: '4px 12px', borderRadius: 999, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Figur ändern</button>
@@ -1228,7 +1419,7 @@ export default function GamePage() {
             }}
           >
             {LEVELS.map((lv, i) => {
-              const isUnlocked = i < unlocked;
+              const isUnlocked = i < effUnlocked;
               const best = getBestScore(i);
               const stars = getLevelStars(i);
               const sc = getSpecialCoinsCollected(i);
@@ -1595,14 +1786,33 @@ export default function GamePage() {
               </div>
             );
           })()}
-          {levelInfo?.hasNext ? (
+          {settings.mathMode ? (
+            <PrimaryButton testId="button-math-quiz" onClick={() => setShowQuiz(true)}>
+              🧮 Rechenaufgaben lösen
+            </PrimaryButton>
+          ) : levelInfo?.hasNext ? (
             <PrimaryButton testId="button-next-level" onClick={nextLevel}>
               Weiter: {levelInfo.nextName}
             </PrimaryButton>
           ) : (
             <PrimaryButton testId="button-back-to-title-win" onClick={goTitle}>Du hast alle Welten geschafft!</PrimaryButton>
           )}
-          <PrimaryButton testId="button-complete-title" onClick={goTitle}>Zum Titel</PrimaryButton>
+          {!settings.mathMode && (
+            <PrimaryButton testId="button-complete-title" onClick={goTitle}>Zum Titel</PrimaryButton>
+          )}
+        </ModalOverlay>
+      )}
+
+      {/* Mathe-Quiz nach dem Levelende (nur im Mathe-Modus). */}
+      {showQuiz && settings.mathMode && (
+        <MathQuiz onPass={onQuizPass} onFail={onQuizFail} character={character} />
+      )}
+
+      {/* Kurze Ergebnis-Meldung des Mathe-Modus (bestanden zum Schluss / Reset). */}
+      {mathMsg && (
+        <ModalOverlay testId="mathresult-overlay" title="Mathe-Modus" onClose={() => setMathMsg(null)}>
+          <p style={{ color: 'rgba(255,255,255,0.9)', margin: '6px 0 16px', fontSize: 16, lineHeight: 1.4 }}>{mathMsg}</p>
+          <PrimaryButton testId="button-mathresult-ok" onClick={() => setMathMsg(null)}>OK</PrimaryButton>
         </ModalOverlay>
       )}
 
@@ -1730,8 +1940,10 @@ export default function GamePage() {
       })()}
 
       {/* Achievement toasts. Stack from top-center; only the head is
-          visible at a time but they queue smoothly. */}
-      {toasts.length > 0 && (
+          visible at a time but they queue smoothly. Während das Mathe-Quiz
+          offen ist, ausgeblendet, damit der „Sticker freigeschaltet"-Toast
+          nicht den Committen-Knopf überlappt. */}
+      {toasts.length > 0 && !showQuiz && (
         <div
           data-testid="achievement-toast-stack"
           style={{

@@ -5,7 +5,7 @@ import {
 import { ENEMY_KILL_SCORE, GameState, TILE_SIZE } from '../constants';
 import { LEVELS, groundRowOf } from '../level';
 import { audio } from '../audio';
-import { setUnlocked, getStickers } from '../storage';
+import { setUnlocked, getStickers, getSettings } from '../storage';
 import type { GameEngine } from '../engine';
 
 type Ctor = new (...args: any[]) => Entity;
@@ -121,7 +121,9 @@ export function runFlagCollision(engine: GameEngine): boolean {
     // sobald der Drain durch ist (oder der Spieler "Weiter" drückt).
     engine.setTimeBonus(Math.ceil(engine.time));
     const nextUnlock = Math.min(LEVELS.length, engine.currentLevelIndex + 2);
-    if (nextUnlock > engine.unlockedLevels) {
+    // Mathe-Modus: NICHT automatisch freischalten — das Rechen-Quiz nach dem Level
+    // ist das Tor (eigene Progression über settings.mathUnlocked in der UI).
+    if (!getSettings().mathMode && nextUnlock > engine.unlockedLevels) {
       engine.unlockedLevels = nextUnlock;
       setUnlocked(engine.unlockedLevels);
       engine.emitEvent('unlock');

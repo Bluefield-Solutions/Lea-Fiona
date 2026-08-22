@@ -144,7 +144,7 @@ export function createSchoolLevel(): LevelData {
   }
 
   return {
-    name: 'World 11: Schule',
+    name: 'Schule',
     theme: 'school',
     width,
     height,

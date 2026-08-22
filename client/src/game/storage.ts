@@ -30,6 +30,8 @@ export interface Settings {
   musicVolume: number;
   sfxVolume: number;
   screenShake: boolean;
+  /** Stadt-Welt: Blitze & Donner (Gewitter-Effekte). Aus = nur ruhiger Regen. */
+  stadtGewitter: boolean;
   vibration: boolean;
   muted: boolean;
   /** Blendet ein Debug-Overlay mit FPS/Frame-Zeit/Entity-Zählern ein (AP 0.3). */
@@ -61,6 +63,23 @@ export interface Settings {
    *  Chor). Wird zusätzlich zur automatischen Geräteklasse angewandt, sodass man
    *  die Dichte von Hand feinregeln kann. Default 0.6. */
   grillenDichte: number;
+  /** Stadt-Welt: Regen-Dichte 0..1 (0 = nur Nieseln, 1 = dichter Wolkenbruch).
+   *  Skaliert die automatische Intensitätskurve zusätzlich von Hand. Default 0.6. */
+  regenDichte: number;
+  /** Stadt-Welt: Stärke der dekorativen Zusatz-Effekte 0..1 (Fenster-Twinkle &
+   *  Bloom, Neon-Pfützen, Nebel, Boss-Scheinwerfer, Vordergrund-Kabel). 0 = ruhig,
+   *  1 = voll. Betrifft NUR Deko — Regen, Blitz und die Müllgruben-Warnung bleiben
+   *  unberührt. Default 1.0. */
+  stadtEffekte: number;
+  /** Mathe-Modus (Lern-Modus): gesperrte Progression ab Level 1; nach jedem Level
+   *  müssen 3 Rechenaufgaben (Plus/Minus bis 30) gelöst werden, bevor das nächste
+   *  Level freigeschaltet wird. 3 Fehler insgesamt → kompletter Reset auf Level 1.
+   *  Eigener, von der normalen Kampagne unabhängiger Fortschritt (`mathUnlocked`).
+   *  Default aus. */
+  mathMode: boolean;
+  /** Höchstes im Mathe-Modus freigespieltes Level (1..N). Startet bei 1; steigt je
+   *  bestandenem Quiz; wird bei Nichtbestehen wieder auf 1 gesetzt. */
+  mathUnlocked: number;
 }
 
 export interface Profile {
@@ -104,6 +123,7 @@ const DEFAULT_SETTINGS: Settings = {
   musicVolume: 0.45,
   sfxVolume: 0.8,
   screenShake: true,
+  stadtGewitter: true,
   vibration: true,
   muted: false,
   showDebug: false,
@@ -121,6 +141,11 @@ const DEFAULT_SETTINGS: Settings = {
   unlockAllWorlds: true,
   showGhost: true,
   grillenDichte: 0.6,
+  regenDichte: 0.6,
+  stadtEffekte: 1.0,
+  // Mathe-Modus per Default AN (Lern-Modus ist die Standard-Erfahrung).
+  mathMode: true,
+  mathUnlocked: 1,
 };
 
 export const MAX_PROFILES = 4;
@@ -181,6 +206,7 @@ function sanitizeSettings(s: unknown): Settings {
     musicVolume: clamp01(o.musicVolume, DEFAULT_SETTINGS.musicVolume),
     sfxVolume: clamp01(o.sfxVolume, DEFAULT_SETTINGS.sfxVolume),
     screenShake: typeof o.screenShake === 'boolean' ? o.screenShake : DEFAULT_SETTINGS.screenShake,
+    stadtGewitter: typeof o.stadtGewitter === 'boolean' ? o.stadtGewitter : DEFAULT_SETTINGS.stadtGewitter,
     vibration: typeof o.vibration === 'boolean' ? o.vibration : DEFAULT_SETTINGS.vibration,
     muted: typeof o.muted === 'boolean' ? o.muted : DEFAULT_SETTINGS.muted,
     showDebug: typeof o.showDebug === 'boolean' ? o.showDebug : DEFAULT_SETTINGS.showDebug,
@@ -197,6 +223,13 @@ function sanitizeSettings(s: unknown): Settings {
     showGhost: typeof o.showGhost === 'boolean' ? o.showGhost : DEFAULT_SETTINGS.showGhost,
     grillenDichte: typeof o.grillenDichte === 'number'
       ? Math.max(0, Math.min(1, o.grillenDichte)) : DEFAULT_SETTINGS.grillenDichte,
+    regenDichte: typeof o.regenDichte === 'number'
+      ? Math.max(0, Math.min(1, o.regenDichte)) : DEFAULT_SETTINGS.regenDichte,
+    stadtEffekte: typeof o.stadtEffekte === 'number'
+      ? Math.max(0, Math.min(1, o.stadtEffekte)) : DEFAULT_SETTINGS.stadtEffekte,
+    mathMode: typeof o.mathMode === 'boolean' ? o.mathMode : DEFAULT_SETTINGS.mathMode,
+    mathUnlocked: typeof o.mathUnlocked === 'number'
+      ? Math.max(1, Math.floor(o.mathUnlocked)) : DEFAULT_SETTINGS.mathUnlocked,
   };
 }
 

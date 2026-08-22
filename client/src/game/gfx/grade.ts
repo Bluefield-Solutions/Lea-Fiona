@@ -27,4 +27,7 @@ export const WORLD_GRADE: Record<ThemeName, Grade> = {
   plush:      { r: 255, g: 240, b: 248, a: 0.12, ov: { r: 180, g: 130, b: 190, a: 0.12 } },  // weich-pastell, verträumt
   dragon:     { r: 214, g: 244, b: 220, a: 0.16, ov: { r: 30, g: 92, b: 46, a: 0.20 } },   // drachengrün, tief-höhlig
   forest:     { r: 248, g: 248, b: 242, a: 0.04, ov: { r: 96, g: 104, b: 84, a: 0.05 } },   // bewusst NAHEZU neutral — der Tag→Dämmerung→Nacht-Verlauf im Hintergrund trägt die komplette Farbstimmung; ein starker Grün-Stich würde Morgen-Blau & Abend-Gold zerstören
+  city:       { r: 206, g: 212, b: 234, a: 0.15, ov: { r: 48, g: 56, b: 96, a: 0.22 } },    // Großstadt-Nacht (P3): kühleres Blau, tiefere Mitteltöne → Noir-Stimmung
+  vacation:   { r: 255, g: 244, b: 214, a: 0.11, ov: { r: 255, g: 198, b: 120, a: 0.15 } },  // Urlaub: kräftigeres warmes Sommerlicht (#3) — Foto + Spielfläche als eine goldene Einheit, ohne die Fototöne zu erschlagen
+
 };

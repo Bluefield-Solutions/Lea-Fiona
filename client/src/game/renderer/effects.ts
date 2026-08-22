@@ -1165,6 +1165,7 @@ const SCENE_TINTS: Record<string, { c: string; a: number }> = {
   bluefield:  { c: '#7fc8ff', a: 0.15 },
   dragon:     { c: '#3fc86a', a: 0.22 },
   forest:     { c: '#9aa878', a: 0.05 },
+  vacation:   { c: '#ffc866', a: 0.14 },  // #3 wärmer: Foto + Spielfläche unter einem goldenen Sommerlicht
 };
 
 // Element-Tint (Grafik-Audit P1): geteilte Elemente (Ziegel, bewegliche
@@ -1451,6 +1452,8 @@ function drawSceneGrade(this: Renderer, theme: string, W: number, H: number) {
     bluefield: '20,44,70',
     dragon: '6,20,10',
     forest: '10,14,24',
+    city: '12,16,42',
+    vacation: '60,44,14',
   };
   const vigC = VIG[theme] || '0,0,0';
   const overlay = this.getBgGradCache(`grade-${theme}-${W}x${H}`, (c, w, h) => {

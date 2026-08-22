@@ -184,7 +184,7 @@ export function createVulkanLevel(): LevelData {
   set(209, ground - 1, TileType.DECORATION_PROP);
 
   return {
-    name: 'World 6: Vulkan Insel',
+    name: 'Vulkan Insel',
     theme: 'volcano',
     width,
     height,

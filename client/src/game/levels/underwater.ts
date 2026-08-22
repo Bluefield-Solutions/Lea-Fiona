@@ -174,7 +174,7 @@ export function createUnterwasserLevel(): LevelData {
   set(208, ground - 1, TileType.DECORATION_PROP);
 
   return {
-    name: 'World 9: Tiefsee',
+    name: 'Tiefsee',
     theme: 'underwater',
     width,
     height,

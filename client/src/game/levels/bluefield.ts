@@ -168,7 +168,7 @@ export function createBluefieldLevel(): LevelData {
   const warpRoom = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 248, roomL: 245 });
 
   return {
-    name: 'World 13: Die blaue Wiese',
+    name: 'Die blaue Wiese',
     theme: 'bluefield',
     width,
     height,

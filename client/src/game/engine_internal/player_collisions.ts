@@ -15,7 +15,7 @@ import {
 } from '../constants';
 import {
   Entity, Goomba, Koopa, Boss, Bat, Coin, SpinningCoin, SpecialCoin, PowerUp, PiranhaPlant,
-  Spider, Crab, Jellyfish, Kangaroo, Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss, Snake, Fireball, Ghost, Fish,
+  Spider, Crab, Jellyfish, Kangaroo, Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss, Rat, TrashCan, Geyser, RatBoss, Snake, Fireball, Ghost, Fish,
   Wizard, MagicBolt, BombOmb, BombExplosion, PlayerFireball, SpikeBall,
   Hornet, BanzaiBill, CharginChuck, BigBoo,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO,
@@ -723,10 +723,21 @@ export function runEntityCollisions(engine: GameEngine): void {
           playerHit(engine, entity);
         }
       }
+    } else if (entity instanceof Geyser) {
+      // Sprengbrunnen: nur im aktiven Zustand gefährlich; der Strahl reicht
+      // blastH über die Basis. Nicht stampfbar — man springt drüber/wartet.
+      if (entity.active) {
+        const bx = entity.x, bTop = entity.y - entity.blastH, bBot = entity.y + entity.height;
+        if (player.x < bx + entity.width && player.x + player.width > bx
+            && player.y < bBot && player.y + player.height > bTop) {
+          playerHit(engine, entity);
+        }
+      }
     } else if (entity instanceof Deer || entity instanceof BrownDeer
-               || entity instanceof Sheep || entity instanceof Turtle || entity instanceof Mouse) {
+               || entity instanceof Sheep || entity instanceof Turtle || entity instanceof Mouse
+               || entity instanceof Rat || entity instanceof TrashCan) {
       if (entity.isDead) continue;
-      if (entity instanceof Mouse && entity.hiding) continue;   // im Loch: nicht treffbar
+      if (entity instanceof Mouse && entity.burrow !== 0) continue;   // im/am Loch: nicht treffbar
       if (player.intersects(entity)) {
         if (isStompHit(engine, entity)) {
           entity.stomp();
@@ -737,7 +748,7 @@ export function runEntityCollisions(engine: GameEngine): void {
           playerHit(engine, entity);
         }
       }
-    } else if (entity instanceof DeerBoss || entity instanceof SnakeBoss) {
+    } else if (entity instanceof DeerBoss || entity instanceof SnakeBoss || entity instanceof RatBoss) {
       if (entity.isDead) continue;
       if (player.intersects(entity)) {
         // Boss (Reh/Schlange): drei Kopfsprünge. Während der i-frames (hitStun)

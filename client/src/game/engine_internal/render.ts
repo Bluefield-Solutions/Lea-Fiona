@@ -3,18 +3,19 @@
 // its own file. Reads engine state but does NOT mutate gameplay state.
 import {
   TILE_SIZE, GameState, TileType, EntityType, CANVAS_WIDTH, CANVAS_HEIGHT, SWING_AMP, SWING_DRIVE,
-  ROPE_SWING_AMP, ROPE_SWING_DRIVE,
+  ROPE_SWING_AMP, ROPE_SWING_DRIVE, MOUSE_DIVE_FRAMES, MOUSE_POP_FRAMES,
 } from '../constants';
 import {
   Coin, SpinningCoin, SpecialCoin, Goomba, Koopa, Boss, Bat, PowerUp, SpikeBall, Hornet, MovingPlatform, Spring, Crate, Switch, Door, FireBarrier,
   BombOmb, BombExplosion, PlayerFireball, Spider, Crab, Jellyfish,
-  Kangaroo, Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss, Snake, Fireball, Ghost, Fish, Wizard, MagicBolt, PiranhaPlant,
+  Kangaroo, Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss, Rat, TrashCan, Geyser, RatBoss, Snake, Fireball, Ghost, Fish, Wizard, MagicBolt, PiranhaPlant,
   BanzaiBill, CharginChuck, BigBoo,
   Particle, FloatingText,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO, BabyDragon, DragonEgg,
   Coconut, Snowball, UFOLaser,
 } from '../entities';
 import type { GameEngine } from '../engine';
+import { USE_VACATION_PHOTO } from '../renderer/backgrounds';
 import { isSolidForCollision, groundRowOf } from '../level';
 import { smoothGroundY, isInHill } from '../terrain';
 import { getSettings } from '../storage';
@@ -104,6 +105,7 @@ function renderWorldLayer(engine: GameEngine): void {
   // Waldbach-Schimmer: Tageslicht-Anteil aus dem Level-Fortschritt (wie im
   // Wald-Hintergrund), damit die Reflexe tags hell und nachts kühl-silbrig sind.
   const isForest = engine.level.theme === 'forest';
+  const isVacation = engine.level.theme === 'vacation';
   let forestDayF = 0;
   if (isForest) {
     const span = Math.max(1, (engine.camera.worldWidth || engine.camera.width) - engine.camera.width);
@@ -157,6 +159,18 @@ function renderWorldLayer(engine: GameEngine): void {
         if (isForest && tile === TileType.WATER_TOP) {
           engine.renderer.drawForestWaterShimmer(engine.renderer.ctx, screen.x, screen.y + tileDip, engine.renderer.time, col, forestDayF, engine.renderer.viewportW);
         }
+        // Welt 19 „Urlaub": Lagunen-Kanten — Ufer (links/rechts) weich in Sand,
+        // Unterkante abdunkeln. Nachbarn bestimmen die freiliegenden Seiten.
+        if (isVacation && (tile === TileType.WATER_TOP || tile === TileType.WATER)) {
+          const lT = engine.level.tiles[row]?.[col - 1] ?? TileType.EMPTY;
+          const rT = engine.level.tiles[row]?.[col + 1] ?? TileType.EMPTY;
+          const bT = engine.level.tiles[row + 1]?.[col] ?? TileType.EMPTY;
+          const isW = (t: TileType) => t === TileType.WATER_TOP || t === TileType.WATER;
+          const leftShore = !isW(lT), rightShore = !isW(rT), bottomEdge = !isW(bT);
+          if (leftShore || rightShore || bottomEdge) {
+            engine.renderer.drawVacationShore(screen.x, screen.y + tileDip, leftShore, rightShore, bottomEdge);
+          }
+        }
         // Element-Tint (Audit P1): geteilte Bau-Elemente (Ziegel, Holz-/Plattform,
         // Röhre) nehmen den Welt-Farbton an — kein braunes/grünes Fremdkörper mehr
         // in kühlen/dunklen Welten. No-op in Welten ohne Theme-Tint.
@@ -206,7 +220,9 @@ function renderWorldLayer(engine: GameEngine): void {
 
   // Gras-Überhang der Grundlinie liefert jetzt das Bodenband (renderTerrainHills,
   // oben aufgerufen). Boden-Deko (Blumen etc.) bleibt für alle Welten.
-  if (engine.renderer.quality !== 'low') {
+  // Welt 19: KEINE Boden-Deko-Steine — die grauen Felsen (ROCKPALS.cave, da vacation
+  // keinen Palette-Eintrag hat) liegen sonst als Fremdkörper auf dem Foto-Sandweg.
+  if (engine.renderer.quality !== 'low' && !isVacation) {
     renderGroundDecor(engine, startCol, endCol, startRow, endRow);
   }
 
@@ -249,6 +265,7 @@ function renderWorldLayer(engine: GameEngine): void {
   // Kuscheltierwelt: kleine Mauselöcher als Zuhause an den Maus-Spawns (hinter
   // den Mäusen gezeichnet, damit sie davor herlaufen).
   if (engine.level.theme === 'plush') drawPlushMouseHoles(engine);
+  if (engine.level.theme === 'city') { drawCityDeco(engine); drawCityGarbageFx(engine); }
 
   for (const entity of engine.entities) {
     if (!entity.alive) continue;
@@ -379,13 +396,39 @@ function renderWorldLayer(engine: GameEngine): void {
       engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
       engine.renderer.drawTurtle(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround);
     } else if (entity instanceof Mouse) {
-      if (!entity.hiding) {   // steckt sie im Loch, wird nichts gezeichnet
-        engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
-        engine.renderer.drawMouse(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround, entity.sniffing, entity.fleeing);
+      // Fußspuren hinter der Maus (verblassen mit der Lebensdauer).
+      if (entity.tracks.length) {
+        const tctx = engine.renderer.ctx;
+        tctx.save(); tctx.fillStyle = '#6b5346';
+        for (const tr of entity.tracks) {
+          const tsx = screen.x + (tr.x - entity.x), tsy = screen.y + (tr.y - entity.y);
+          tctx.globalAlpha = Math.max(0, tr.life / 34) * 0.5;
+          tctx.beginPath(); tctx.ellipse(tsx - 1.4, tsy, 1.3, 0.9, 0, 0, Math.PI * 2); tctx.fill();
+          tctx.beginPath(); tctx.ellipse(tsx + 1.4, tsy, 1.3, 0.9, 0, 0, Math.PI * 2); tctx.fill();
+        }
+        tctx.restore();
+      }
+      if (entity.burrow !== 2) {   // 2 = versteckt: Maus nicht zeichnen
+        let sink = 0;
+        if (entity.burrow === 1) sink = 1 - entity.burrowTimer / MOUSE_DIVE_FRAMES;       // einsinken
+        else if (entity.burrow === 3) sink = entity.burrowTimer / MOUSE_POP_FRAMES;       // auftauchen
+        if (entity.burrow === 0) engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+        engine.renderer.drawMouse(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround, entity.sniffing, entity.fleeing, sink, entity.nibbling);
       }
     } else if (entity instanceof SnakeBoss) {
       engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
       engine.renderer.drawSnakeBoss(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.animState, entity.hp, entity.maxHp);
+    } else if (entity instanceof Rat) {
+      engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+      engine.renderer.drawRat(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction);
+    } else if (entity instanceof TrashCan) {
+      engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+      engine.renderer.drawTrashCan(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction);
+    } else if (entity instanceof Geyser) {
+      engine.renderer.drawGeyser(screen.x, screen.y, entity.width, entity.height, entity.phase, entity.blastH, engine.renderer.time);
+    } else if (entity instanceof RatBoss) {
+      engine.renderer.drawGroundShadow(screen.x + entity.width / 2, screen.y + entity.height, entity.width, entity.isDead ? 0.3 : 1);
+      engine.renderer.drawRatBoss(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction, entity.velY, entity.onGround, entity.hp, entity.maxHp, entity.rearing);
     } else if (entity instanceof Snake) {
       engine.renderer.drawSnake(screen.x, screen.y, entity.width, entity.height, entity.frame, entity.isDead, entity.direction);
     } else if (entity instanceof Fireball) {
@@ -548,7 +591,7 @@ function renderWorldLayer(engine: GameEngine): void {
     // Tarzan-Absprung-„Wusch": goldene Bewegungs-Spur (0..1) + Richtung.
     engine.renderer.playerVineFling = engine.player.vineFlingTimer / 16;
     engine.renderer.playerVineFlingDir = engine.player.vineReleaseDir;
-    engine.renderer.drawPlayer(
+    const drawPlayerSprite = () => engine.renderer.drawPlayer(
       playerScreen.x, playerScreen.y,
       engine.player.width, engine.player.height,
       engine.player.direction, engine.player.frame,
@@ -574,6 +617,79 @@ function renderWorldLayer(engine: GameEngine): void {
       // Feuerblume-Zustand (Plüsch-Welt: Elefant-Form + Wasserspritzer).
       engine.player.hasFire,
     );
+    // Stadt: kurze Pfützen-Spiegelung der Figur, wenn sie über einer Pfütze steht
+    // (vertikal gespiegelt an der Fußlinie, auf die Pfützen-Ellipse geclippt).
+    if (engine.level.theme === 'city' && engine.player.onGround && !engine.player.isDead
+        && engine.level.groundRow !== undefined) {
+      const gr = engine.level.groundRow;
+      const pcol = Math.floor((engine.player.x + engine.player.width / 2) / TILE_SIZE);
+      let puddleC = -1;
+      for (let c = pcol - 1; c <= pcol + 1; c++) {
+        if (engine.level.tiles[gr]?.[c] === TileType.GROUND_TOP
+            && engine.level.tiles[gr - 1]?.[c] === TileType.EMPTY
+            && cityHash(c * 5.3) < 0.14) { puddleC = c; break; }
+      }
+      if (puddleC >= 0) {
+        const ps = engine.camera.worldToScreenInto(puddleC * TILE_SIZE + TILE_SIZE / 2, gr * TILE_SIZE, _s2);
+        const ctx = engine.renderer.ctx;
+        const tt = engine.renderer.time;
+        const pw = 12 + cityHash(puddleC * 7.7) * 8;
+        // Stilisierte, wabernde Spiegelung: gespiegelte Farbbänder der Figur
+        // (Schuhe → Shorts → Shirt → Haut), auf die Pfützen-Ellipse geclippt.
+        ctx.save();
+        ctx.beginPath(); ctx.ellipse(ps.x, ps.y - 1, pw, 3.4, 0, 0, Math.PI * 2); ctx.clip();
+        ctx.globalAlpha = 0.32;
+        const cx = ps.x + Math.sin(tt * 0.2) * 1.2;
+        const bw = pw * 0.7;
+        const bands: [string, number][] = [['#3b6fd6', 2], ['#e87ba0', 3], ['#2b2b33', 4], ['#e8b48a', 3]];
+        let yy = ps.y - 3;
+        for (const [col, hh] of bands) { ctx.fillStyle = col; ctx.fillRect(cx - bw / 2, yy, bw, hh); yy += hh; }
+        ctx.restore();
+      }
+    }
+    // Stadt (P3): kühles Mondlicht-Rim an der Oberkante der Figur — dünner,
+    // additiver Licht-Saum von der Mond-/Himmel-Seite, damit die Spielerin
+    // (wie die jetzt rim-beleuchteten Gegner) in die Nacht eingebettet wirkt
+    // statt „taghell". Bewusst schmal an Kopf/Schulter, kein Voll-Halo.
+    if (engine.level.theme === 'city' && !engine.player.isDead) {
+      const ctx = engine.renderer.ctx;
+      const pw = engine.player.width, ph = engine.player.height;
+      const cx = playerScreen.x + pw / 2;
+      const topY = playerScreen.y + ph * 0.10;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(cx + 2, topY - 1, 1, cx + 2, topY - 1, pw * 0.46);
+      g.addColorStop(0, 'rgba(162,194,246,0.22)');
+      g.addColorStop(1, 'rgba(162,194,246,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.ellipse(cx + 2, topY, pw * 0.4, ph * 0.15, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    drawPlayerSprite();
+
+    // Stadt: Regenschirm-Figur — bei kräftigem Regen öffnet die Spielerin im
+    // Stehen automatisch einen kleinen Schirm (rein visuell). Der Öffnungsgrad
+    // wird weich geführt, damit der Schirm sanft auf-/zugeht statt zu poppen.
+    if (engine.level.theme === 'city') {
+      const rain = cityRainIntensity(engine);
+      const standing = engine.player.onGround && !engine.player.isDead
+        && !engine.player.isDucking && !engine.player.isJumping
+        && Math.abs(engine.player.velX) < 0.4;
+      // Ziel: nur bei ordentlichem Regen UND ruhigem Stehen offen. Schwelle so
+      // gewählt, dass der Schirm im Sturm-Zentrum (Default-Regen 0.6) voll
+      // aufgeht, bei leichtem Niesel/Regler-unten aber geschlossen bleibt.
+      const target = (standing && rain > 0.4) ? Math.min(1, (rain - 0.4) / 0.2) : 0;
+      const u = engine.renderer.cityUmbrella;
+      engine.renderer.cityUmbrella = u + (target - u) * 0.12;
+      if (engine.renderer.cityUmbrella > 0.02) {
+        drawUmbrella(
+          engine,
+          playerScreen.x + engine.player.width / 2,
+          playerScreen.y,
+          engine.renderer.cityUmbrella,
+        );
+      }
+    }
 
     // „Super-Sammlerin"-Krone: sichtbare Belohnung über dem Kopf, sobald in
     // JEDER Welt alle Sonder-Münzen gesammelt sind. Sanftes Schweben + Glanz.
@@ -801,7 +917,10 @@ function drawPlushMouseHoles(engine: GameEngine): void {
   if (!xs.length || engine.level.groundRow === undefined) return;
   const ctx = engine.renderer.ctx;
   const groundY = engine.level.groundRow * TILE_SIZE;
+  const t = engine.renderer.time;
+  let i = -1;
   for (const wx of xs) {
+    i++;
     if (!engine.camera.isVisible(wx - 20, groundY - 22, 40, 26)) continue;
     const s = engine.camera.worldToScreenInto(wx, groundY, _s);
     ctx.save();
@@ -829,15 +948,603 @@ function drawPlushMouseHoles(engine: GameEngine): void {
     ctx.beginPath(); ctx.arc(wx0, wy0, 2.6, -0.6, 2.4); ctx.stroke();
     ctx.strokeStyle = '#e59ab8'; ctx.lineWidth = 0.9;   // loser Wollfaden
     ctx.beginPath(); ctx.moveTo(wx0 - 4, wy0 + 2); ctx.quadraticCurveTo(wx0 - 9, wy0 + 5, wx0 - 6, s.y); ctx.stroke();
-    // … und ein Käse-Eckchen rechts vom Loch.
+    // … und ein Käse-Eckchen rechts vom Loch, mit Krümel-Häufchen.
     const cx0 = s.x + 15, cy0 = s.y;
     ctx.fillStyle = '#f6c944';
     ctx.beginPath(); ctx.moveTo(cx0, cy0); ctx.lineTo(cx0 + 10, cy0); ctx.lineTo(cx0 + 10, cy0 - 6); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#d9a520';
     ctx.beginPath(); ctx.arc(cx0 + 4, cy0 - 1.5, 1.1, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.arc(cx0 + 7.5, cy0 - 3, 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e8bf5a';   // Krümel vor dem Käse
+    for (const [dx, dy, r] of [[-2, 0, 0.9], [1.5, 0.5, 0.7], [3.5, -0.3, 0.8]] as const) {
+      ctx.beginPath(); ctx.arc(cx0 + dx, cy0 + dy, r, 0, Math.PI * 2); ctx.fill();
+    }
+    // Ab und zu lugen Äuglein aus dem Loch — ziehen sich bei Spielernähe zurück.
+    const phase = (t + i * 71) % 230;
+    const playerNear = Math.abs(engine.player.x - wx) < 66;
+    if (phase < 58 && !playerNear) {
+      const blink = (phase % 26) < 3;          // gelegentliches Blinzeln
+      const eyeH = blink ? 0.4 : 2.1;
+      for (const ex of [s.x - 3.2, s.x + 3.2]) {
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.ellipse(ex, s.y - 5, 1.7, eyeH, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#22282e';
+        ctx.beginPath(); ctx.ellipse(ex, s.y - 5, 0.95, Math.min(eyeH, 1.3), 0, 0, Math.PI * 2); ctx.fill();
+      }
+    }
     ctx.restore();
   }
+}
+
+// Stadt: Dachdeko (Antennen, Klimaanlagen, Wassertanks, Wäscheleinen, Neon)
+// an den Dachkanten — welt-fest, stabil per Hash platziert, hinter den Figuren.
+function cityHash(n: number): number { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); }
+function drawCityDeco(engine: GameEngine): void {
+  if (engine.level.groundRow === undefined) return;
+  const ctx = engine.renderer.ctx;
+  const gr = engine.level.groundRow;
+  const tiles = engine.level.tiles;
+  const t = engine.renderer.time;
+  const rain = cityRainIntensity(engine);           // P5: Nässe skaliert mit Regen
+  const fx = getSettings().stadtEffekte;            // Effekt-Regler (0..1)
+  const low = engine.renderer.quality === 'low';    // Low-End-Gating
+  // Tageszeit (wie die Foto-Kulisse): Nässe/Pfützen-Farbe koppelt an Tag→Dämmerung
+  // →Nacht, damit Boden & Foto als Einheit wirken. Warme Spiegelung in der
+  // Dämmerung, kühl-blau bei Nacht, neutral-hell am Tag.
+  const _span = Math.max(1, (engine.camera.worldWidth || engine.camera.width) - engine.camera.width);
+  const cProg = Math.max(0, Math.min(1, engine.camera.x / _span));
+  const _ss = (a: number, b: number, v: number) => { const c = Math.max(0, Math.min(1, (v - a) / (b - a))); return c * c * (3 - 2 * c); };
+  const dawnW = _ss(0.26, 0.50, cProg);             // → Dämmerung
+  const nightW = _ss(0.60, 0.86, cProg);            // → Nacht
+  const _lp = (a: number, b: number, f: number) => a + (b - a) * f;
+  // Wet-Sheen-Grundton je Tageszeit
+  const wetDay = [172, 196, 226], wetDusk = [240, 172, 120], wetNight = [120, 150, 208];
+  let wetR = _lp(wetDay[0], wetDusk[0], dawnW), wetG = _lp(wetDay[1], wetDusk[1], dawnW), wetB = _lp(wetDay[2], wetDusk[2], dawnW);
+  wetR = _lp(wetR, wetNight[0], nightW); wetG = _lp(wetG, wetNight[1], nightW); wetB = _lp(wetB, wetNight[2], nightW);
+  const wetRGB = `${wetR | 0},${wetG | 0},${wetB | 0}`;
+  const startCol = Math.max(1, Math.floor(engine.camera.x / TILE_SIZE) - 1);
+  const endCol = Math.min(engine.level.width - 2, Math.ceil((engine.camera.x + engine.camera.width) / TILE_SIZE) + 1);
+  for (let c = startCol; c <= endCol; c++) {
+    // Nur auf offener Dachkante (Boden unten, frei darüber) und gedrosselt.
+    if (tiles[gr]?.[c] !== TileType.GROUND_TOP) continue;
+    if (tiles[gr - 1]?.[c] !== TileType.EMPTY || tiles[gr - 2]?.[c] !== TileType.EMPTY) continue;
+    const s = engine.camera.worldToScreenInto(c * TILE_SIZE + TILE_SIZE / 2, gr * TILE_SIZE, _s);
+    const bx = s.x, by = s.y;                        // Fuß auf der Dachfläche
+    // P5 · Nässe: kontinuierlicher Wet-Sheen auf der Dachkante (skaliert mit
+    // Regen) + bei Blitz kurzer greller Glanz.
+    const flash = engine.renderer.cityFlash;
+    if (rain > 0.05) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(0.16, rain * 0.16);
+      ctx.fillStyle = `rgba(${wetRGB},0.9)`;            // Nässe-Ton je Tageszeit
+      ctx.fillRect(bx - TILE_SIZE / 2, by - 1, TILE_SIZE, 1.4);
+      ctx.restore();
+    }
+    // #2 · Nacht-Neon-Reflex: der nasse Dachboden spiegelt die hellen Foto-Lichter
+    // als weiche vertikale Farbstreifen (unten am hellsten). Nur nachts, additiv,
+    // mit Regen/Effekt-Regler skaliert, auf 'low' aus.
+    if (nightW > 0.12 && !low && fx > 0.05 && rain > 0.05 && cityHash(c * 4.2) < 0.5) {
+      const hue = cityHash(c * 8.9);
+      const neon = hue < 0.33 ? '255,90,158' : hue < 0.66 ? '90,208,255' : '255,210,90';
+      const rx = bx + (cityHash(c * 2.6) - 0.5) * TILE_SIZE * 0.6 + Math.sin(t * 0.08 + c) * 1.2;
+      const rh = 10 + cityHash(c * 6.1) * 9;
+      const a = (0.11 + 0.06 * Math.sin(t * 0.12 + c)) * nightW * Math.min(1, rain * 1.4) * fx;
+      if (a > 0.01) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createLinearGradient(0, by - rh, 0, by);
+        g.addColorStop(0, `rgba(${neon},0)`);
+        g.addColorStop(1, `rgba(${neon},${a.toFixed(3)})`);
+        ctx.fillStyle = g;
+        ctx.fillRect(rx - 1.3, by - rh, 2.6, rh);
+        ctx.restore();
+      }
+    }
+    if (flash > 0.08) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(0.6, flash * 0.6);
+      ctx.fillStyle = 'rgba(205,222,255,0.9)';
+      ctx.fillRect(bx - TILE_SIZE / 2, by - 2, TILE_SIZE, 2);
+      ctx.restore();
+    }
+    // P5 · Pfütze mit Mond-/Neon-Spiegelung und Tropfen-Ringen im Regentakt.
+    if (cityHash(c * 5.3) < 0.14) {
+      const pw = 10 + cityHash(c * 7.7) * 8;
+      ctx.save();
+      // Becken (dunkel, leicht spiegelnd)
+      ctx.fillStyle = 'rgba(28,38,58,0.62)';
+      ctx.beginPath(); ctx.ellipse(bx, by - 1, pw, 3, 0, 0, Math.PI * 2); ctx.fill();
+      // Auf die Pfützen-Ellipse clippen → Reflexionen bleiben im Becken.
+      ctx.beginPath(); ctx.ellipse(bx, by - 1, pw, 3, 0, 0, Math.PI * 2); ctx.clip();
+      // Himmel-/Mond-Spiegelung: blasser vertikaler Schimmer, wabernd — Ton je
+      // Tageszeit (warm in der Dämmerung, kühl bei Nacht).
+      const mgx = bx + Math.sin(t * 0.05 + c) * 1.6;
+      const mg = ctx.createLinearGradient(mgx - 3, 0, mgx + 3, 0);
+      mg.addColorStop(0, `rgba(${wetRGB},0)`);
+      mg.addColorStop(0.5, `rgba(${wetRGB},0.34)`);
+      mg.addColorStop(1, `rgba(${wetRGB},0)`);
+      ctx.fillStyle = mg; ctx.fillRect(bx - pw, by - 4, pw * 2, 7);
+      // Neon-Spiegelung (Farbschimmer) — Deko, skaliert mit Effekt-Regler.
+      const hue = cityHash(c * 8.9);
+      const neon = hue < 0.33 ? '#ff5a9e' : hue < 0.66 ? '#5ad0ff' : '#ffd24a';
+      ctx.globalAlpha = (0.30 + Math.sin(t * 0.1 + c) * 0.12) * fx;
+      ctx.fillStyle = neon;
+      ctx.beginPath(); ctx.ellipse(bx, by - 1, pw * 0.32, 2.0, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      // Tropfen-Ringe: expandierende Ringe im Regentakt, Auftreffpunkt wechselt.
+      // Deko → auf 'low' aus und mit Effekt-Regler skaliert.
+      if (rain > 0.15 && !low && fx > 0.05) {
+        const period = 46;
+        for (let k = 0; k < 2; k++) {
+          const raw = t + c * 13 + k * 23;
+          const ph = (raw % period) / period;                 // 0..1
+          const a = (1 - ph) * 0.5 * Math.min(1, rain * 1.6) * fx;
+          if (a <= 0.03) continue;
+          const cyc = Math.floor(raw / period);
+          const rx = bx - pw * 0.45 + cityHash(c * 3.1 + k + cyc * 1.7) * pw * 0.9;
+          const rr = ph * pw * 0.9;
+          ctx.strokeStyle = `rgba(212,226,246,${a.toFixed(3)})`;
+          ctx.lineWidth = 0.8;
+          ctx.beginPath(); ctx.ellipse(rx, by - 1, rr * 0.6, rr * 0.22, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+    const r = cityHash(c);
+    if (r > 0.34) continue;                         // ~1/3 der Kanten bekommen Deko-Objekte
+    const kind = Math.floor(cityHash(c * 3.7) * 9); // 0..8 (P7: mehr Sorten)
+    // P4 · Kontaktschatten: weicher, kühler Schatten unter dem Deko-Objekt,
+    // damit es am Dach „haftet" statt aufgesetzt zu wirken.
+    ctx.save();
+    ctx.fillStyle = 'rgba(8,12,24,0.30)';
+    ctx.beginPath(); ctx.ellipse(bx, by + 0.5, 11, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(bx, by + 0.5, 6.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.save();
+    if (kind === 0) {
+      // Antenne mit Blinklicht
+      ctx.strokeStyle = '#3a3f47'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx, by - 26); ctx.stroke();
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(bx - 6, by - 20); ctx.lineTo(bx + 6, by - 20); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx - 4, by - 14); ctx.lineTo(bx + 4, by - 14); ctx.stroke();
+      const blink = (Math.floor(t * 0.06) % 2) === 0;
+      ctx.fillStyle = blink ? '#ff5a5a' : 'rgba(255,90,90,0.35)';
+      ctx.beginPath(); ctx.arc(bx, by - 27, 2, 0, Math.PI * 2); ctx.fill();
+    } else if (kind === 1) {
+      // Klimaanlage (Kasten mit Lüftungsgitter)
+      ctx.fillStyle = '#8a9099'; ctx.fillRect(bx - 9, by - 12, 18, 12);
+      ctx.fillStyle = '#6a7079'; ctx.fillRect(bx - 9, by - 12, 18, 3);
+      ctx.strokeStyle = '#4a5058'; ctx.lineWidth = 1;
+      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(bx - 7, by - 8 + i * 3); ctx.lineTo(bx + 7, by - 8 + i * 3); ctx.stroke(); }
+    } else if (kind === 2) {
+      // Wassertank auf Beinen
+      ctx.strokeStyle = '#5a4a3a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(bx - 7, by); ctx.lineTo(bx - 5, by - 12); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx + 7, by); ctx.lineTo(bx + 5, by - 12); ctx.stroke();
+      ctx.fillStyle = '#7a6250'; ctx.beginPath(); ctx.ellipse(bx, by - 18, 9, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#5c4536'; ctx.beginPath(); ctx.ellipse(bx, by - 25, 9, 3, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (kind === 3) {
+      // Wäscheleine mit bunten Stücken
+      ctx.strokeStyle = 'rgba(230,230,240,0.6)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(bx - 14, by - 20); ctx.quadraticCurveTo(bx, by - 14, bx + 14, by - 20); ctx.stroke();
+      const cols = ['#e57ba0', '#7bb0e5', '#e5d27b', '#8fd08a'];
+      for (let i = 0; i < 4; i++) {
+        const px = bx - 10 + i * 7, py = by - 18 + Math.abs(Math.sin((i + 0.5))) * 2;
+        ctx.fillStyle = cols[i]; ctx.fillRect(px - 2, py, 4, 6);
+      }
+    } else if (kind === 4) {
+      // Neon-Schild (leuchtender Kasten auf Mast)
+      ctx.strokeStyle = '#3a3f47'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx, by - 16); ctx.stroke();
+      const hue = cityHash(c * 9.1);
+      const neon = hue < 0.33 ? '#ff5a9e' : hue < 0.66 ? '#5ad0ff' : '#ffd24a';
+      const pulse = 0.55 + Math.sin(t * 0.12 + c) * 0.35;
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = neon;
+      rrPathR(ctx, bx - 10, by - 28, 20, 12, 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1;
+      rrPathR(ctx, bx - 10, by - 28, 20, 12, 2); ctx.stroke();
+    } else if (kind === 5) {
+      // Aufgespannter Regenschirm (bunte Kuppel auf dünnem Stiel, Griff)
+      const hue = cityHash(c * 6.1);
+      const dome = hue < 0.33 ? '#e0556a' : hue < 0.66 ? '#5a86e0' : '#4aa860';
+      ctx.strokeStyle = '#3a3f47'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx, by - 15); ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx - 2, by - 1, 2, 0, Math.PI, true); ctx.stroke();   // Griff
+      ctx.fillStyle = dome;
+      ctx.beginPath(); ctx.moveTo(bx - 12, by - 15); ctx.quadraticCurveTo(bx, by - 27, bx + 12, by - 15); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(bx - 4, by - 15); ctx.lineTo(bx - 3, by - 23); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx + 4, by - 15); ctx.lineTo(bx + 3, by - 23); ctx.stroke();
+      ctx.fillStyle = dome; ctx.beginPath(); ctx.arc(bx, by - 26, 1.4, 0, Math.PI * 2); ctx.fill();
+    } else if (kind === 6) {
+      // Dachrinne mit tropfendem Wasser (animiert)
+      ctx.fillStyle = '#6a7079';
+      ctx.fillRect(bx - 10, by - 6, 20, 3);                 // Rinne
+      ctx.fillRect(bx + 7, by - 6, 3, 6);                   // Fallrohr-Ansatz
+      ctx.fillStyle = 'rgba(150,190,220,0.75)';
+      for (let i = 0; i < 2; i++) {
+        const dphase = (t * 3 + i * 40 + c * 7) % 60;       // Tropfen fällt
+        const dy = by - 3 + dphase * 0.28;
+        if (dy < by + 8) { ctx.beginPath(); ctx.ellipse(bx - 6 + i * 12, dy, 1.1, 1.8, 0, 0, Math.PI * 2); ctx.fill(); }
+      }
+    } else if (kind === 7) {
+      // P7 · Satellitenschüssel auf kleinem Mast
+      ctx.strokeStyle = '#3a3f47'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx, by - 10); ctx.stroke();
+      ctx.save();
+      ctx.translate(bx, by - 12); ctx.rotate(-0.5);
+      ctx.fillStyle = '#aab0b8';
+      ctx.beginPath(); ctx.ellipse(0, 0, 8, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#7a828b';
+      ctx.beginPath(); ctx.ellipse(0, 0, 6, 3.6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#5a6068'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(4, -3); ctx.stroke();
+      ctx.fillStyle = '#3a3f47'; ctx.beginPath(); ctx.arc(4, -3, 1.4, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else {
+      // P7 · Tauben-Trio auf der Dachkante (leichtes Wippen)
+      for (let i = 0; i < 3; i++) {
+        const px = bx - 8 + i * 8;
+        const py = by - 4 + Math.sin(t * 0.08 + c + i * 1.3) * 0.6;
+        ctx.fillStyle = '#7a7e88';
+        ctx.beginPath(); ctx.ellipse(px, py, 3, 2.2, 0, 0, Math.PI * 2); ctx.fill();       // Körper
+        ctx.beginPath(); ctx.arc(px - 2.2, py - 1.6, 1.4, 0, Math.PI * 2); ctx.fill();       // Kopf
+        ctx.fillStyle = '#c85a4a'; ctx.fillRect(px - 3.6, py - 1.9, 1.3, 0.9);               // Schnabel
+      }
+    }
+    ctx.restore();
+  }
+}
+
+// P9 · Müllgruben-Effekte (Live-Overlay über die statischen LAVA_TOP-Tiles):
+// pulsierender Giftgrün-Warnsaum, blubbernde Blasen, aufsteigender Gestank/Dampf
+// und kreisende Fliegen. Ziel: Kinder erkennen die Todeszone sofort (Fairness).
+function drawCityGarbageFx(engine: GameEngine): void {
+  const ctx = engine.renderer.ctx;
+  const tiles = engine.level.tiles;
+  const H = engine.level.height;
+  const t = engine.renderer.time;
+  const efx = getSettings().stadtEffekte;           // Effekt-Regler (0..1)
+  const low = engine.renderer.quality === 'low';    // Low-End-Gating
+  const startCol = Math.max(0, Math.floor(engine.camera.x / TILE_SIZE) - 1);
+  const endCol = Math.min(engine.level.width - 1, Math.ceil((engine.camera.x + engine.camera.width) / TILE_SIZE) + 1);
+  ctx.save();
+  for (let c = startCol; c <= endCol; c++) {
+    // Oberflächenzeile der Grube finden (erstes LAVA_TOP in der Spalte).
+    let sr = -1;
+    for (let r = 0; r < H; r++) { if (tiles[r]?.[c] === TileType.LAVA_TOP) { sr = r; break; } }
+    if (sr < 0) continue;
+    const s = engine.camera.worldToScreenInto(c * TILE_SIZE + TILE_SIZE / 2, sr * TILE_SIZE, _s);
+    const cx = s.x, sy = s.y;                          // Mitte / Oberkante der Grube
+    // Warnsaum: pulsierender giftgrüner Streifen an der Oberkante (Kontrast!).
+    const pulse = 0.5 + 0.5 * Math.sin(t * 0.09 + c * 0.6);
+    ctx.fillStyle = `rgba(150,210,60,${(0.28 + pulse * 0.30).toFixed(3)})`;
+    ctx.fillRect(cx - TILE_SIZE / 2, sy - 1, TILE_SIZE, 2);
+    ctx.fillStyle = `rgba(190,230,110,${(0.20 + pulse * 0.20).toFixed(3)})`;
+    ctx.fillRect(cx - TILE_SIZE / 2, sy - 2.5, TILE_SIZE, 1);
+    // Blubber-Blasen: steigen, wachsen, platzen (auf 'low' nur eine, mit
+    // Effekt-Regler in der Deckkraft skaliert).
+    for (let k = 0; k < (low ? 1 : 2); k++) {
+      const raw = t + c * 17 + k * 35;
+      const period = 70;
+      const ph = (raw % period) / period;                  // 0..1
+      const bxx = cx - 7 + cityHash(c * 2.1 + k) * 14;
+      const byy = sy + 6 - ph * 5;
+      if (ph < 0.82) {
+        const rad = 1 + ph * 2.4;
+        ctx.fillStyle = `rgba(120,150,55,${(0.55 * efx).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(bxx, byy, rad, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(200,225,130,${(0.55 * efx).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(bxx - rad * 0.3, byy - rad * 0.3, Math.max(0.5, rad * 0.35), 0, Math.PI * 2); ctx.fill();
+      } else {
+        const pr = ((ph - 0.82) / 0.18) * 4.5;
+        ctx.strokeStyle = `rgba(170,200,80,${((1 - (ph - 0.82) / 0.18) * 0.5 * efx).toFixed(3)})`;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.ellipse(bxx, byy, pr, pr * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    // Gestank/Dampf: grünliche Schwaden (Deko → auf 'low' aus).
+    if (!low) for (let i = 0; i < 2; i++) {
+      const wph = ((t * 0.6 + c * 13 + i * 45) % 90) / 90;
+      const wy = sy - wph * 22;
+      const wx = cx - 4 + Math.sin(t * 0.05 + c + i) * 4 + i * 5;
+      const a = (1 - wph) * 0.13 * efx;
+      if (a <= 0.01) continue;
+      ctx.fillStyle = `rgba(150,178,110,${a.toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(wx, wy, 2 + wph * 3.5, 0, Math.PI * 2); ctx.fill();
+    }
+    // Fliegen: ein paar winzige dunkle Punkte kreisen über der Grube (auf 'low' aus).
+    if (!low && cityHash(c * 4.7) < 0.5) {
+      for (let j = 0; j < 2; j++) {
+        const fa = t * 0.14 + c + j * 3.1;
+        const fx = cx + Math.cos(fa) * (6 + j * 3);
+        const fy = sy - 11 - Math.sin(fa * 1.3) * 5 - j * 2;
+        ctx.fillStyle = 'rgba(18,18,14,0.8)';
+        ctx.fillRect(fx, fy, 1.6, 1.6);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+// Stadt: Regen-Intensität aus Fortschritts-Kurve × Benutzer-Regler (0..1).
+// Zentrale Quelle, damit Regen-Overlay UND Regenschirm-Figur dieselbe Stärke
+// verwenden. dichte=0 → komplett trocken (kein Regen, kein Schirm).
+function cityRainIntensity(engine: GameEngine): number {
+  const span = Math.max(1, (engine.camera.worldWidth || engine.camera.width) - engine.camera.width);
+  const prog = Math.max(0, Math.min(1, engine.camera.x / span));
+  const peak = Math.exp(-Math.pow((prog - 0.6) / 0.24, 2));   // 0..1
+  const base = 0.32 + 0.68 * peak;                             // 0.32..1
+  const dichte = getSettings().regenDichte;                    // 0..1 (Default 0.6)
+  return base * dichte;                                        // 0..1
+}
+// Stadt: leichter Regen (screen-space, diagonal, animiert über renderer.time).
+function drawCityRain(engine: GameEngine, VW: number, VH: number) {
+  const ctx = engine.renderer.ctx;
+  const t = engine.renderer.time;
+  const fx = getSettings().stadtEffekte;                       // Effekt-Regler
+  const low = engine.renderer.quality === 'low';               // Low-End-Gating
+  const dropK = low ? 0.55 : 1;                                // weniger Tropfen auf 'low'
+  let intensity = cityRainIntensity(engine);                   // 0..1
+  if (cityBossActive(engine)) intensity = Math.min(1, intensity + 0.25); // P12: Sturm im Finale
+  if (intensity < 0.02) return;                                // Regler ganz unten → trocken
+  // P6 · Böe: langsam schwankender Wind kippt Winkel & Tempo des Regens.
+  const gust = Math.sin(t * 0.012) * 0.5 + Math.sin(t * 0.031 + 1.3) * 0.25; // -0.75..0.75
+  const slant = 0.14 + gust * 0.16;
+  ctx.save();
+  // FERN-Ebene: viele kleine, blasse, langsame Tropfen (Tiefe).
+  const NF = Math.round((20 + intensity * 46) * dropK);
+  ctx.strokeStyle = `rgba(190,208,232,${(0.08 + intensity * 0.12).toFixed(3)})`;
+  ctx.lineWidth = 0.8;
+  for (let i = 0; i < NF; i++) {
+    const sx = cityHash(i * 1.7) * (VW + 40) - 20;
+    const speed = 4 + cityHash(i * 2.3) * 3;
+    const len = 6 + cityHash(i * 3.1) * 5;
+    const y = ((cityHash(i * 4.9) * VH) + t * speed) % (VH + len) - len;
+    const x = sx + y * slant * 0.7;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - len * slant, y + len); ctx.stroke();
+  }
+  // NAH-Ebene: wenige große, kräftige, schnelle Tropfen.
+  const NN = Math.round((14 + intensity * 40) * dropK);
+  ctx.strokeStyle = `rgba(210,226,245,${(0.18 + intensity * 0.26).toFixed(3)})`;
+  ctx.lineWidth = 1.3;
+  for (let i = 0; i < NN; i++) {
+    const sx = cityHash(i * 5.1 + 3) * (VW + 60) - 30;
+    const speed = 9 + cityHash(i * 2.9) * 6;
+    const len = 12 + cityHash(i * 3.7) * 10;
+    const y = ((cityHash(i * 6.3) * VH) + t * speed) % (VH + len) - len;
+    const x = sx + y * slant;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - len * slant, y + len); ctx.stroke();
+  }
+  ctx.restore();
+
+  // #2 · Regen im Laternen-Lichtkegel: ein paar Tropfen leuchten INNERHALB der
+  // Foto-Laternen-Kegel warm auf (sichtbares Volumenlicht) — additiv, auf die
+  // Kegel-Trapeze begrenzt, nur nachts, auf 'low' aus.
+  if (!low && fx > 0.05) {
+    const span = Math.max(1, (engine.camera.worldWidth || engine.camera.width) - engine.camera.width);
+    const prog = Math.max(0, Math.min(1, engine.camera.x / span));
+    const nw = Math.max(0, Math.min(1, (prog - 0.60) / 0.26)); const nightW = nw * nw * (3 - 2 * nw);
+    const img = engine.renderer.cityBgFrames[2];
+    if (nightW > 0.06 && img && img.width && engine.level.groundRow !== undefined) {
+      const groundY = engine.camera.worldToScreenInto(engine.camera.x, engine.level.groundRow * TILE_SIZE, _s).y;
+      const bandH = Math.max(1, Math.min(VH, groundY + 4));
+      const scale = bandH / img.height, panoW = img.width * scale;
+      const panX = panoW <= VW ? (VW - panoW) / 2 : -(panoW - VW) * prog;
+      const CONES: [number, number, number, number][] = [[0.955, 0.44, 5, 34], [0.140, 0.60, 4, 26]];
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineWidth = 1.15;
+      for (const [u, v, th, bw] of CONES) {
+        const cx = panX + u * panoW, cyTop = v * bandH;
+        if (cx < -bw || cx > VW + bw) continue;
+        const denom = Math.max(1, bandH - cyTop);
+        const n = Math.round(11 * nightW * fx);
+        for (let i = 0; i < n; i++) {
+          const speed = 9 + cityHash(i * 2.1 + u) * 6;
+          const len = 9 + cityHash(i * 4.3 + u) * 8;
+          const yy = ((cityHash(i * 5.9 + u * 7) * denom) + t * speed) % (denom + len) - len;
+          const y = cyTop + yy;
+          if (y < cyTop) continue;
+          const pp = Math.max(0, Math.min(1, (y - cyTop) / denom));  // 0 oben..1 unten
+          const halfW = th + (bw - th) * pp;
+          const x = cx + (cityHash(i * 3.7 + u * 3) * 2 - 1) * halfW;
+          const a = 0.5 * (1 - pp * 0.55) * nightW * fx;
+          if (a < 0.02) continue;
+          ctx.strokeStyle = `rgba(255,232,180,${a.toFixed(3)})`;
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - len * slant, y + len); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+  }
+
+  // P6 · Aufschlag-Spritzer auf der Dachfläche (kleine V-Ticks). Deko → auf 'low' aus.
+  if (engine.level.groundRow !== undefined && intensity > 0.12 && !low) {
+    const roofY = engine.camera.worldToScreenInto(engine.camera.x, engine.level.groundRow * TILE_SIZE, _s).y;
+    if (roofY > 4 && roofY < VH - 2) {
+      ctx.save();
+      ctx.lineWidth = 0.8;
+      const NS = Math.round(6 + intensity * 16);
+      for (let i = 0; i < NS; i++) {
+        const period = 26;
+        const raw = t * 1.3 + i * 11;
+        const ph = (raw % period) / period;
+        const a = (1 - ph) * 0.5 * Math.min(1, intensity * 1.4);
+        if (a <= 0.02) continue;
+        const cyc = Math.floor(raw / period);
+        const sx = cityHash(i * 7.7 + cyc * 2.3) * VW;
+        const spread = ph * 4;
+        ctx.strokeStyle = `rgba(212,228,246,${a.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.moveTo(sx - spread, roofY - spread * 0.5);
+        ctx.lineTo(sx, roofY);
+        ctx.lineTo(sx + spread, roofY - spread * 0.5);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  // P6 · Nebelschwaden: langsame, breite, blasse Bänder → Atmosphäre/Tiefe.
+  // Deko → auf 'low' aus und mit Effekt-Regler skaliert.
+  if (!low && fx > 0.02) {
+    ctx.save();
+    for (let i = 0; i < 2; i++) {
+      const my = VH * (0.48 + i * 0.2);
+      const mx = ((t * 0.3 + i * 320) % (VW + 420)) - 210;
+      const g = ctx.createLinearGradient(mx, 0, mx + 320, 0);
+      g.addColorStop(0, 'rgba(150,165,196,0)');
+      g.addColorStop(0.5, `rgba(150,165,196,${((0.05 + intensity * 0.05) * fx).toFixed(3)})`);
+      g.addColorStop(1, 'rgba(150,165,196,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(mx, my, 320, 32);
+    }
+    ctx.restore();
+  }
+}
+
+// P12 · Ist die Monsterratte gesichtet (Boss-Kampf aktiv)?
+function cityBossActive(engine: GameEngine): boolean {
+  for (const e of engine.entities) {
+    if (e.type === EntityType.RAT_BOSS) {
+      const b = e as unknown as { sighted?: boolean; isDead?: boolean; dead?: boolean };
+      if (b.sighted && !b.isDead && !b.dead) return true;
+    }
+  }
+  return false;
+}
+
+// P12 · Boss-Arena-Overlay: roter Vignette-Rand + zwei schwenkende Scheinwerfer.
+function drawCityBossArena(engine: GameEngine, VW: number, VH: number): void {
+  const ctx = engine.renderer.ctx;
+  const t = engine.renderer.time;
+  ctx.save();
+  const vg = ctx.createRadialGradient(VW / 2, VH * 0.5, VH * 0.28, VW / 2, VH * 0.5, VW * 0.72);
+  vg.addColorStop(0, 'rgba(130,12,22,0)');
+  vg.addColorStop(1, 'rgba(130,12,22,0.34)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, VW, VH);
+  // Scheinwerfer: Deko → auf 'low' aus, mit Effekt-Regler skaliert. Der rote
+  // Vignette-Rand bleibt immer (trägt die Finale-Stimmung, ist billig).
+  const fx = getSettings().stadtEffekte;
+  if (engine.renderer.quality !== 'low' && fx > 0.05) {
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 2; i++) {
+      const bx = VW * (0.35 + i * 0.3) + Math.sin(t * 0.03 + i * 2.1) * 42;
+      const bg = ctx.createLinearGradient(bx, 0, bx, VH * 0.72);
+      bg.addColorStop(0, `rgba(255,238,196,${(0.12 * fx).toFixed(3)})`);
+      bg.addColorStop(1, 'rgba(255,238,196,0)');
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.moveTo(bx - 6, 0); ctx.lineTo(bx - 42, VH * 0.72); ctx.lineTo(bx + 42, VH * 0.72); ctx.lineTo(bx + 6, 0);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+// P11 · Vordergrund-Occluder: dunkle, schnell scrollende Hänge-Kabel am oberen
+// Bildrand (Parallax > 1) für räumliche Tiefe, ohne das Spielfeld zu verdecken.
+function drawCityForeground(engine: GameEngine, VW: number, _VH: number): void {
+  // Reine Deko/Tiefe → auf 'low' aus, mit Effekt-Regler skaliert.
+  if (engine.renderer.quality === 'low') return;
+  const fx = getSettings().stadtEffekte;
+  if (fx < 0.05) return;
+  const ctx = engine.renderer.ctx;
+  const cam = engine.camera.x;
+  ctx.save();
+  ctx.strokeStyle = `rgba(6,7,12,${(0.85 * fx).toFixed(3)})`;
+  ctx.lineCap = 'round';
+  for (let k = 0; k < 3; k++) {
+    const period = 250 + k * 44;
+    const shift = ((cam * 1.3 + k * 90) % period + period) % period;
+    const y0 = 3 + k * 8;
+    const sag = 15 + k * 7;
+    ctx.lineWidth = 2 + k * 0.6;
+    for (let x = -shift; x < VW + period; x += period) {
+      ctx.beginPath();
+      ctx.moveTo(x, y0);
+      ctx.quadraticCurveTo(x + period * 0.5, y0 + sag, x + period, y0);
+      ctx.stroke();
+    }
+    // vereinzelt ein kleiner „Vogel"/Klemmpunkt auf dem obersten Kabel
+    if (k === 0) {
+      for (let x = -shift; x < VW + period; x += period) {
+        ctx.fillStyle = `rgba(6,7,12,${(0.85 * fx).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(x, y0, 2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+}
+// Stadt: kleiner Regenschirm über dem Kopf der Figur (rein visuell). `open`
+// (0..1) skaliert Höhe/Breite, damit der Schirm weich aufgeht. `cx` = Kopf-
+// Mitte (Screen), `topY` = obere Sprite-Kante, `dir` = Blickrichtung.
+function drawUmbrella(engine: GameEngine, cx: number, topY: number, open: number) {
+  if (!Number.isFinite(cx) || !Number.isFinite(topY)) return;
+  const o = Math.max(0, Math.min(1, open));
+  const ctx = engine.renderer.ctx;
+  const t = engine.renderer.time;
+  const rw = 20 * o;                         // halbe Schirm-Breite
+  const rh = 11 * o;                          // Kuppel-Höhe
+  const sway = Math.sin(t * 0.06) * 1.4 * o;  // leichtes Wippen
+  const domeY = topY - 12 - rh;               // Kuppel sitzt über dem Kopf
+  const tipX = cx + sway;
+  ctx.save();
+  // Griff (dünner Stab + kleiner J-Haken) vom Kopf zur Kuppel.
+  ctx.strokeStyle = '#6b4a2e';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(cx, topY - 2);
+  ctx.lineTo(tipX, domeY + rh);
+  ctx.stroke();
+  // Schirmkuppel: rot-weiße Segmente als Halbkreis-Fächer.
+  const segs = 6;
+  for (let i = 0; i < segs; i++) {
+    const a0 = Math.PI + (i / segs) * Math.PI;
+    const a1 = Math.PI + ((i + 1) / segs) * Math.PI;
+    ctx.beginPath();
+    ctx.moveTo(tipX, domeY + rh);
+    ctx.arc(tipX, domeY + rh, rw, a0, a1, false);
+    ctx.closePath();
+    ctx.fillStyle = (i % 2 === 0) ? '#e5484d' : '#fbe9ea';
+    ctx.fill();
+  }
+  // Randbogen + kleine Spitze oben.
+  ctx.strokeStyle = '#b8353a';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(tipX, domeY + rh, rw, Math.PI, Math.PI * 2, false);
+  ctx.stroke();
+  ctx.fillStyle = '#b8353a';
+  ctx.beginPath();
+  ctx.ellipse(tipX, domeY + rh - 1, 1.4 * o, 2.4 * o, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Sanfte Tropfen, die vom Schirmrand abperlen (nur bei fast offenem Schirm).
+  if (o > 0.7) {
+    ctx.fillStyle = 'rgba(200,220,240,0.5)';
+    for (let i = 0; i < 3; i++) {
+      const dphase = ((t * 0.9 + i * 40) % 60) / 60;
+      const dx = tipX + (i === 1 ? rw : -rw) * (i === 2 ? 0 : 1);
+      const dy = domeY + rh + dphase * 14;
+      ctx.beginPath(); ctx.ellipse(dx, dy, 0.9, 1.6, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function rrPathR(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
 const _fgForbiddenCache = new WeakMap<object, number[][]>();
@@ -872,6 +1579,311 @@ function forestFgForbidden(level: GameEngine['level']): number[][] {
 // Atmosphäre sitzen. Phase 2 hängt hier GPU-Post-FX (Bloom, Displacement) an,
 // ohne die Layer-Struktur zu verändern.
 // ===========================================================================
+// Welt 19: ein Palmwedel (gebogener Mittelrippen-Bogen + Fiederblätter).
+// Feinschliff (#2): weiche Halo-Unterlage (gefälschte Unschärfe — Safari-sicher,
+// KEIN Blur-Filter), Farb-/Breiten-Parameter und per-Fieder-Längen/Winkel-
+// Variation über `seed`, damit kein Wedel wie der andere aussieht.
+function drawVacationPalmFrond(
+  ctx: CanvasRenderingContext2D, ox: number, oy: number, baseAng: number, len: number, curve: number,
+  core = 'rgba(16,44,22,0.92)', leaf = 'rgba(22,58,30,0.85)', midW = 2.6, leaflets = 9, seed = 0,
+) {
+  const ex = ox + Math.cos(baseAng) * len, ey = oy + Math.sin(baseAng) * len;
+  const cxp = ox + Math.cos(baseAng - curve) * len * 0.6, cyp = oy + Math.sin(baseAng - curve) * len * 0.6;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // weiche Halo-Unterlage der Mittelrippe (breiter, transluzent → weiche Kante)
+  ctx.strokeStyle = 'rgba(18,50,26,0.20)'; ctx.lineWidth = midW * 2.7;
+  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.quadraticCurveTo(cxp, cyp, ex, ey); ctx.stroke();
+  // scharfe Mittelrippe
+  ctx.strokeStyle = core; ctx.lineWidth = midW;
+  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.quadraticCurveTo(cxp, cyp, ex, ey); ctx.stroke();
+  const N = leaflets;
+  for (let i = 1; i <= N; i++) {
+    const t = i / N;
+    const mx = (1 - t) * (1 - t) * ox + 2 * (1 - t) * t * cxp + t * t * ex;
+    const my = (1 - t) * (1 - t) * oy + 2 * (1 - t) * t * cyp + t * t * ey;
+    const tang = baseAng - curve * (1 - t);
+    const jit = 0.82 + 0.34 * (0.5 + 0.5 * Math.sin(seed * 3.7 + i * 1.9));   // Längen-Variation
+    const ll = len * 0.26 * (1 - t * 0.5) * jit;
+    const spread = 1.04 + 0.16 * Math.sin(seed + i * 0.8);                     // Winkel-Variation
+    const lx1 = mx + Math.cos(tang + spread) * ll, ly1 = my + Math.sin(tang + spread) * ll;
+    const lx2 = mx + Math.cos(tang - spread) * ll, ly2 = my + Math.sin(tang - spread) * ll;
+    // weiche Unterlage der Fiederblätter
+    ctx.strokeStyle = 'rgba(18,50,26,0.16)'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(lx1, ly1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(lx2, ly2); ctx.stroke();
+    // scharfe Fiederblätter
+    ctx.strokeStyle = leaf; ctx.lineWidth = 1.25;
+    ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(lx1, ly1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(lx2, ly2); ctx.stroke();
+  }
+}
+
+// Welt 19: Palmwedel-Cluster in den oberen Ecken als Vordergrund-Occluder
+// (Tiefe). Nur ab dem Tropen-Abschnitt, leichtes Wiegen, auf 'low'/Regler-0 aus.
+// #2: gemischte Tiefen (dunkle vorne / hellere dahinter), mehr Wedel, zwei
+// versetzte Wiege-Phasen → lebendigeres, weicheres Blätterdach.
+const _PALM_DEEP = 'rgba(13,38,19,0.94)', _PALM_DEEPL = 'rgba(20,54,28,0.86)';
+const _PALM_LITE = 'rgba(30,66,34,0.80)', _PALM_LITEL = 'rgba(48,90,46,0.72)';
+// Welt 19 (#3): Etappen-Banner. Beim Betreten einer neuen Etappe (Alpen → Tropen →
+// Küste, Grenzen bei col 90/180) blendet oben kurz ein dezentes Banner ein. Modul-
+// State merkt sich die aktuelle Etappe; wechselt sie (auch beim Neustart, wenn der
+// Spieler zurück auf Etappe 1 springt), startet die Einblendung neu.
+let _vacStage = -1;
+let _vacBannerT = -1e9;
+const VAC_STAGE_NAMES = ['Alpen', 'Tropen-Lagune', 'Küste'];
+function drawVacationStageBanner(engine: GameEngine, VW: number): void {
+  const t = engine.renderer.time;
+  const col = engine.player.x / TILE_SIZE;
+  const stage = col < 90 ? 0 : col < 180 ? 1 : 2;
+  if (stage !== _vacStage) { _vacStage = stage; _vacBannerT = t; }
+  const age = t - _vacBannerT;
+  const DUR = 165, FIN = 20, FOUT = 45;
+  if (age < 0 || age > DUR) return;
+  let a = 1;
+  if (age < FIN) a = age / FIN;
+  else if (age > DUR - FOUT) a = (DUR - age) / FOUT;
+  a = Math.max(0, Math.min(1, a));
+  if (a <= 0.02) return;
+  const ctx = engine.renderer.ctx;
+  const label = `Etappe ${stage + 1}: ${VAC_STAGE_NAMES[stage]}`;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.font = 'bold 13px system-ui, sans-serif';
+  ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(label).width;
+  const padX = 16, h = 24, w = tw + padX * 2 + 14;
+  const x = Math.round((VW - w) / 2);
+  const y = Math.round(38 + (1 - a) * -6);   // leichter Slide-Down bei Einblendung
+  // Pille
+  ctx.beginPath();
+  const r = 12;
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  ctx.fillStyle = 'rgba(24,20,14,0.74)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,238,198,0.55)'; ctx.lineWidth = 1; ctx.stroke();
+  // kleines Kompass-/Reise-Icon (Pfeil im Kreis)
+  const ix = x + padX + 1, iy = y + h / 2;
+  ctx.strokeStyle = '#ffe6a6'; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.arc(ix, iy, 4.5, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#ffe6a6';
+  ctx.beginPath(); ctx.moveTo(ix - 2.4, iy + 2.4); ctx.lineTo(ix + 3, iy - 3); ctx.lineTo(ix + 1, iy + 0.4); ctx.closePath(); ctx.fill();
+  // Text
+  ctx.fillStyle = '#fff3da'; ctx.textAlign = 'left';
+  ctx.fillText(label, x + padX + 13, iy + 0.5);
+  ctx.restore();
+}
+
+function drawVacationForeground(engine: GameEngine, VW: number, _VH: number): void {
+  if (USE_VACATION_PHOTO) return;   // Foto-Kulisse hat eigene Palmen → keine Occluder
+  if (engine.renderer.quality === 'low') return;
+  const fx = getSettings().stadtEffekte;
+  if (fx < 0.05) return;
+  const colC = (engine.camera.x + engine.camera.width * 0.5) / TILE_SIZE;
+  if (colC < 84) return;                              // erst ab Tropen/Lagune
+  const t = engine.renderer.time;
+  const sway = Math.sin(t * 0.04) * 0.06;             // sanftes Wiegen (rad)
+  const sway2 = Math.sin(t * 0.055 + 1.3) * 0.05;     // zweite, versetzte Phase
+  const ctx = engine.renderer.ctx;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, fx);
+  // oben links — Cluster mit gemischten Tiefen
+  drawVacationPalmFrond(ctx, -8, -8, 0.30 + sway,  168, 0.52, _PALM_DEEP, _PALM_DEEPL, 2.8, 11, 1.1);
+  drawVacationPalmFrond(ctx, -8, -8, 0.64 + sway2, 140, 0.60, _PALM_LITE, _PALM_LITEL, 2.2, 9, 2.4);
+  drawVacationPalmFrond(ctx, -8, -8, 1.00 + sway,  120, 0.72, _PALM_DEEP, _PALM_DEEPL, 2.4, 8, 3.7);
+  drawVacationPalmFrond(ctx, -8, -8, 1.34 + sway2,  96, 0.80, _PALM_LITE, _PALM_LITEL, 1.9, 7, 4.9);
+  // oben rechts (gespiegelt)
+  drawVacationPalmFrond(ctx, VW + 8, -8, Math.PI - 0.30 - sway,  168, -0.52, _PALM_DEEP, _PALM_DEEPL, 2.8, 11, 6.1);
+  drawVacationPalmFrond(ctx, VW + 8, -8, Math.PI - 0.64 - sway2, 140, -0.60, _PALM_LITE, _PALM_LITEL, 2.2, 9, 7.3);
+  drawVacationPalmFrond(ctx, VW + 8, -8, Math.PI - 1.00 - sway,  120, -0.72, _PALM_DEEP, _PALM_DEEPL, 2.4, 8, 8.5);
+  drawVacationPalmFrond(ctx, VW + 8, -8, Math.PI - 1.34 - sway2,  96, -0.80, _PALM_LITE, _PALM_LITEL, 1.9, 7, 9.7);
+  ctx.restore();
+}
+
+// Welt 19 (#3): Glitzern auf der Lagunen-Wasseroberfläche. Zuckende, warme
+// Funken je sichtbarer Wasser-Spalte (WATER_TOP), additiv über die Wasser-Tiles
+// gelegt. Deterministisch (Math.sin-Pseudorandom), auf 'low'/Regler-0 aus.
+function drawVacationWaterGlitter(engine: GameEngine, VW: number): void {
+  if (engine.renderer.quality === 'low') return;
+  const fx = getSettings().stadtEffekte;
+  if (fx < 0.05) return;
+  const tiles = engine.level.tiles;
+  const W = engine.level.width, H = engine.level.height;
+  const startCol = Math.max(0, Math.floor(engine.camera.x / TILE_SIZE) - 1);
+  const endCol = Math.min(W - 1, Math.ceil((engine.camera.x + engine.camera.width) / TILE_SIZE) + 1);
+  const ctx = engine.renderer.ctx;
+  const t = engine.renderer.time;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let col = startCol; col <= endCol; col++) {
+    let wr = -1;
+    for (let r = 2; r < H; r++) { if (tiles[r]?.[col] === TileType.WATER_TOP) { wr = r; break; } }
+    if (wr < 0) continue;
+    const s = engine.camera.worldToScreenInto(col * TILE_SIZE, wr * TILE_SIZE, _s);
+    if (s.x < -TILE_SIZE || s.x > VW + TILE_SIZE) continue;
+    for (let k = 0; k < 2; k++) {
+      const ph = col * 1.618 + k * 3.11;
+      const tw = Math.pow(0.5 + 0.5 * Math.sin(t * 0.16 + ph), 4);   // scharfes Zucken
+      if (tw < 0.14) continue;
+      const jx = ((Math.sin(ph * 12.9898) * 43758.5453) % 1 + 1) % 1;  // 0..1 pseudo
+      const sx = s.x + jx * TILE_SIZE;
+      const sy = s.y + 3 + ((k * 3 + (col % 3)) % 4);
+      const a = 0.62 * tw * fx;
+      const sz = 1.3 + tw * 1.7;
+      ctx.fillStyle = `rgba(255,252,232,${a.toFixed(3)})`;
+      ctx.fillRect(sx - sz / 2, sy - sz / 2, sz, sz);
+      // horizontaler Glanz-Strich
+      ctx.fillStyle = `rgba(255,246,206,${(a * 0.45).toFixed(3)})`;
+      ctx.fillRect(sx - sz * 1.9, sy - 0.4, sz * 3.8, 0.8);
+    }
+  }
+  ctx.restore();
+}
+
+// Welt 19 (#3/#2): kleine Vordergrund-Deko am Sandweg — Grasbüschel (leicht
+// wiegend) + Muscheln/Kiesel. An den Lagunen-Ufern dichter (voller Cluster), sonst
+// sparsam über den ganzen Weg verteilt → durchgehende Tiefe. Deterministisch.
+function drawVacationShoreDeco(engine: GameEngine, VW: number): void {
+  if (engine.renderer.quality === 'low') return;
+  const fx = getSettings().stadtEffekte;
+  if (fx < 0.05) return;
+  const tiles = engine.level.tiles;
+  const W = engine.level.width, gr = engine.level.groundRow ?? (engine.level.height - 2);
+  const isW = (c: number) => { const t = tiles[gr]?.[c]; return t === TileType.WATER_TOP || t === TileType.WATER; };
+  const isGround = (c: number) => { const t = tiles[gr]?.[c]; return !!t && !isW(c); };
+  const hash = (c: number) => { const v = Math.sin(c * 12.9898) * 43758.5453; return v - Math.floor(v); };
+  const startCol = Math.max(0, Math.floor(engine.camera.x / TILE_SIZE) - 1);
+  const endCol = Math.min(W - 1, Math.ceil((engine.camera.x + engine.camera.width) / TILE_SIZE) + 1);
+  const ctx = engine.renderer.ctx;
+  const t = engine.renderer.time;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, fx);
+
+  const tuft = (bx: number, by: number, blades: number, scale: number, col: number) => {
+    const sway = Math.sin(t * 0.05 + col) * 0.12;
+    for (let i = 0; i < blades; i++) {
+      const off = (i - (blades - 1) / 2) * 2.4 * scale;
+      const bend = sway + (i % 2 ? 0.06 : -0.05);
+      const hgt = (8 + (i % 2) * 3) * scale;
+      ctx.strokeStyle = i % 2 ? '#86a94e' : '#6f9440';
+      ctx.lineWidth = 1.4 * scale; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(bx + off, by);
+      ctx.quadraticCurveTo(bx + off + bend * hgt, by - hgt * 0.6, bx + off + bend * hgt * 2.2, by - hgt);
+      ctx.stroke();
+    }
+  };
+  const shell = (sx: number, sy: number) => {
+    ctx.fillStyle = '#f2e2c8';
+    ctx.beginPath(); ctx.ellipse(sx, sy, 3.2, 2.4, 0, Math.PI, 0); ctx.fill();
+    ctx.strokeStyle = 'rgba(196,150,110,0.7)'; ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    for (const rr of [-1.6, 0, 1.6]) { ctx.moveTo(sx, sy); ctx.lineTo(sx + rr, sy - 2.4); }
+    ctx.stroke();
+  };
+  const pebble = (px: number, py: number, r: number) => {
+    ctx.fillStyle = 'rgba(120,120,128,0.55)';
+    ctx.beginPath(); ctx.ellipse(px, py, r, r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+  };
+
+  for (let col = startCol; col <= endCol; col++) {
+    if (!isGround(col)) continue;
+    const s = engine.camera.worldToScreenInto(col * TILE_SIZE, gr * TILE_SIZE, _s);
+    if (s.x < -TILE_SIZE || s.x > VW + TILE_SIZE) continue;
+    const baseY = s.y + 3;
+    const shoreRight = isW(col + 1), shoreLeft = isW(col - 1);
+    if (shoreRight || shoreLeft) {
+      // Voller Ufer-Cluster direkt an der Wasserkante.
+      const bx = shoreRight ? s.x + TILE_SIZE - 5 : s.x + 5;
+      tuft(bx, baseY, 4, 1, col);
+      const shX = shoreRight ? s.x + TILE_SIZE - 13 : s.x + 9;
+      shell(shX, baseY + 2);
+      pebble(shX + (shoreRight ? -6 : 6), baseY + 3, 1.8);
+    } else {
+      // Sparsam über den restlichen Weg: ~jede 6.–8. Kachel ein kleines Detail.
+      const hv = hash(col);
+      if (hv > 0.82) tuft(s.x + 6 + hash(col + 7) * 20, baseY, 3, 0.8, col);
+      else if (hv > 0.72) shell(s.x + 6 + hash(col + 3) * 20, baseY + 2);
+      else if (hv > 0.66) pebble(s.x + 6 + hash(col + 5) * 20, baseY + 3, 1.6);
+    }
+  }
+  ctx.restore();
+}
+
+// Welt 19 (#2/#3): größere Akzente für Tiefe & Stimmung.
+//  • Ferne, winzige Möwen-Silhouetten HOCH am Himmel (reine Deko, KEIN Gegner) —
+//    langsam driftend, sehr blass. `VAC_DECO_BIRDS=false` schaltet sie ganz ab.
+//  • Vordergrund-Palmwedel an 1–2 Welt-Ankern (scrollen mit) + gebleichtes
+//    Treibholz am Lagunen-Ufer.
+const VAC_DECO_BIRDS = true;
+function drawVacationDecoAccents(engine: GameEngine, VW: number, VH: number): void {
+  if (engine.renderer.quality === 'low') return;
+  const fx = getSettings().stadtEffekte;
+  if (fx < 0.05) return;
+  const ctx = engine.renderer.ctx;
+  const t = engine.renderer.time;
+  const gr = engine.level.groundRow ?? (engine.level.height - 2);
+
+  // ── ferne Deko-Möwen (Himmel) ──
+  if (VAC_DECO_BIRDS) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(72,84,100,0.34)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    for (let i = 0; i < 4; i++) {
+      const bx = ((t * (0.18 + i * 0.015) + i * 173) % (VW + 60)) - 30;
+      const by = 46 + i * 15 + Math.sin(t * 0.02 + i * 1.7) * 5;
+      const flap = 2.2 + Math.sin(t * 0.18 + i) * 1.1;   // Flügelschlag
+      const wsp = 4.5;
+      ctx.beginPath();
+      ctx.moveTo(bx - wsp, by); ctx.quadraticCurveTo(bx - wsp * 0.4, by - flap, bx, by);
+      ctx.quadraticCurveTo(bx + wsp * 0.4, by - flap, bx + wsp, by);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ── gebleichtes Treibholz als größere Deko-Akzente (Welt-Anker; scrollen mit) ──
+  const logAt = (worldCol: number, scale = 1) => {
+    const s = engine.camera.worldToScreenInto(worldCol * TILE_SIZE, gr * TILE_SIZE, _s);
+    if (s.x < -80 || s.x > VW + 80) return;
+    const lx = s.x, ly = s.y + 8, lw = 40 * scale, lh = 8 * scale;
+    ctx.save();
+    ctx.fillStyle = 'rgba(20,40,44,0.18)'; ctx.beginPath(); ctx.ellipse(lx + lw / 2, ly + lh, lw * 0.55, 3, 0, 0, Math.PI * 2); ctx.fill();
+    const g = ctx.createLinearGradient(0, ly, 0, ly + lh);
+    g.addColorStop(0, '#cbb89a'); g.addColorStop(1, '#9c8869');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(lx + 3, ly); ctx.lineTo(lx + lw - 3, ly);
+    ctx.arcTo(lx + lw, ly, lx + lw, ly + lh, 3); ctx.lineTo(lx + lw, ly + lh - 1);
+    ctx.arcTo(lx + lw, ly + lh, lx + lw - 3, ly + lh, 3); ctx.lineTo(lx + 3, ly + lh);
+    ctx.arcTo(lx, ly + lh, lx, ly, 3); ctx.arcTo(lx, ly, lx + 3, ly, 3); ctx.closePath(); ctx.fill();
+    // Maserung + Endring
+    ctx.strokeStyle = 'rgba(90,70,48,0.5)'; ctx.lineWidth = 0.7;
+    ctx.beginPath(); ctx.moveTo(lx + 4, ly + lh * 0.5); ctx.lineTo(lx + lw - 4, ly + lh * 0.5); ctx.stroke();
+    ctx.strokeStyle = 'rgba(70,54,36,0.6)';
+    ctx.beginPath(); ctx.ellipse(lx + 3.5, ly + lh / 2, 1.6, lh * 0.32, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,248,228,0.4)'; ctx.fillRect(lx + 3, ly + 1, lw - 6, 1);
+    // Angespülte Gruppe: kleines Dünengras-Büschel hinter dem Holz + eine Muschel
+    // davor → wirkt wie ein natürlicher Strandfund statt ein einsames Scheit.
+    const gsw = Math.sin(t * 0.05 + worldCol) * 0.12;
+    for (let i = 0; i < 4; i++) {
+      const bx = lx + 4 + i * 3.2;
+      const hgt = 9 + (i % 2) * 3;
+      ctx.strokeStyle = i % 2 ? '#86a94e' : '#6f9440'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(bx, ly + 1);
+      ctx.quadraticCurveTo(bx + gsw * hgt, ly + 1 - hgt * 0.6, bx + gsw * hgt * 2.1, ly + 1 - hgt); ctx.stroke();
+    }
+    const mx = lx + lw - 6;
+    ctx.fillStyle = '#f2e2c8'; ctx.beginPath(); ctx.ellipse(mx, ly + lh - 1, 3, 2.2, 0, Math.PI, 0); ctx.fill();
+    ctx.strokeStyle = 'rgba(196,150,110,0.7)'; ctx.lineWidth = 0.7; ctx.beginPath();
+    for (const rr of [-1.4, 0, 1.4]) { ctx.moveTo(mx, ly + lh - 1); ctx.lineTo(mx + rr, ly + lh - 3.2); }
+    ctx.stroke();
+    ctx.restore();
+  };
+  logAt(142, 1);      // rechtes Lagunen-Ufer
+  logAt(36, 1.2);     // Alpen-Abschnitt, größeres Stück
+  logAt(246, 1.1);    // Küste
+
+  ctx.globalAlpha = 1;
+}
+
 function renderPostLayer(engine: GameEngine): void {
   const theme = engine.level.theme;
   const VW = engine.renderer.viewportW;
@@ -879,6 +1891,64 @@ function renderPostLayer(engine: GameEngine): void {
   // Final colour grade (per-world tint + vignette + tilt-shift) so the
   // parallax, tiles and sprites all sit under one cohesive atmosphere.
   engine.renderer.drawSceneGrade(theme, VW, VH);
+
+  // Welt 19: erst Wasser-Glitzern über die Lagune (unter den Palmen), dann die
+  // Vordergrund-Occluder — dunkle Palmwedel in den oberen Ecken (Tropen/Küste),
+  // die leicht wiegen → „durch die Palmen schauen".
+  if (theme === 'vacation') {
+    drawVacationWaterGlitter(engine, VW);
+    drawVacationShoreDeco(engine, VW);
+    drawVacationDecoAccents(engine, VW, VH);
+    drawVacationForeground(engine, VW, VH);
+    drawVacationStageBanner(engine, VW);
+  }
+
+  // #2 · Boden-Angleichung ans Foto: der graue Dachboden bekommt einen sanften
+  // Tageszeit-Ton (warm in der Dämmerung, kühl-blau bei Nacht, nichts am Tag),
+  // damit der Übergang Foto → Spielboden nahtlos wirkt. Nur die Boden-Region
+  // (unter der Bodenlinie) → die Figuren stehen darüber und bleiben unberührt.
+  // 'soft-light' erhält die Ziegel-Textur und verschiebt nur den Farbton.
+  if (theme === 'city') {
+    const r = engine.renderer; const ctx = r.ctx;
+    const span = Math.max(1, (engine.camera.worldWidth || engine.camera.width) - engine.camera.width);
+    const prog = Math.max(0, Math.min(1, engine.camera.x / span));
+    const ss = (a: number, b: number, v: number) => { const c = Math.max(0, Math.min(1, (v - a) / (b - a))); return c * c * (3 - 2 * c); };
+    const dawnW = ss(0.26, 0.50, prog), nightW = ss(0.60, 0.86, prog);
+    const duskW = dawnW * (1 - nightW);
+    if (duskW > 0.02 || nightW > 0.02) {
+      const gy = engine.camera.worldToScreenInto(engine.camera.x, r.currentGroundRow * TILE_SIZE, _s).y;
+      const y0 = Math.max(0, gy - 2);
+      ctx.save();
+      ctx.globalCompositeOperation = 'soft-light';
+      if (duskW > 0.02) { ctx.globalAlpha = Math.min(0.5, 0.36 * duskW); ctx.fillStyle = '#ff9a4c'; ctx.fillRect(0, y0, VW, VH - y0); }
+      if (nightW > 0.02) { ctx.globalAlpha = Math.min(0.55, 0.42 * nightW); ctx.fillStyle = '#3a5aa0'; ctx.fillRect(0, y0, VW, VH - y0); }
+      ctx.restore();
+    }
+  }
+
+  // P12 · Boss-Arena: sobald die Monsterratte gesichtet ist, legt sich eine
+  // dramatische Bühne über die Szene (roter Vignette-Rand + schwenkende
+  // Scheinwerfer). Unter Regen/Vordergrund gezeichnet.
+  if (theme === 'city' && cityBossActive(engine)) drawCityBossArena(engine, VW, VH);
+
+  // Stadt: Blitz-Aufhellung (Screen-Space) — dezenter Schein über der ganzen
+  // Szene. Bewusst schwach gehalten, damit die Skyline-Silhouette (Backlight im
+  // Hintergrund) nicht überstrahlt wird; der Haupt-Effekt sitzt im Himmel.
+  if (theme === 'city' && engine.renderer.cityFlash > 0.01) {
+    const ctx = engine.renderer.ctx;
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.22, engine.renderer.cityFlash * 0.22);
+    ctx.fillStyle = '#e2ebff';
+    ctx.fillRect(0, 0, VW, VH);
+    ctx.restore();
+  }
+  // Stadt: Nieselregen als Screen-Space-Overlay (über allem, unter HUD).
+  if (theme === 'city') drawCityRain(engine, VW, VH);
+
+  // P11 · Vordergrund-Occluder: dunkle, schnell scrollende Kabel am oberen Rand
+  // → räumliche Tiefe („durch die Kabel hindurchschauen"), ohne das Spielfeld zu
+  // verdecken.
+  if (theme === 'city') drawCityForeground(engine, VW, VH);
 
   // Warp-Flash: kurzes helles Aufblenden beim Röhren-Teleport (Screen-Space).
   if (engine.warpFlash > 0) {

@@ -223,7 +223,7 @@ export function createSkyLevel(): LevelData {
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 87, roomL: 83 });
 
   return {
-    name: 'World 3: Wolken Welt',
+    name: 'Wolken Welt',
     theme: 'sky',
     width,
     height,

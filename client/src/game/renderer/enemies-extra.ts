@@ -428,9 +428,26 @@ function drawCrab(this: Renderer, x: number, y: number, w: number, h: number, fr
     ctx.translate(-cx, -cy);
   }
 
-  const bodyColor = isAngry ? '#a02020' : '#e06030';
-  const bodyDark = isAngry ? '#801818' : '#c04820';
-  const legColor = isAngry ? '#902020' : '#d05828';
+  // Welt 19 (Foto-Kulisse): weichere, natürlichere Terrakotta-Töne statt Knall-
+  // Orange, damit die Krabbe nicht als Cartoon auf dem gemalten Strand liegt.
+  const vac = this.currentTheme === 'vacation';
+  const bodyColor = isAngry ? (vac ? '#b45540' : '#a02020') : (vac ? '#d08059' : '#e06030');
+  const bodyDark = isAngry ? (vac ? '#8f4232' : '#801818') : (vac ? '#a9613f' : '#c04820');
+  const legColor = isAngry ? (vac ? '#a04a38' : '#902020') : (vac ? '#c07049' : '#d05828');
+
+  // Welt 19: kleine Sand-Staubwölkchen an den Füßen (die Krabbe „wuselt" im Sand) —
+  // hinter dem Körper, weich aufsteigend/verblassend, deterministisch übers frame.
+  if (vac && !isDead) {
+    for (let i = 0; i < 3; i++) {
+      const ph = frame * 0.13 + i * 2.1;
+      const life = Math.sin(ph) * 0.5 + 0.5;                 // 0..1
+      const px = cx + (i - 1) * w * 0.2 + Math.sin(ph * 1.3) * 2;
+      const py = y + h - 1 - life * 4;
+      const a = 0.2 * (1 - life);
+      ctx.fillStyle = `rgba(214,190,150,${a.toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(px, py, 1.3 + life * 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
 
   const legSwing = Math.sin(frame * 0.12) * 0.3;
   for (let side = -1; side <= 1; side += 2) {
@@ -545,14 +562,22 @@ function drawJellyfish(this: Renderer, x: number, y: number, w: number, h: numbe
   const accent = this.getThemeAccent();
   softShadowEllipse(ctx, cx, y + h + 2, w * 0.2, 2, accent.shadow);
 
+  // Welt 19 (Foto-Kulisse): warm-rosa Lagunen-Qualle statt kühlem Lila-Blau.
+  const vacJelly = this.currentTheme === 'vacation';
   ctx.save();
-  ctx.shadowColor = 'rgba(120,100,255,0.4)';
+  ctx.shadowColor = vacJelly ? 'rgba(255,150,180,0.4)' : 'rgba(120,100,255,0.4)';
   ctx.shadowBlur = 12;
 
   const bodyGrad = ctx.createRadialGradient(cx, bellTop + bellH * 0.3, 0, cx, bellTop + bellH * 0.5, bellW);
-  bodyGrad.addColorStop(0, 'rgba(180,160,255,0.6)');
-  bodyGrad.addColorStop(0.5, 'rgba(120,100,220,0.45)');
-  bodyGrad.addColorStop(1, 'rgba(80,60,180,0.25)');
+  if (vacJelly) {
+    bodyGrad.addColorStop(0, 'rgba(255,214,224,0.6)');
+    bodyGrad.addColorStop(0.5, 'rgba(244,158,186,0.45)');
+    bodyGrad.addColorStop(1, 'rgba(216,120,150,0.24)');
+  } else {
+    bodyGrad.addColorStop(0, 'rgba(180,160,255,0.6)');
+    bodyGrad.addColorStop(0.5, 'rgba(120,100,220,0.45)');
+    bodyGrad.addColorStop(1, 'rgba(80,60,180,0.25)');
+  }
   ctx.fillStyle = bodyGrad;
 
   ctx.beginPath();
@@ -580,7 +605,7 @@ function drawJellyfish(this: Renderer, x: number, y: number, w: number, h: numbe
     const tentLen = h * (0.45 + Math.sin(frame * 0.05 + i * 0.8) * 0.08);
 
     const alpha = 0.2 + Math.abs(t) * 0.15;
-    ctx.strokeStyle = `rgba(140,120,220,${alpha})`;
+    ctx.strokeStyle = vacJelly ? `rgba(230,140,170,${alpha})` : `rgba(140,120,220,${alpha})`;
     ctx.lineWidth = 1 + (1 - Math.abs(t)) * 1.5;
     ctx.lineCap = 'round';
     ctx.beginPath();

@@ -4,7 +4,7 @@
 // culling, pool recycling, alive filter).
 import {
   Entity, Goomba, Koopa, Boss, Bat, Coin, SpinningCoin, PowerUp, PiranhaPlant,
-  Spider, Crab, Jellyfish, Kangaroo, Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss, Snake, Fireball, Ghost, Fish,
+  Spider, Crab, Jellyfish, Kangaroo, Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss, Rat, TrashCan, Geyser, RatBoss, Snake, Fireball, Ghost, Fish,
   Wizard, MagicBolt, BombOmb, BombExplosion, PlayerFireball, SpikeBall,
   Hornet, BanzaiBill, CharginChuck, BigBoo,
   Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO, BabyDragon, DragonEgg,
@@ -16,6 +16,9 @@ import { audio } from '../audio';
 import {
   TILE_SIZE, MAGNET_RANGE, MAGNET_PULL_SPEED, MOUSE_FLEE_RANGE,
   MOUSE_HIDE_DURATION, MOUSE_HOLE_ENTER_DIST, MOUSE_HIDE_COOLDOWN,
+  MOUSE_DIVE_FRAMES, MOUSE_POP_FRAMES,
+  MOUSE_NIBBLE_DIST, MOUSE_NIBBLE_DURATION, MOUSE_LURE_COOLDOWN,
+  RAT_BOSS_SIGHT, RAT_BOSS_INTRO,
 } from '../constants';
 import type { GameEngine } from '../engine';
 
@@ -178,34 +181,48 @@ export function stepEntities(engine: GameEngine): void {
           a._wasGround = entity.onGround;
         }
       }
+    } else if (entity instanceof Geyser) {
+      entity.update(1);   // steht fest, pulsiert nur
     } else if (entity instanceof Deer || entity instanceof BrownDeer || entity instanceof DeerBoss
                || entity instanceof Sheep || entity instanceof Turtle || entity instanceof Mouse
-               || entity instanceof SnakeBoss) {
-      // Maus: versteckt im Loch → runterzählen, ggf. wieder auftauchen; sonst überspringen.
-      if (entity instanceof Mouse && entity.hiding) {
+               || entity instanceof SnakeBoss
+               || entity instanceof Rat || entity instanceof TrashCan || entity instanceof RatBoss) {
+      // Maus: Fußspuren altern lassen (die älteste liegt vorne).
+      if (entity instanceof Mouse && entity.tracks.length) {
+        for (const tr of entity.tracks) tr.life--;
+        while (entity.tracks.length && entity.tracks[0].life <= 0) entity.tracks.shift();
+      }
+      // Maus: Burrow-Sequenz (einsinken → versteckt → auftauchen) abwickeln.
+      if (entity instanceof Mouse && entity.burrow !== 0) {
         entity.velX = 0; entity.velY = 0;
-        entity.hideTimer--;
-        if (entity.hideTimer <= 0) {
-          entity.hiding = false;
-          entity.hideCd = MOUSE_HIDE_COOLDOWN;
-          entity.fleeing = false;
-          engine.spawnDust(entity.x + entity.width / 2, entity.y + entity.height - 2, 1);
-          engine.spawnDust(entity.x + entity.width / 2, entity.y + entity.height - 2, -1);
-          audio.playSfx('mousePiep', engine.panForWorldX(entity.x + entity.width / 2));
+        entity.burrowTimer--;
+        if (entity.burrowTimer <= 0) {
+          if (entity.burrow === 1) {              // eingesunken → jetzt versteckt
+            entity.burrow = 2; entity.burrowTimer = MOUSE_HIDE_DURATION;
+          } else if (entity.burrow === 2) {       // versteckt → auftauchen beginnt
+            entity.burrow = 3; entity.burrowTimer = MOUSE_POP_FRAMES;
+            const cx = entity.x + entity.width / 2;
+            engine.spawnDust(cx, entity.y + entity.height - 2, 1);
+            engine.spawnDust(cx, entity.y + entity.height - 2, -1);
+            audio.playSfx('mousePiep', engine.panForWorldX(cx));
+          } else {                                // aufgetaucht → wieder draußen
+            entity.burrow = 0; entity.hideCd = MOUSE_HIDE_COOLDOWN; entity.fleeing = false;
+          }
         }
-        continue;   // im Loch: keine Bewegung, keine Kollision
+        continue;   // während der Burrow-Sequenz keine Bewegung/Kollision
       }
       // Maus: Flucht-Zustand VOR dem Update setzen (braucht die Spielerposition).
       if (entity instanceof Mouse && !entity.isDead) {
         if (entity.hideCd > 0) {
           // Frisch aus dem Loch: erst kurz normal weiterhuschen (kein erneutes Verstecken).
           entity.hideCd--;
-          entity.fleeing = false;
+          entity.fleeing = false; entity.lured = false; entity.nibbling = false;
         } else {
           const center = entity.x + entity.width / 2;
           const wasFleeing = entity.fleeing;
           if (Math.abs(player.x - entity.x) < MOUSE_FLEE_RANGE) {
             entity.fleeing = true;
+            entity.lured = false; entity.nibbling = false;   // Köder abbrechen, ab in den Bau
             // Ziel: nächstes Mauseloch — die Maus flüchtet in ihren Bau.
             let holeX = entity.homeX, best = Infinity;
             for (const o of engine.entities) {
@@ -213,10 +230,10 @@ export function stepEntities(engine: GameEngine): void {
             }
             entity.fleeDir = holeX < center ? Direction.LEFT : Direction.RIGHT;
             if (!wasFleeing) audio.playSfx('mousePiep', engine.panForWorldX(center));
-            // Am Loch angekommen? Hineinflitzen und kurz verschwinden.
+            // Am Loch angekommen? Sichtbar hineinflitzen (einsinken), dann verschwinden.
             if (best < MOUSE_HOLE_ENTER_DIST) {
-              entity.hiding = true;
-              entity.hideTimer = MOUSE_HIDE_DURATION;
+              entity.burrow = 1;
+              entity.burrowTimer = MOUSE_DIVE_FRAMES;
               entity.velX = 0;
               engine.spawnDust(center, entity.y + entity.height - 2, entity.fleeDir === Direction.LEFT ? -1 : 1);
               audio.playSfx('mousePiep', engine.panForWorldX(center));
@@ -224,8 +241,33 @@ export function stepEntities(engine: GameEngine): void {
             }
           } else {
             entity.fleeing = false;
+            // Käse-Köder: neugierig zum Käse am eigenen Loch laufen und knabbern.
+            const cheeseX = entity.homeX + 15;   // deckt sich mit der Käse-Deko (s.x + 15)
+            if (entity.lureCd > 0) {
+              entity.lureCd--; entity.lured = false; entity.nibbling = false;
+            } else if (entity.nibbling) {
+              entity.nibbleTimer--;
+              if (entity.nibbleTimer % 16 === 0) {   // Krümel beim Knabbern
+                engine.particles.push(engine.acquireParticle(cheeseX, entity.y + entity.height - 4, (Math.random() - 0.5) * 0.7, -0.7, '#e8bf5a', 1.1, 22));
+              }
+              if (entity.nibbleTimer <= 0) { entity.nibbling = false; entity.lureCd = MOUSE_LURE_COOLDOWN; }
+            } else if (Math.abs(cheeseX - center) < MOUSE_NIBBLE_DIST) {
+              entity.nibbling = true; entity.nibbleTimer = MOUSE_NIBBLE_DURATION; entity.lured = false;
+              entity.direction = cheeseX < center ? Direction.LEFT : Direction.RIGHT;
+            } else {
+              entity.lured = true;
+              entity.direction = cheeseX < center ? Direction.LEFT : Direction.RIGHT;
+            }
           }
         }
+      }
+      // Ratten-Boss: erster Sichtkontakt → kurzer Auftritt (Aufbäumen + Quieken).
+      if (entity instanceof RatBoss && !entity.sighted && !entity.isDead
+          && Math.abs(player.x - entity.x) < RAT_BOSS_SIGHT) {
+        entity.sighted = true;
+        entity.introTimer = RAT_BOSS_INTRO;
+        audio.playSfx('ratScreech', engine.panForWorldX(entity.x + entity.width / 2));
+        engine.shakeCamera(5, 16);
       }
       entity.update(1);
       if (!entity.isDead) {
@@ -239,6 +281,16 @@ export function stepEntities(engine: GameEngine): void {
         const mdir = entity.velX < 0 ? -1 : 1;
         engine.spawnRunDust(entity.x + entity.width / 2 - mdir * entity.width * 0.3,
           entity.y + entity.height - 2, -mdir);
+      }
+      // Maus: Fußspur-Abdrücke beim Fliehen (bleiben kurz liegen, verblassen).
+      if (entity instanceof Mouse && entity.fleeing && entity.onGround) {
+        if (entity.trackCd > 0) entity.trackCd--;
+        else {
+          const mdir = entity.velX < 0 ? -1 : 1;
+          entity.tracks.push({ x: entity.x + entity.width / 2 - mdir * entity.width * 0.28, y: entity.y + entity.height - 1.5, life: 34 });
+          if (entity.tracks.length > 8) entity.tracks.shift();
+          entity.trackCd = 7;
+        }
       }
       // Schlangen-Boss: Sound-Trigger, Lunge-Staubfahne & Funkeln beim Auflösen.
       if (entity instanceof SnakeBoss) {

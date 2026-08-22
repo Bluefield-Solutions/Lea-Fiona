@@ -127,7 +127,7 @@ export function createPlushLevel(): LevelData {
   }
 
   return {
-    name: 'World 2: Plüsch-Traumland',
+    name: 'Plüsch-Traumland',
     theme: 'plush',
     width,
     height,

@@ -202,7 +202,7 @@ export function createBeachLevel(): LevelData {
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 130, roomL: 126 });
 
   return {
-    name: 'World 4: Strand Paradies',
+    name: 'Strand Paradies',
     theme: 'beach',
     width,
     height,

@@ -12,6 +12,9 @@ import { SCHAF_FRAME_URLS } from './assets/schafSprites.ts';
 import { SCHILDKROETE_FRAME_URLS } from './assets/schildkroeteSprites.ts';
 import { MAUS_FRAME_URLS } from './assets/mausSprites.ts';
 import { SCHLANGE_FRAME_URLS } from './assets/schlangeSprites.ts';
+import { STEPHAN_FRAME_URLS } from './assets/stephanSprites.ts';
+import { VACATION_BG_URLS } from './assets/vacationBg.ts';
+import { CITY_BG_URLS } from './assets/cityBg.ts';
 import fiona01 from '@assets/fiona_01.webp';
 import fiona02 from '@assets/fiona_02.webp';
 import fiona03 from '@assets/fiona_03.webp';
@@ -156,6 +159,31 @@ export class Renderer {
   mausFrames: (HTMLImageElement | null)[] = new Array(10).fill(null);
   // Australien: Schlangen-Boss (10 Frames, Lunge-Attacke).
   schlangeFrames: (HTMLImageElement | null)[] = new Array(10).fill(null);
+  // Welt 19 „Urlaub": Stephan-Spielfigur (15 Frames) + 3 Panorama-Hintergründe.
+  stephanFrames: (HTMLImageElement | null)[] = new Array(15).fill(null);
+  vacationBgFrames: (HTMLImageElement | null)[] = new Array(VACATION_BG_URLS.length).fill(null);
+  cityBgFrames: (HTMLImageElement | null)[] = new Array(3).fill(null);
+  // Welche Urlaubs-Kulisse (0 Alpen · 1 Tropen · 2 Küste) — pro Abschnitt/Level setzbar.
+  vacationBgIndex = 0;
+  // Stadt: „Näherkommen"-Puls des schwarzen Monsters (0..1, klingt weich ab).
+  cityMonsterLunge = 0;
+  // Stadt: Blitz-Helligkeit (0..1, von der Engine gesetzt, klingt ab).
+  cityFlash = 0;
+  // Stadt: Regenschirm-Öffnungsgrad der Figur (0=zu, 1=ganz offen). Wird im
+  // Render weich zum Ziel geführt, damit der Schirm sanft auf-/zugeht.
+  cityUmbrella = 0;
+  // Stadt (P1): gecachte Skyline-Parallax-Streifen (pro Ebene ein normaler +
+  // ein Silhouetten-Strip, gekachelt). Einmal pro Viewport-Höhe gebaut, dann
+  // nur noch geblittet — spart pro Frame die Häuser-/Fenster-Schleifen und
+  // erlaubt reichere Detaildichte. Key = gerundete viewportH.
+  citySkyCache: {
+    h: number;
+    layers: Array<{
+      normal: HTMLCanvasElement; silh: HTMLCanvasElement; periodPx: number; speed: number;
+      // Geometrie für den Live-Fenster-Overlay (P2: Twinkle + Bloom-Höfe)
+      step: number; bw: number; baseY: number; hMin: number; hVar: number; N: number;
+    }>;
+  } | null = null;
   // Avatar/preview still draws a single standing image (Lea's stand frame).
   playerImage: HTMLImageElement | null = null;
   playerImageLoaded = false;
@@ -217,6 +245,9 @@ export class Renderer {
     SCHILDKROETE_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.turtleFrames, i));
     MAUS_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.mausFrames, i));
     SCHLANGE_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.schlangeFrames, i));
+    STEPHAN_FRAME_URLS.forEach((p, i) => this.loadFrame(p, this.stephanFrames, i));
+    VACATION_BG_URLS.forEach((p, i) => this.loadFrame(p, this.vacationBgFrames, i));
+    CITY_BG_URLS.forEach((p, i) => this.loadFrame(p, this.cityBgFrames, i));
     this.loadFrame(BERATER_DUCK_URL, this.beraterDuckArr, 0);
   }
 
@@ -515,6 +546,11 @@ export class Renderer {
       case 'trampoline': return { rim: 'rgba(180,255,220,0.42)', shadow: 'rgba(25,70,60,0.30)', glint: 'rgba(235,255,245,1)'    };
       case 'plush':      return { rim: 'rgba(255,200,230,0.42)', shadow: 'rgba(120,80,110,0.28)', glint: 'rgba(255,250,255,1)'   };
       case 'bluefield':  return { rim: 'rgba(180,235,255,0.38)', shadow: 'rgba(40,80,110,0.28)', glint: 'rgba(245,252,255,1)'    };
+      // Stadt-Nacht (P3): kühles Mondlicht-Rim + tiefer, blaustichiger Schatten,
+      // damit Spielerin & Gegner in die Nacht gehören statt „taghell" zu wirken.
+      case 'city':       return { rim: 'rgba(152,186,240,0.45)', shadow: 'rgba(12,18,42,0.44)',  glint: 'rgba(226,238,255,1)'    };
+      // Urlaub: warmes Sonnenlicht-Rim + weicher, warmer Bodenschatten.
+      case 'vacation':   return { rim: 'rgba(255,236,180,0.42)', shadow: 'rgba(60,44,24,0.30)',  glint: 'rgba(255,250,230,1)'    };
       default:           return { rim: 'rgba(255,255,255,0.25)', shadow: 'rgba(0,0,0,0.30)',     glint: 'rgba(255,255,255,0.95)' };
     }
   }

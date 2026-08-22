@@ -3,6 +3,7 @@ import { Camera } from '../camera.ts';
 import { TILE_SIZE } from '../constants';
 import { pseudoRandom } from '../util/random';
 import { getGlowDisc, getGlowDiscMulti, stampGlow, drawGlowDisc } from '../gfx/glow.ts';
+import { getSettings } from '../storage';
 
 function drawBackground(this: Renderer, camera: Camera, worldWidth: number) {
   if (!this.bgGenerated) {
@@ -79,6 +80,16 @@ function drawBackground(this: Renderer, camera: Camera, worldWidth: number) {
 
   if (this.currentTheme === 'forest') {
     this.drawForestBackground(camera);
+    return;
+  }
+
+  if (this.currentTheme === 'city') {
+    this.drawCityBackground(camera);
+    return;
+  }
+
+  if (this.currentTheme === 'vacation') {
+    this.drawVacationBackground(camera);
     return;
   }
 
@@ -6428,8 +6439,1110 @@ function drawDragonLairForeground(this: Renderer, camX: number, VW: number, VH: 
   }
 }
 
+// ===========================================================================
+// STADT (Welt 18) — Großstadt-Dämmerung: Smog-Himmel, Skyline in Parallaxe,
+// driftender Zeppelin und — ab der Level-Mitte — ein schwarzes Monster, das
+// über der Skyline aufragt (dann taucht der Zeppelin auf).
+// ===========================================================================
+// ===========================================================================
+// Stadt (P1): gecachte, variantenreiche Skyline-Parallax-Streifen.
+// Jede Ebene wird EINMAL in einen periodischen Offscreen-Streifen gebacken
+// (Häuser mit variierenden Dachformen, Luftperspektive/Dunst, Fenster in
+// mehreren Farbtemperaturen, plus je eine Landmarke) und danach nur noch
+// gekachelt geblittet. Ein zweiter „Silhouetten"-Streifen (schwarze Formen,
+// keine Fenster) wird beim Blitz darübergelegt → scharfe Silhouette.
+// ===========================================================================
+type CitySkyDef = {
+  speed: number; baseY: number; col: string; topCol: string;
+  bw: number; gap: number; hMin: number; hVar: number; N: number;
+  haze: number; wA: number;
+};
+
+function cityMix(a: string, b: string, tt: number): string {
+  const na = parseInt(a.slice(1), 16), nb = parseInt(b.slice(1), 16);
+  const ar = (na >> 16) & 255, ag = (na >> 8) & 255, ab = na & 255;
+  const br = (nb >> 16) & 255, bg = (nb >> 8) & 255, bb = nb & 255;
+  const r = Math.round(ar + (br - ar) * tt);
+  const g = Math.round(ag + (bg - ag) * tt);
+  const bl = Math.round(ab + (bb - ab) * tt);
+  return `rgb(${r},${g},${bl})`;
+}
+
+// Zeichnet ein einzelnes Hochhaus in den Normal- und den Silhouetten-Streifen.
+function cityDrawBuilding(
+  nc: CanvasRenderingContext2D, sc: CanvasRenderingContext2D,
+  sx: number, L: CitySkyDef, i: number, li: number, VH: number,
+) {
+  const r = pseudoRandom(i * 2.3 + L.speed * 100);
+  const bh = L.hMin + r * L.hVar;
+  const by = L.baseY - bh;
+  const bw = L.bw;
+  const SIL = '#060509';
+  // Silhouette: massiver schwarzer Block
+  sc.fillStyle = SIL; sc.fillRect(sx, by, bw, bh + VH);
+  // Normal: Körper mit vertikalem Verlauf + Dunst nach oben (Luftperspektive)
+  const body = nc.createLinearGradient(0, by, 0, by + bh);
+  body.addColorStop(0, cityMix(L.col, L.topCol, L.haze));
+  body.addColorStop(1, L.col);
+  nc.fillStyle = body; nc.fillRect(sx, by, bw, bh + VH);
+  // Kanten: Lichtkante links, Schattenkante rechts → Volumen
+  nc.fillStyle = 'rgba(255,255,255,0.05)'; nc.fillRect(sx, by, 2, bh);
+  nc.fillStyle = 'rgba(0,0,0,0.20)'; nc.fillRect(sx + bw - 2, by, 2, bh);
+  // Dachaufbau (variiert die Silhouette oben — der sichtbarste Teil)
+  const cxc = sx + bw / 2;
+  const style = Math.floor(pseudoRandom(i * 5.1 + li * 3.7) * 6); // 0..5
+  const drawBoth = (fn: (c: CanvasRenderingContext2D, silh: boolean) => void) => { fn(nc, false); fn(sc, true); };
+  if (style === 1) {
+    // Antenne + Blinklicht-Sockel
+    drawBoth((c, silh) => {
+      c.strokeStyle = silh ? SIL : '#3a3f4a'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(cxc, by); c.lineTo(cxc, by - 16); c.stroke();
+    });
+    if (li >= 1) { nc.fillStyle = '#ff6a6a'; nc.beginPath(); nc.arc(cxc, by - 17, 1.6, 0, Math.PI * 2); nc.fill(); }
+  } else if (style === 2) {
+    // Wasserturm auf Beinchen
+    drawBoth((c, silh) => {
+      c.fillStyle = silh ? SIL : '#4a4030';
+      c.fillRect(sx + bw * 0.28, by - 12, bw * 0.44, 12);
+      c.fillStyle = silh ? SIL : '#5c5038';
+      c.beginPath(); c.moveTo(sx + bw * 0.28, by - 12); c.lineTo(cxc, by - 20); c.lineTo(sx + bw * 0.72, by - 12); c.closePath(); c.fill();
+    });
+  } else if (style === 3) {
+    // Setback / Penthouse (schmaler Aufsatz)
+    drawBoth((c, silh) => {
+      c.fillStyle = silh ? SIL : cityMix(L.col, L.topCol, L.haze * 0.6);
+      c.fillRect(sx + bw * 0.22, by - 14, bw * 0.56, 14);
+    });
+  } else if (style === 4) {
+    // Flachdach mit Parapet-Kante
+    nc.fillStyle = 'rgba(255,255,255,0.06)'; nc.fillRect(sx, by, bw, 2);
+  } else if (style === 5 && li === 0) {
+    // seltener spitzer/gerundeter Aufsatz (nur Fernebene)
+    drawBoth((c, silh) => {
+      c.fillStyle = silh ? SIL : cityMix(L.col, L.topCol, L.haze);
+      c.beginPath(); c.moveTo(sx + bw * 0.2, by); c.lineTo(cxc, by - 14); c.lineTo(sx + bw * 0.8, by); c.closePath(); c.fill();
+    });
+  }
+  // Fenster in mehreren Farbtemperaturen, vereinzelt an
+  const cols = Math.max(2, Math.floor(bw / 12));
+  const rows = Math.max(2, Math.floor(bh / 16));
+  for (let cc = 0; cc < cols; cc++) for (let rr = 0; rr < rows; rr++) {
+    if (pseudoRandom(i * 13 + cc * 7 + rr * 3) > 0.45) continue;
+    const temp = pseudoRandom(i * 3 + cc * 11 + rr * 5);
+    const col = temp < 0.62 ? `rgba(255,206,132,${L.wA})`      // warm
+      : temp < 0.86 ? `rgba(188,208,255,${L.wA * 0.9})`        // kühl
+        : `rgba(120,168,255,${Math.min(1, L.wA * 1.25)})`;     // TV-Blau
+    nc.fillStyle = col;
+    nc.fillRect(sx + 4 + cc * (bw / cols), by + 6 + rr * 16, 4, 6);
+  }
+}
+
+// Baut die drei Parallax-Streifen (normal + Silhouette) für eine Viewport-Höhe.
+function buildCitySkyline(VH: number): Renderer['citySkyCache'] {
+  const defs: CitySkyDef[] = [
+    { speed: 0.12, baseY: VH * 0.52, col: '#2c2740', topCol: '#4a4468', bw: 42, gap: 14, hMin: 60, hVar: 70, N: 24, haze: 0.55, wA: 0.20 },
+    { speed: 0.26, baseY: VH * 0.66, col: '#241f36', topCol: '#3a3352', bw: 52, gap: 16, hMin: 90, hVar: 90, N: 20, haze: 0.30, wA: 0.35 },
+    { speed: 0.44, baseY: VH * 0.82, col: '#1a1626', topCol: '#2a2440', bw: 64, gap: 20, hMin: 120, hVar: 120, N: 16, haze: 0.12, wA: 0.55 },
+  ];
+  const H = Math.max(1, Math.ceil(VH));
+  const layers = defs.map((L, li) => {
+    const step = L.bw + L.gap;
+    const periodPx = L.N * step;
+    const normal = document.createElement('canvas'); normal.width = periodPx; normal.height = H;
+    const silh = document.createElement('canvas'); silh.width = periodPx; silh.height = H;
+    const nc = normal.getContext('2d')!;
+    const sc = silh.getContext('2d')!;
+    for (let i = 0; i < L.N; i++) cityDrawBuilding(nc, sc, i * step, L, i, li, VH);
+    // Landmarke je Ebene, in den Streifen gebacken (wiederholt sich pro Periode)
+    if (li === 0) cityBakeTvTower(nc, sc, 7 * step + step / 2, L.baseY);
+    if (li === 1) cityBakeBillboard(nc, sc, 11 * step, L.baseY, VH);
+    return {
+      normal, silh, periodPx, speed: L.speed,
+      step, bw: L.bw, baseY: L.baseY, hMin: L.hMin, hVar: L.hVar, N: L.N,
+    };
+  });
+  return { h: Math.round(VH), layers };
+}
+
+// Landmarke: schlanker Fernsehturm (Fernebene).
+function cityBakeTvTower(nc: CanvasRenderingContext2D, sc: CanvasRenderingContext2D, cx: number, baseY: number) {
+  const topY = baseY - 150;
+  const SIL = '#060509';
+  // Mast
+  for (const [c, silh] of [[nc, false], [sc, true]] as [CanvasRenderingContext2D, boolean][]) {
+    c.strokeStyle = silh ? SIL : '#2f3346'; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(cx, baseY); c.lineTo(cx, topY); c.stroke();
+    // Aussichts-Donut
+    c.fillStyle = silh ? SIL : '#3a3f54';
+    c.beginPath(); c.ellipse(cx, topY + 34, 10, 5, 0, 0, Math.PI * 2); c.fill();
+    // Spitze
+    c.strokeStyle = silh ? SIL : '#2f3346'; c.lineWidth = 1.5;
+    c.beginPath(); c.moveTo(cx, topY); c.lineTo(cx, topY - 14); c.stroke();
+  }
+  nc.fillStyle = '#ff6a6a'; nc.beginPath(); nc.arc(cx, topY - 15, 1.8, 0, Math.PI * 2); nc.fill();
+}
+
+// Landmarke: große Leuchtreklame auf Dach (Mittelebene).
+function cityBakeBillboard(nc: CanvasRenderingContext2D, sc: CanvasRenderingContext2D, sx: number, baseY: number, VH: number) {
+  void VH;
+  const bx = sx + 6, by = baseY - 120, bw = 46, bh = 22;
+  const SIL = '#060509';
+  // Stützen
+  for (const [c, silh] of [[nc, false], [sc, true]] as [CanvasRenderingContext2D, boolean][]) {
+    c.strokeStyle = silh ? SIL : '#2c3040'; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(bx + 8, baseY); c.lineTo(bx + 8, by + bh); c.stroke();
+    c.beginPath(); c.moveTo(bx + bw - 8, baseY); c.lineTo(bx + bw - 8, by + bh); c.stroke();
+    c.fillStyle = silh ? SIL : '#20243a';
+    c.fillRect(bx, by, bw, bh);
+  }
+  // Leuchtfläche (nur normal): magenta/cyan Neon-Panel
+  nc.fillStyle = 'rgba(255,90,158,0.75)'; nc.fillRect(bx + 3, by + 3, bw - 6, bh - 6);
+  nc.fillStyle = 'rgba(90,208,255,0.55)'; nc.fillRect(bx + 6, by + bh * 0.5, bw - 12, 4);
+  nc.strokeStyle = 'rgba(255,255,255,0.5)'; nc.lineWidth = 1; nc.strokeRect(bx + 3, by + 3, bw - 6, bh - 6);
+}
+
+function getCitySky(r: Renderer, VH: number): NonNullable<Renderer['citySkyCache']> {
+  const h = Math.round(VH);
+  if (!r.citySkyCache || r.citySkyCache.h !== h) r.citySkyCache = buildCitySkyline(VH);
+  return r.citySkyCache!;
+}
+
+function drawCityBackground(this: Renderer, camera: Camera) {
+  const ctx = this.ctx;
+  const VW = this.viewportW, VH = this.viewportH;
+  const t = this.time;
+  const span = Math.max(1, (camera.worldWidth || camera.width) - camera.width);
+  const prog = Math.max(0, Math.min(1, camera.x / span));
+  // Blitz-Helligkeit (0..1): erhellt kurz den Himmel HINTER der Skyline, sodass
+  // die Häuser als scharfe schwarze Silhouette gegen den grellen Himmel stehen.
+  const flash = Number.isFinite(this.cityFlash) ? Math.max(0, Math.min(1, this.cityFlash)) : 0;
+
+  // Fallback-Himmel (bis das Foto geladen ist): Tageszeit-Verlauf, der mit dem
+  // Level-Fortschritt von Tag → Dämmerung → Nacht wandert.
+  {
+    const dayTop = [[128,182,226], [120,92,142], [22,18,44]];      // oben
+    const dayHor = [[204,226,246], [242,150,88], [66,50,74]];      // Horizont
+    const s0 = prog < 0.5 ? 0 : 1, sf0 = prog < 0.5 ? prog / 0.5 : (prog - 0.5) / 0.5;
+    const l3 = (a: number[], b: number[], f: number) => `rgb(${(a[0]+(b[0]-a[0])*f)|0},${(a[1]+(b[1]-a[1])*f)|0},${(a[2]+(b[2]-a[2])*f)|0})`;
+    const sky = ctx.createLinearGradient(0, 0, 0, VH);
+    sky.addColorStop(0, l3(dayTop[s0], dayTop[s0 + 1], sf0));
+    sky.addColorStop(1, l3(dayHor[s0], dayHor[s0 + 1], sf0));
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, VW, VH);
+  }
+
+  // Foto-Kulisse (ersetzt die prozedurale Neon-Skyline): an der Bodenlinie
+  // verankert, über den Level-Fortschritt Tag → Dämmerung → Nacht überblendet,
+  // mit langsamem Parallax-Schwenk (dieselbe Blit-Routine wie die Urlaubswelt).
+  const groundY = camera.worldToScreenInto(camera.x, this.currentGroundRow * TILE_SIZE, _vacScratch).y;
+  const bandH = Math.max(1, Math.min(VH, groundY + 4));
+  // Weiche, gestaffelte Überblendung: jede Tageszeit „hält" eine Weile und geht
+  // dann über ein eigenes Band per smoothstep in die nächste über (kein harter
+  // Knick bei 0.5 mehr). Tag hält bis ~0.26, Dämmerung ~0.50-0.60, Nacht ab ~0.86.
+  const sstepCity = (a: number, b: number, v: number) => { const c = Math.max(0, Math.min(1, (v - a) / (b - a))); return c * c * (3 - 2 * c); };
+  const dawnW = sstepCity(0.26, 0.50, prog);   // Tag → Dämmerung
+  const nightW = sstepCity(0.60, 0.86, prog);  // Dämmerung → Nacht
+  {
+    const F = this.cityBgFrames;
+    const prevS = ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled = true;
+    blitVacationPanorama(ctx, F[0], VW, bandH, prog, 1);                        // Tag (Basis)
+    if (dawnW > 0.001) blitVacationPanorama(ctx, F[1], VW, bandH, prog, dawnW);     // → Dämmerung
+    if (nightW > 0.001) blitVacationPanorama(ctx, F[2], VW, bandH, prog, nightW);   // → Nacht
+    ctx.imageSmoothingEnabled = prevS;
+  }
+
+  // #2 · Tag-Wolken-Parallax: eine sehr dezente zweite Wolkenebene driftet am Tag
+  // langsam über den Foto-Himmel (Lebendigkeit). Nur am Tag (kein Nacht-Anteil),
+  // weich & additiv-hell, auf 'low' aus.
+  const cityFx0 = getSettings().stadtEffekte;
+  const cloudDay = 1 - dawnW;                 // Tag-Anteil
+  const duskAmt = dawnW * (1 - nightW);       // Dämmerungs-Anteil
+  const cloudVis = Math.max(cloudDay, duskAmt);
+  if (cloudVis > 0.12 && nightW < 0.05 && cityFx0 > 0.02 && this.quality !== 'low') {
+    // Farbe: Tag weiß → Dämmerung warm (orange/rosa), damit auch die Dämmerung lebt.
+    const cg = Math.round(255 - 74 * duskAmt), cb = Math.round(255 - 116 * duskAmt);
+    ctx.save();
+    for (let i = 0; i < 5; i++) {
+      const spd = 0.05 + (i % 3) * 0.02;
+      let cx = ((t * spd + i * 260 - camera.x * 0.02) % (VW + 260)); if (cx < 0) cx += VW + 260; cx -= 130;
+      const cy = bandH * (0.06 + i * 0.05);
+      const cw = 60 + (i % 3) * 26;
+      const a = (0.06 + 0.02 * duskAmt) * cloudVis * cityFx0;   // in der Dämmerung minimal kräftiger
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, cw);
+      g.addColorStop(0, `rgba(255,${cg},${cb},${a.toFixed(3)})`);
+      g.addColorStop(1, `rgba(255,${cg},${cb},0)`);
+      ctx.fillStyle = g;
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(1, 0.32); ctx.beginPath(); ctx.arc(0, 0, cw, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // #2 · Sternen-Funkeln: sehr dezentes Glitzern im oberen Nacht-Himmel (über der
+  // Skyline) für Tiefe — additiv, twinkelnd, minimaler Parallax; nur nachts, auf 'low' aus.
+  if (nightW > 0.15 && cityFx0 > 0.02 && this.quality !== 'low') {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const top = bandH * 0.02, bot = bandH * 0.24;
+    for (let i = 0; i < 22; i++) {
+      let sx = ((i * 89.7 - camera.x * 0.015) % (VW + 20)); if (sx < 0) sx += VW + 20; sx -= 10;
+      const sy = top + (((i * 37) % 100) / 100) * (bot - top);
+      const tw = Math.pow(0.5 + 0.5 * Math.sin(t * 0.06 + i * 1.3), 3);
+      const a = 0.5 * tw * nightW * cityFx0;
+      if (a < 0.02) continue;
+      ctx.fillStyle = `rgba(255,255,240,${a.toFixed(3)})`;
+      ctx.fillRect(sx, sy, 1.3, 1.3);
+    }
+    ctx.restore();
+  }
+
+  // #2 · Mond-Glow (atmosphärisch): Der Foto-Mond liegt links im Nacht-Bild und
+  // ist nur ganz am Anfang (Tag) im Bild — zur Nacht rausgeschwenkt. Statt eines
+  // nie sichtbaren Foto-Mond-Halos setzen wir einen dezenten Mond in den oberen
+  // Nacht-Himmel (fester Bildschirm-Streifen, immer Himmel): weiche Scheibe +
+  // Halo + feine dunkle Wolken-Silhouetten, die davor ziehen. Nur nachts, 'low' aus.
+  if (nightW > 0.08 && cityFx0 > 0.02 && this.quality !== 'low') {
+    const mx = VW * 0.30 - camera.x * 0.006, my = bandH * 0.27;    // Himmelsstreifen unter der HUD, kaum Parallax
+    ctx.save();
+    // Halo (additiv)
+    ctx.globalCompositeOperation = 'lighter';
+    const R = 30 * (0.92 + 0.08 * Math.sin(t * 0.02));
+    const hg = ctx.createRadialGradient(mx, my, 0, mx, my, R);
+    hg.addColorStop(0, `rgba(226,234,255,${(0.30 * nightW * cityFx0).toFixed(3)})`);
+    hg.addColorStop(0.4, `rgba(202,216,248,${(0.12 * nightW * cityFx0).toFixed(3)})`);
+    hg.addColorStop(1, 'rgba(190,206,240,0)');
+    ctx.fillStyle = hg; ctx.fillRect(mx - R, my - R, R * 2, R * 2);
+    // weiche Mondscheibe
+    const dr = 7;
+    const dg = ctx.createRadialGradient(mx, my, 0, mx, my, dr);
+    dg.addColorStop(0, `rgba(244,248,255,${(0.85 * nightW * cityFx0).toFixed(3)})`);
+    dg.addColorStop(1, `rgba(226,236,255,0)`);
+    ctx.fillStyle = dg; ctx.beginPath(); ctx.arc(mx, my, dr, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    // feine, dunkle Wolken-Silhouetten, die langsam vor dem Mond durchziehen
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const drift = (((t * (0.09 + i * 0.03) + i * 70) % 150) + 150) % 150;   // 0..150
+      const wx = mx - 46 + drift;
+      const wy = my + (i - 1) * 4 + Math.sin(t * 0.02 + i) * 1.5;
+      const fall = Math.max(0, 1 - Math.abs(wx - mx) / 55);       // nur nahe am Mond
+      const a = 0.22 * nightW * cityFx0 * fall;
+      if (a < 0.02) continue;
+      ctx.fillStyle = `rgba(14,16,28,${a.toFixed(3)})`;
+      ctx.beginPath(); ctx.ellipse(wx, wy, 26 - i * 6, 4 - i * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // #1 · Dämmerungs-Akzente: warme Lampen-/Fenster-Glühpunkte am DÄMMERUNGS-Foto
+  // (Bild 1) — damit der Übergang durchgehend lebt (nicht erst nachts). Dezenter
+  // als nachts (Dämmerung ist heller), nur im Dämmerungs-Fenster, auf 'low' aus.
+  const duskF = dawnW * (1 - nightW);
+  if (duskF > 0.06 && cityFx0 > 0.02 && this.quality !== 'low') {
+    const img = this.cityBgFrames[1];
+    if (img && img.width) {
+      const scale = bandH / img.height;
+      const panoW = img.width * scale;
+      const panX = panoW <= VW ? (VW - panoW) / 2 : -(panoW - VW) * prog;
+      const DLIGHTS: [number, number, number][] = [   // u, v, Radius (Dämmerungs-Foto)
+        [0.883, 0.30, 20], [0.807, 0.41, 16], [0.971, 0.50, 22], [0.045, 0.59, 15], [0.848, 0.26, 15],
+      ];
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const [u, v, r] of DLIGHTS) {
+        const sx = panX + u * panoW;
+        if (sx < -r || sx > VW + r) continue;
+        const sy = v * bandH;
+        const pulse = 0.85 + 0.15 * Math.sin(t * 0.05 + u * 40);
+        const a = 0.34 * duskF * cityFx0 * pulse;
+        const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+        g.addColorStop(0, `rgba(255,216,150,${a.toFixed(3)})`);
+        g.addColorStop(0.45, `rgba(255,196,120,${(a * 0.4).toFixed(3)})`);
+        g.addColorStop(1, 'rgba(255,190,110,0)');
+        ctx.fillStyle = g; ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+      }
+      // ein paar Dämmerungs-Fenster-Flimmer
+      for (let i = 0; i < 7; i++) {
+        const u = 0.10 + pseudoRandom(i * 3.3 + 9) * 0.82;
+        const v = 0.32 + pseudoRandom(i * 4.7 + 2) * 0.26;
+        const sx = panX + u * panoW;
+        if (sx < -4 || sx > VW + 4) continue;
+        const sy = v * bandH;
+        const on = 0.5 + 0.5 * Math.sin(t * 0.033 + i * 2.1);
+        const lit = on > 0.66 ? (on - 0.66) / 0.34 : 0;
+        if (lit < 0.05) continue;
+        const a = 0.5 * lit * duskF * cityFx0;
+        ctx.fillStyle = `rgba(255,222,150,${a.toFixed(3)})`;
+        ctx.fillRect(sx, sy, 2, 3);
+      }
+      ctx.restore();
+    }
+  }
+
+  // Nacht-Akzente: wenige weiche, warm „atmende" Fenster-Glühpunkte über der
+  // Foto-Skyline — NUR nachts (nightW), dezent, mit Effekt-Regler; auf 'low' aus.
+  // Das Foto trägt die Fenster selbst; das hier gibt der Skyline nachts nur etwas
+  // lebendiges Flimmern obendrauf.
+  const cityFx = getSettings().stadtEffekte;
+  if (nightW > 0.05 && cityFx > 0.02 && this.quality !== 'low') {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const skyTop = bandH * 0.34, skyBot = bandH * 0.62;
+    for (let i = 0; i < 14; i++) {
+      let gx = ((camera.x * 0.06 + i * 137.5) % (VW + 60)); if (gx < 0) gx += VW + 60; gx -= 30;
+      const gy = skyTop + (((i * 53) % 100) / 100) * (skyBot - skyTop);
+      const breathe = Math.pow(0.5 + 0.5 * Math.sin(t * 0.04 + i * 1.7), 2);
+      const a = 0.16 * breathe * nightW * cityFx;
+      if (a < 0.01) continue;
+      const r = 5 + (i % 3) * 2;
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+      g.addColorStop(0, `rgba(255,214,150,${a.toFixed(3)})`);
+      g.addColorStop(1, 'rgba(255,214,150,0)');
+      ctx.fillStyle = g; ctx.fillRect(gx - r, gy - r, r * 2, r * 2);
+    }
+    ctx.restore();
+  }
+
+  // #1 · Signatur-Lichter: weiche Bloom-Höfe GENAU auf den hellsten Foto-Lichtern
+  // des Nacht-Panoramas (String-Lights, Laterne, Neon, Reflexe) — an das pannende
+  // Bild verankert, additiv, nur nachts (nightW), mit Effekt-Regler, auf 'low' aus.
+  if (nightW > 0.05 && cityFx > 0.02 && this.quality !== 'low') {
+    const img = this.cityBgFrames[2];
+    if (img && img.width) {
+      const scale = bandH / img.height;
+      const panoW = img.width * scale;
+      const panX = panoW <= VW ? (VW - panoW) / 2 : -(panoW - VW) * prog;
+      const LIGHTS: [number, number, number][] = [   // u, v (Bildanteil), Radius
+        [0.860, 0.30, 26], [0.955, 0.46, 30], [0.828, 0.26, 20],
+        [0.390, 0.60, 18], [0.140, 0.61, 16], [0.045, 0.58, 16],
+      ];
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const [u, v, r] of LIGHTS) {
+        const sx = panX + u * panoW;
+        if (sx < -r || sx > VW + r) continue;
+        const sy = v * bandH;
+        const pulse = 0.82 + 0.18 * Math.sin(t * 0.05 + u * 40);
+        const a = 0.5 * nightW * cityFx * pulse;
+        const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+        g.addColorStop(0, `rgba(255,226,166,${a.toFixed(3)})`);
+        g.addColorStop(0.4, `rgba(255,210,140,${(a * 0.42).toFixed(3)})`);
+        g.addColorStop(1, 'rgba(255,200,120,0)');
+        ctx.fillStyle = g; ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+      }
+      ctx.restore();
+    }
+  }
+
+  // #3 · Fenster-Flimmern: einzelne Foto-Fenster gehen nachts ganz sanft an/aus
+  // (diskretes Blinken, zusätzlich zu den Bloom-Höfen) → mehr Leben in der Skyline.
+  // Am pannenden Panorama verankert, nur nachts, mit Effekt-Regler, auf 'low' aus.
+  if (nightW > 0.05 && cityFx > 0.02 && this.quality !== 'low') {
+    const img = this.cityBgFrames[2];
+    if (img && img.width) {
+      const scale = bandH / img.height;
+      const panoW = img.width * scale;
+      const panX = panoW <= VW ? (VW - panoW) / 2 : -(panoW - VW) * prog;
+      ctx.save();
+      for (let i = 0; i < 11; i++) {
+        const u = 0.06 + pseudoRandom(i * 2.7 + 1.3) * 0.88;
+        const v = 0.30 + pseudoRandom(i * 5.1 + 0.7) * 0.30;
+        const sx = panX + u * panoW;
+        if (sx < -4 || sx > VW + 4) continue;
+        const sy = v * bandH;
+        // diskretes Blinken: langsame Rechteckwelle mit individueller Phase
+        const on = 0.5 + 0.5 * Math.sin(t * 0.035 + i * 2.3);
+        const lit = on > 0.62 ? (on - 0.62) / 0.38 : 0;                // 0..1, meist aus
+        if (lit < 0.05) continue;
+        const warm = pseudoRandom(i * 3.9) < 0.75;
+        const col = warm ? '255,222,150' : '150,205,255';
+        const a = 0.7 * lit * nightW * cityFx;
+        const g = ctx.createRadialGradient(sx + 1, sy + 1.5, 0, sx + 1, sy + 1.5, 6);
+        g.addColorStop(0, `rgba(${col},${(a * 0.6).toFixed(3)})`);
+        g.addColorStop(1, `rgba(${col},0)`);
+        ctx.fillStyle = g; ctx.fillRect(sx - 5, sy - 4, 12, 12);
+        ctx.fillStyle = `rgba(${col},${a.toFixed(3)})`;
+        ctx.fillRect(sx, sy, 2, 3);
+      }
+      ctx.restore();
+    }
+  }
+
+  // #1 · Laternen-Lichtkegel: von zwei Foto-Laternen fällt nachts ein weicher,
+  // volumetrischer Lichtkegel in den Regen bis auf den Dachboden — verankert am
+  // pannenden Panorama, additiv, mit sanftem Flackern; nur nachts, auf 'low' aus.
+  if (nightW > 0.06 && cityFx > 0.02 && this.quality !== 'low') {
+    const img = this.cityBgFrames[2];
+    if (img && img.width) {
+      const scale = bandH / img.height;
+      const panoW = img.width * scale;
+      const panX = panoW <= VW ? (VW - panoW) / 2 : -(panoW - VW) * prog;
+      const CONES: [number, number, number, number][] = [   // u, v(Lampe), topHalf, botHalf
+        [0.955, 0.44, 5, 34], [0.140, 0.60, 4, 26],
+      ];
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (const [u, v, th, bhw] of CONES) {
+        const sx = panX + u * panoW;
+        if (sx < -bhw || sx > VW + bhw) continue;
+        const sy = v * bandH;
+        const flick = 0.86 + 0.14 * Math.sin(t * 0.13 + u * 30) + 0.04 * Math.sin(t * 0.37 + u * 11);
+        const a = 0.14 * nightW * cityFx * flick;
+        const g = ctx.createLinearGradient(0, sy, 0, bandH);
+        g.addColorStop(0, `rgba(255,226,170,${a.toFixed(3)})`);
+        g.addColorStop(1, 'rgba(255,214,150,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(sx - th, sy); ctx.lineTo(sx + th, sy);
+        ctx.lineTo(sx + bhw, bandH); ctx.lineTo(sx - bhw, bandH); ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  // Unter der Bodenlinie (Lücken zwischen Boden-Segmenten): dunkle Tiefe.
+  if (bandH < VH) {
+    const gd = ctx.createLinearGradient(0, bandH, 0, VH);
+    gd.addColorStop(0, '#141220'); gd.addColorStop(1, '#08080e');
+    ctx.fillStyle = gd; ctx.fillRect(0, bandH, VW, VH - bandH);
+  }
+
+  // Blitz-Backlight ÜBER dem Foto: kurzer greller Himmel — der Blitz erhellt die
+  // ganze Kulisse; das danach gezeichnete Monster liest sich als dunkle Silhouette.
+  if (flash > 0.03) {
+    const fl = ctx.createLinearGradient(0, 0, 0, bandH);
+    fl.addColorStop(0, `rgba(228,236,255,${(flash * 0.85).toFixed(3)})`);
+    fl.addColorStop(0.7, `rgba(214,224,250,${(flash * 0.6).toFixed(3)})`);
+    fl.addColorStop(1, `rgba(198,208,234,${(flash * 0.22).toFixed(3)})`);
+    ctx.fillStyle = fl;
+    ctx.fillRect(0, 0, VW, bandH);
+  }
+
+  // Schwarzes Monster (ab Level-Mitte): riesige Silhouette, die hinter der
+  // Skyline aufragt — mit unheimlichem violettem Rand-Glühen und glühenden Augen.
+  // Je weiter man kommt, desto höher/größer steigt es auf.
+  if (prog > 0.5 && Number.isFinite(camera.x)) {
+    const rise = Math.min(1, (prog - 0.5) / 0.4);
+    const lunge = Number.isFinite(this.cityMonsterLunge) ? this.cityMonsterLunge : 0;   // kurzer „Näherkommen"-Puls beim Brüllen
+    const mx = VW * 0.5;                       // mittig, langsames Wogen
+    const mw = 150 + rise * 70 + lunge * 55, mh = 150 + rise * 90 + lunge * 65;
+    const my = VH * 0.9 - rise * VH * 0.45 + lunge * 34 + Math.sin(t * 0.03) * 4;   // steigt auf, ruckt beim Brüllen näher
+    ctx.save();
+    // Rand-Glühen (unheimliche Aura)
+    const aura = ctx.createRadialGradient(mx, my, mw * 0.2, mx, my, mw * 0.8);
+    aura.addColorStop(0, 'rgba(120,40,120,0.35)');
+    aura.addColorStop(1, 'rgba(120,40,120,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(mx, my, mw * 0.8, 0, Math.PI * 2); ctx.fill();
+    // P10 · aufsteigender Rauch/Dunst um das Monster (hinter dem Körper).
+    for (let i = 0; i < 5; i++) {
+      const sph = ((t * 0.4 + i * 37) % 120) / 120;   // 0..1 Aufstieg
+      const sxk = mx + (i - 2) * mw * 0.18 + Math.sin(t * 0.02 + i) * 8;
+      const syk = my + mh * 0.5 - sph * mh * 0.9;
+      const sa = (1 - sph) * 0.18;
+      const sr = mw * 0.1 + sph * mw * 0.14;
+      ctx.fillStyle = `rgba(58,40,70,${sa.toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(sxk, syk, sr, 0, Math.PI * 2); ctx.fill();
+    }
+    // Körper (dunkle, aber gegen den Himmel sichtbare Silhouette)
+    ctx.fillStyle = 'rgba(18,14,26,0.92)';
+    ctx.beginPath(); ctx.ellipse(mx, my + mh * 0.35, mw * 0.42, mh * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    // Kopf
+    ctx.beginPath(); ctx.ellipse(mx, my - mh * 0.02, mw * 0.3, mh * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    // zackige Hörner
+    ctx.beginPath(); ctx.moveTo(mx - mw * 0.22, my - mh * 0.18); ctx.lineTo(mx - mw * 0.34, my - mh * 0.42); ctx.lineTo(mx - mw * 0.06, my - mh * 0.2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(mx + mw * 0.22, my - mh * 0.18); ctx.lineTo(mx + mw * 0.34, my - mh * 0.42); ctx.lineTo(mx + mw * 0.06, my - mh * 0.2); ctx.fill();
+    // Krallen-Arme
+    ctx.beginPath(); ctx.moveTo(mx - mw * 0.4, my + mh * 0.15); ctx.lineTo(mx - mw * 0.62, my + mh * 0.02); ctx.lineTo(mx - mw * 0.34, my + mh * 0.34); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(mx + mw * 0.4, my + mh * 0.15); ctx.lineTo(mx + mw * 0.62, my + mh * 0.02); ctx.lineTo(mx + mw * 0.34, my + mh * 0.34); ctx.fill();
+    // glühende Augen
+    const glow = 0.7 + Math.sin(t * 0.15) * 0.3;
+    ctx.fillStyle = `rgba(255,70,55,${glow})`;
+    ctx.beginPath(); ctx.arc(mx - mw * 0.11, my - mh * 0.02, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + mw * 0.11, my - mh * 0.02, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(255,220,200,${glow})`;
+    ctx.beginPath(); ctx.arc(mx - mw * 0.11, my - mh * 0.02, 1.8, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + mw * 0.11, my - mh * 0.02, 1.8, 0, Math.PI * 2); ctx.fill();
+    // P10 · Blitz-Backlight-Kontur: bei Blitz leuchtet die Silhouetten-Kante
+    // des Monsters hell auf (Gegenlicht) — macht den Auftritt dramatischer.
+    if (flash > 0.1) {
+      ctx.strokeStyle = `rgba(220,232,255,${Math.min(0.85, flash * 0.95).toFixed(3)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(mx, my - mh * 0.02, mw * 0.3, mh * 0.3, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(mx, my + mh * 0.35, mw * 0.42, mh * 0.5, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(mx - mw * 0.22, my - mh * 0.18); ctx.lineTo(mx - mw * 0.34, my - mh * 0.42); ctx.lineTo(mx - mw * 0.06, my - mh * 0.2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(mx + mw * 0.22, my - mh * 0.18); ctx.lineTo(mx + mw * 0.34, my - mh * 0.42); ctx.lineTo(mx + mw * 0.06, my - mh * 0.2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // (Prozedurale Neon-Skyline + Fenster-Bloom/Twinkle + Smog entfernt — das
+  // Foto trägt jetzt die komplette Kulisse inkl. beleuchteter Fenster/Neon.)
+
+  // Zeppelin (taucht mit dem Monster auf): driftet langsam über die Skyline.
+  if (prog > 0.5) {
+    const zx = ((t * 0.5 + 200) % (VW + 240)) - 120;
+    const zy = VH * 0.24 + Math.sin(t * 0.02) * 6;
+    drawZeppelin(ctx, zx, zy, 1, t);
+  }
+}
+
+function drawZeppelin(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, t = 0) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(s, s);
+  // P10 · Suchscheinwerfer: schwenkender Lichtkegel aus der Gondel nach unten.
+  ctx.save();
+  ctx.translate(0, 20);
+  ctx.rotate(Math.sin(t * 0.025) * 0.5);
+  const beam = ctx.createLinearGradient(0, 0, 0, 84);
+  beam.addColorStop(0, 'rgba(255,240,180,0.30)');
+  beam.addColorStop(1, 'rgba(255,240,180,0)');
+  ctx.fillStyle = beam;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-15, 84); ctx.lineTo(15, 84); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // Ballon
+  const g = ctx.createLinearGradient(0, -14, 0, 14);
+  g.addColorStop(0, '#c94f4f'); g.addColorStop(1, '#8f2f2f');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.ellipse(0, 0, 42, 15, 0, 0, Math.PI * 2); ctx.fill();
+  // Längsstreifen
+  ctx.strokeStyle = 'rgba(255,230,200,0.6)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-38, 0); ctx.lineTo(38, 0); ctx.stroke();
+  // Heckflossen
+  ctx.fillStyle = '#7a2727';
+  ctx.beginPath(); ctx.moveTo(36, 0); ctx.lineTo(48, -9); ctx.lineTo(40, 0); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(36, 0); ctx.lineTo(48, 9); ctx.lineTo(40, 0); ctx.closePath(); ctx.fill();
+  // Gondel
+  ctx.fillStyle = '#3a3f45';
+  rrPathBg(ctx, -10, 13, 20, 7, 3); ctx.fill();
+  // Blinklicht (Gondel)
+  ctx.fillStyle = 'rgba(255,236,150,0.9)';
+  ctx.beginPath(); ctx.arc(0, 22, 1.8, 0, Math.PI * 2); ctx.fill();
+  // P10 · Positionslichter: Bug (rot) & Heck (grün) blinken abwechselnd.
+  const blink = (Math.floor(t * 0.08) % 2) === 0;
+  ctx.fillStyle = blink ? 'rgba(255,80,80,0.95)' : 'rgba(255,80,80,0.30)';
+  ctx.beginPath(); ctx.arc(-42, 0, 1.7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = !blink ? 'rgba(120,255,120,0.95)' : 'rgba(120,255,120,0.30)';
+  ctx.beginPath(); ctx.arc(47, 0, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function rrPathBg(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Welt 19 „Urlaub": echtes Panorama-Foto als Kulisse, nahtlos gekachelt mit
+// sanftem Parallax. Bis das Bild geladen ist, trägt ein Himmelverlauf.
+// Gebackener, an den Nähten weich überblendeter Urlaubs-Panorama-Streifen.
+// Einmal erzeugt (sobald alle 6 Kacheln geladen sind), danach gecacht. Jede
+// Kachel wird um `overlap` px mit der vorigen überlappt und über eine
+// horizontale Alpha-Rampe eingeblendet → aus harten Szenen-Schnitten wird ein
+// weicher Übergang. Rein statisch → kein Frame-Kostenanteil außer 1 Blit.
+let _vacPanoStrip: HTMLCanvasElement | null = null;
+let _vacPanoStripReady = false;
+let _vacBottomFill = '#c9b784';                    // Farbe zum Auffüllen unter der Bildunterkante
+let _vacTopFill = '#bfe0f2';                        // Bild-Himmelfarbe zum Auffüllen ÜBER der Bildoberkante (Hochsprung-Fix)
+function getVacationPanoStrip(frames: (HTMLImageElement | HTMLCanvasElement | null)[]): HTMLCanvasElement | null {
+  if (_vacPanoStripReady) return _vacPanoStrip;
+  const F = frames;
+  if (!F || F.length === 0) return null;
+  for (let i = 0; i < F.length; i++) { const f = F[i]; if (!f || !(f as HTMLImageElement).width) return null; }
+  const W = (F[0] as HTMLImageElement).width, H = (F[0] as HTMLImageElement).height;
+  // Voll-Höhe (KEIN Crop) — der Weg ist im Bild eingearbeitet und soll erhalten
+  // bleiben. Die N Kacheln werden mit einer schmalen, weichen Naht-Überblendung
+  // (~4 %) zu EINEM Streifen gebacken; die Bilder sind nicht pixelgenau nahtlos,
+  // aber die weiche Naht + der uniforme Vordergrund-Sandstreifen kaschieren das.
+  const ov = Math.round(W * 0.04);
+  const xs = [0];
+  for (let i = 1; i < F.length; i++) xs.push(xs[i - 1] + (W - ov));
+  const stripW = xs[F.length - 1] + W;
+  const cv = document.createElement('canvas'); cv.width = stripW; cv.height = H;
+  const ctx = cv.getContext('2d'); if (!ctx) return null;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(F[0] as CanvasImageSource, 0, 0);
+  const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H;
+  const tctx = tmp.getContext('2d');
+  for (let i = 1; i < F.length && tctx; i++) {
+    tctx.clearRect(0, 0, W, H);
+    tctx.globalCompositeOperation = 'source-over';
+    tctx.drawImage(F[i] as CanvasImageSource, 0, 0);
+    tctx.globalCompositeOperation = 'destination-in';
+    const gr = tctx.createLinearGradient(0, 0, W, 0);
+    gr.addColorStop(0, 'rgba(0,0,0,0)');
+    gr.addColorStop(ov / W, 'rgba(0,0,0,1)');
+    gr.addColorStop(1, 'rgba(0,0,0,1)');
+    tctx.fillStyle = gr; tctx.fillRect(0, 0, W, H);
+    tctx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(tmp, xs[i], 0);
+  }
+  // Auffüll-Farbe unter der Bildunterkante: die gemessene Kantenfarbe ist oft
+  // grelles Gras-Grün → das wirkt als heller Fremd-Balken unter dem Sandweg.
+  // Deshalb kräftig zu einem warmen, gedämpften Sandton mischen und abdunkeln,
+  // damit der Untergrund ruhig/dezent zurücktritt ("fast weg") statt zu leuchten.
+  try {
+    const d = ctx.getImageData(Math.floor(stripW * 0.5), H - 3, 1, 1).data;
+    const SAND = [176, 156, 116];                  // warmer, entsättigter Sandton
+    const mix = (a: number, s: number) => Math.round((a * 0.35 + s * 0.65) * 0.82);
+    _vacBottomFill = `rgb(${mix(d[0], SAND[0])},${mix(d[1], SAND[1])},${mix(d[2], SAND[2])})`;
+    // Bild-Himmelfarbe (oberste Zeile) → füllt beim Hochspringen den Bereich ÜBER
+    // der Bildoberkante, sodass keine harte Kante über dem Himmel erscheint.
+    const t = ctx.getImageData(Math.floor(stripW * 0.5), 1, 1, 1).data;
+    _vacTopFill = `rgb(${t[0]},${t[1]},${t[2]})`;
+  } catch { /* cross-origin o.ä. → Default behalten */ }
+  _vacPanoStrip = cv; _vacPanoStripReady = true;
+  return cv;
+}
+
+// Solange kein sauberer Foto-Panorama-Satz vorliegt: prozedurale Fallback-Kulisse
+// benutzen (nahtlos garantiert). Auf `true` stellen, sobald neue Bilder eingebaut
+// sind (tools/pano-import.mjs kann das mit umlegen).
+export const USE_VACATION_PHOTO = true;
+
+// Ruhige, prozedurale Sommer-Kulisse: warmer Himmel + Sonne, weich driftende Wolken,
+// gestaffelte, sanft rollende Hügel (Ferne kühl/diesig → Nähe satter). Alles rein aus
+// Sinus-Funktionen über die Welt-x → beim Scrollen NAHTLOS, keine Kacheln/Nähte.
+function drawVacationProceduralBackdrop(
+  ctx: CanvasRenderingContext2D, camera: Camera, VW: number, groundY: number, t: number, prog: number,
+) {
+  if (groundY <= 0) return;
+  // Himmel
+  const sky = ctx.createLinearGradient(0, 0, 0, groundY);
+  sky.addColorStop(0, '#7cc6ef'); sky.addColorStop(0.65, '#c3e6f5'); sky.addColorStop(1, '#eaf6ea');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, VW, groundY);
+  // Sonne + weicher Schein (additiv)
+  const sunX = VW * 0.74, sunY = groundY * 0.24, R = Math.max(60, groundY * 0.34);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const gl = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, R);
+  gl.addColorStop(0, 'rgba(255,250,224,0.85)'); gl.addColorStop(0.32, 'rgba(255,243,198,0.30)'); gl.addColorStop(1, 'rgba(255,243,198,0)');
+  ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(sunX, sunY, R, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,252,236,0.95)'; ctx.beginPath(); ctx.arc(sunX, sunY, 11, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // Wolken (weich, driftend, modulo-nahtlos)
+  ctx.save();
+  for (let i = 0; i < 5; i++) {
+    const period = VW + 200;
+    const cx = ((i * 173 + t * (0.12 + i * 0.015)) % period) - 100;
+    const cy = groundY * (0.14 + (i % 3) * 0.08);
+    const s = 0.8 + (i % 3) * 0.25;
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    for (const [ox, oy, rx, ry] of [[0, 0, 26, 12], [-18, 4, 18, 9], [18, 4, 20, 10], [0, 6, 30, 8]] as const) {
+      ctx.beginPath(); ctx.ellipse(cx + ox * s, cy + oy * s, rx * s, ry * s, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+  // Gestaffelte Hügel-/Bergketten
+  const hills = (P: number, baseFrac: number, amp: number, f1: number, f2: number, ph: number, top: string, bot: string) => {
+    const camWX = camera.x * P;
+    const y0 = groundY * baseFrac;
+    ctx.beginPath(); ctx.moveTo(0, groundY);
+    for (let sx = 0; sx <= VW; sx += 5) {
+      const wx = (camWX + sx) * 0.01;
+      const h = 0.5 + 0.35 * Math.sin(wx * f1 + ph) + 0.15 * Math.sin(wx * f2 + ph * 1.7);
+      const y = y0 - amp * h;
+      if (sx === 0) ctx.lineTo(0, y); else ctx.lineTo(sx, y);
+    }
+    ctx.lineTo(VW, groundY); ctx.closePath();
+    const g = ctx.createLinearGradient(0, y0 - amp, 0, groundY);
+    g.addColorStop(0, top); g.addColorStop(1, bot);
+    ctx.fillStyle = g; ctx.fill();
+  };
+  // sanfte Reise-Färbung: Alpen (kühl) → Tropen/Küste (satter, wärmer)
+  const warm = prog;   // 0..1
+  const lerp = (a: number, b: number) => Math.round(a + (b - a) * warm);
+  hills(0.18, 0.60, groundY * 0.30, 0.7, 1.9, 0.4, 'rgba(180,199,222,0.85)', `rgb(${lerp(150,150)},${lerp(170,178)},${lerp(196,180)})`);   // Ferne: Berge, diesig
+  hills(0.36, 0.78, groundY * 0.26, 1.1, 2.7, 2.1, `rgb(${lerp(150,150)},${lerp(196,206)},${lerp(150,120)})`, `rgb(${lerp(96,104)},${lerp(158,166)},${lerp(92,78)})`);   // Mittel: grüne Hügel
+  hills(0.62, 0.94, groundY * 0.20, 1.7, 3.9, 4.8, `rgb(${lerp(96,108)},${lerp(156,170)},${lerp(84,72)})`, `rgb(${lerp(64,74)},${lerp(122,132)},${lerp(60,52)})`);   // Nähe: dunklere Hügel
+}
+
+function drawVacationBackground(this: Renderer, camera: Camera) {
+  const ctx = this.ctx;
+  const VW = this.viewportW, VH = this.viewportH;
+  const sky = ctx.createLinearGradient(0, 0, 0, VH);
+  sky.addColorStop(0, '#7ec8f2'); sky.addColorStop(1, '#e6f4fc');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, VW, VH);
+  // Unterkante des Panoramas GENAU auf der Bodenlinie der Figur (Oberkante der
+  // Boden-Tiles) — das Bild sitzt hoch, der gemalte Foto-Boden trifft den Spielboden.
+  const groundY = camera.worldToScreenInto(camera.x, this.currentGroundRow * TILE_SIZE, _vacScratch).y;
+  const bandH = Math.max(1, Math.min(VH, groundY + 4));   // 4 px Überlappung → keine harte Naht
+
+  // Durchgehendes Panorama: die 6 Kacheln ergeben EIN zusammenhängendes Bild
+  // (Alpen → Hügel/Wasserfall → Tropen/Küste). Sie werden Kante-an-Kante
+  // nebeneinandergelegt und über den Level-Fortschritt als eine Einheit
+  // durchgescrollt (KEIN Crossfade, keine Naht) — die rechte Kante jeder Kachel
+  // schließt direkt an die linke der nächsten an.
+  const colC = (camera.x + camera.width * 0.5) / TILE_SIZE;   // Blick-Mitte (für Deko)
+  const span = Math.max(1, (camera.worldWidth || camera.width) - camera.width);
+  const prog = Math.max(0, Math.min(1, camera.x / span));      // 0 = Levelstart, 1 = Ende
+  const prev = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = true;
+  if (USE_VACATION_PHOTO) {
+    // Voll-Höhe-Kulisse mit EINGEARBEITETEM Weg: die illustrierten Szenen werden zu
+    // einem weich überblendeten Streifen gebacken und so gezeichnet, dass der
+    // Vordergrund-Sandstreifen (Weg) auf der Spiel-Bodenlinie liegt — die Figur läuft
+    // darauf, ein separater gezeichneter Weg entfällt. Vertikal ist der Weg an
+    // `groundY` verankert (folgt der Kamera beim Springen, KONSTANTER Maßstab → kein
+    // Zoom); horizontal wird über den Level-Fortschritt geschwenkt (Sand ist gleich-
+    // förmig → Parallax unkritisch fürs „Auf-dem-Weg-Stehen").
+    const strip = getVacationPanoStrip(this.vacationBgFrames);
+    if (strip) {
+      const PATH = 0.885;                             // Höhen-Anteil im Bild, wo der Weg (Sand) liegt — Figur etwas tiefer auf den Weg
+      const s = VH / (0.78 * strip.height);           // konstanter Maßstab, Bild ~1.28× Bildschirmhöhe (Oberkante bleibt beim Springen länger außer Sicht)
+      const drawW = strip.width * s, drawH = strip.height * s;
+      const topY = groundY - PATH * drawH;            // so, dass PATH-Zeile auf groundY liegt
+      const panX = drawW <= VW ? (VW - drawW) / 2 : -(drawW - VW) * prog;
+      ctx.drawImage(strip, 0, 0, strip.width, strip.height, Math.round(panX), Math.round(topY), Math.ceil(drawW), Math.ceil(drawH));
+      // ÜBER der Bildoberkante mit der Himmelfarbe auffüllen → keine harte Kante beim
+      // Hochspringen; UNTER der Unterkante mit dem gedämpften Sandton.
+      const botY = Math.floor(topY + drawH);
+      if (topY > 0) { ctx.fillStyle = _vacTopFill; ctx.fillRect(0, 0, VW, Math.ceil(topY)); }
+      if (botY < VH) { ctx.fillStyle = _vacBottomFill; ctx.fillRect(0, botY, VW, VH - botY); }
+    }
+  } else {
+    // FALLBACK: ruhige, rein prozedural gezeichnete Sommer-Kulisse. Per Definition
+    // NAHTLOS (Canvas-Mathematik, keine Foto-Kacheln) — Übergangslösung, bis die
+    // neuen, sauberen Panorama-Bilder da sind. Zurück auf Foto: USE_VACATION_PHOTO=true.
+    drawVacationProceduralBackdrop(ctx, camera, VW, groundY, this.time, prog);
+  }
+  ctx.imageSmoothingEnabled = prev;
+
+  // #2 · Mittelgrund-Deko: Strandschirme am Sandstrand (nur Tropen/Küste),
+  // leicht parallax-versetzt HINTER der Spielfläche (dieser BG-Layer liegt hinter
+  // Tiles & Spieler). Verankert an der Bodenlinie, gestaffelte Größen/Farben.
+  if (!USE_VACATION_PHOTO && this.quality !== 'low' && getSettings().stadtEffekte > 0.05) {
+    const P = 0.6;                                  // Mittelgrund-Parallaxe
+    const baseY = groundY;
+    const bt = this.time;
+    for (let i = 0; i < VACATION_UMBRELLAS.length; i++) {
+      const um = VACATION_UMBRELLAS[i];
+      const sx = VW * 0.5 + (um.u - colC) * TILE_SIZE * P;
+      if (sx < -60 || sx > VW + 60) continue;
+      // Handtuch flach auf den Sand (hinter Schirm), dann Schirm, dann Liegestuhl
+      // davor — so wirkt der Schirm-Platz „belebt".
+      if (um.d === 2) drawBeachTowel(ctx, sx + 22 * um.s, baseY, um.s, um.h);
+      drawBeachUmbrella(ctx, sx, baseY, um.s, um.h, um.b, bt);
+      if (um.d === 1) drawBeachChair(ctx, sx + 24 * um.s, baseY, um.s, um.h);
+    }
+  }
+
+  // #4 · Reise-Wegweiser an den Etappen-Übergängen: ein hölzerner Wegweiser mit
+  // Richtungs-Pfeil + Piktogramm zeigt, welche Etappe als Nächstes kommt (Alpen →
+  // Tropen → Küste). Nahe der Spielebene (P=0.9), an der Bodenlinie verankert.
+  if (this.quality !== 'low') {
+    const P = 0.9;
+    for (const sp of VACATION_SIGNPOSTS) {
+      const sx = VW * 0.5 + (sp.u - colC) * TILE_SIZE * P;
+      if (sx < -48 || sx > VW + 48) continue;
+      drawVacationSignpost(ctx, sx, groundY, sp.kind, this.time, 1.25);
+    }
+  }
+
+  // Atmosphäre über der Kulisse: Sonnen-Glitzern + ein paar Möwen (nur im Himmel-
+  // Bereich, hinter der Spielfläche). Mit dem Effekt-Regler skalierbar.
+  const vfx = getSettings().stadtEffekte;
+  if (!USE_VACATION_PHOTO && vfx > 0.02 && this.quality !== 'low') {
+    const t = this.time;
+    ctx.save();
+    // Sonnen-Glitzern: wenige helle, zuckende Funken im unteren Kulissen-Band
+    // (Wasser/Horizont) — dezent, warm.
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 10; i++) {
+      const gx = ((i * 137.5 + t * 0.15) % (VW + 40)) - 20;
+      const gy = bandH * (0.55 + ((i * 7) % 5) * 0.07);
+      const tw = Math.pow(0.5 + 0.5 * Math.sin(t * 0.12 + i * 1.7), 3);
+      if (tw < 0.1) continue;
+      ctx.fillStyle = `rgba(255,250,220,${(0.5 * tw * vfx).toFixed(3)})`;
+      ctx.fillRect(gx, gy, 2, 2);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    // Möwen: kleine „M"-Silhouetten, die langsam durch den Himmel gleiten.
+    ctx.strokeStyle = `rgba(40,44,54,${(0.6 * vfx).toFixed(3)})`;
+    ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const bx = ((t * (0.22 + i * 0.05) + i * 220) % (VW + 80)) - 40;
+      const by = bandH * (0.16 + i * 0.08) + Math.sin(t * 0.03 + i) * 4;
+      const flap = 2 + Math.sin(t * 0.18 + i * 2) * 1.6;   // Flügelschlag
+      ctx.beginPath();
+      ctx.moveTo(bx - 6, by); ctx.quadraticCurveTo(bx - 3, by - flap, bx, by);
+      ctx.quadraticCurveTo(bx + 3, by - flap, bx + 6, by);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Unter der Bodenlinie (in den Lücken zwischen Boden-Segmenten sichtbar):
+  // dunkle, erdige Tiefe statt hellem Himmel → Lücken lesen sich als Abgrund.
+  // Im Foto-Modus entfällt das (der eingearbeitete Weg/Sand füllt bis unten).
+  if (!USE_VACATION_PHOTO && bandH < VH) {
+    const gd = ctx.createLinearGradient(0, bandH, 0, VH);
+    gd.addColorStop(0, '#3a2b1e'); gd.addColorStop(1, '#20160e');
+    ctx.fillStyle = gd; ctx.fillRect(0, bandH, VW, VH - bandH);
+  }
+}
+const _vacScratch = { x: 0, y: 0 };
+
+// #2 · Strandschirm-Positionen (Welt-Spalte u, Skalierung s, Farb-Variante h,
+// Deko d: 0 keine · 1 Liegestuhl · 2 Handtuch, Vogel b: 1 = sitzende Möwe).
+// Nur in Tropen/Küste (u >= 92), keine über den Wasser-Lücken (127-139 / 151-153
+// / 179-181 / 211-213 / 241-243).
+const VACATION_UMBRELLAS: { u: number; s: number; h: number; d: number; b: number }[] = [
+  { u: 100, s: 1.00, h: 0, d: 1, b: 0 }, { u: 116, s: 0.80, h: 1, d: 0, b: 1 },
+  { u: 168, s: 0.94, h: 2, d: 2, b: 0 }, { u: 204, s: 1.06, h: 0, d: 1, b: 0 },
+  { u: 224, s: 0.82, h: 1, d: 0, b: 0 }, { u: 258, s: 0.92, h: 2, d: 2, b: 1 },
+];
+
+// #4 · Reise-Wegweiser: einer als Willkommen am Start (Alpen) + je einer kurz VOR
+// den Etappen-Übergängen (Welt-Spalte u, Ziel-/Etappen-Kennung).
+type VacSignKind = 'alpen' | 'tropen' | 'kueste';
+const VACATION_SIGNPOSTS: { u: number; kind: VacSignKind }[] = [
+  { u: 9, kind: 'alpen' },     // Willkommen: Etappe 1 · Alpen
+  { u: 85, kind: 'tropen' },   // Alpen → Tropen-Lagune
+  { u: 175, kind: 'kueste' },  // Tropen → Küste
+];
+const VAC_SIGN_LABEL: Record<VacSignKind, string> = { alpen: 'ALPEN', tropen: 'TROPEN', kueste: 'KÜSTE' };
+
+// Ein hölzerner Wegweiser: Pfahl + rechts zeigende Pfeil-Planke mit Label + Piktogramm
+// der Etappe. Verankert an der Bodenlinie baseY. `scale` skaliert die Größe, `t` gibt
+// ein sehr sanftes Wippen der Planke um den Pfahl.
+function drawVacationSignpost(ctx: CanvasRenderingContext2D, sx: number, baseY: number, kind: VacSignKind, t = 0, scale = 1) {
+  const postH = 52 * scale, armW = 40 * scale, armH = 14 * scale, armY = baseY - postH + 4;
+  ctx.save();
+  // Bodenschatten
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(sx, baseY - 1, 10 * scale, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+  // Pfahl
+  const pw = 2.4 * scale;
+  const pg = ctx.createLinearGradient(sx - pw, 0, sx + pw, 0);
+  pg.addColorStop(0, '#8a5f30'); pg.addColorStop(0.5, '#a97a44'); pg.addColorStop(1, '#7a5228');
+  ctx.fillStyle = pg; ctx.fillRect(sx - pw, baseY - postH, pw * 2, postH);
+  ctx.fillStyle = 'rgba(255,240,205,0.4)'; ctx.fillRect(sx - pw, baseY - postH, 1, postH);
+  // Pfeil-Planke (nach rechts) — leichtes Wippen um den Pfahl-Kopf
+  ctx.save();
+  ctx.translate(sx, armY + armH / 2);
+  ctx.rotate(Math.sin(t * 0.045 + sx * 0.05) * 0.03);   // ~±1.7°, sehr dezent
+  const ax = -4 * scale, ay = -armH / 2;
+  const bg = ctx.createLinearGradient(0, ay, 0, ay + armH);
+  bg.addColorStop(0, '#c98f4c'); bg.addColorStop(1, '#9a6a34');
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(ax + armW, ay);
+  ctx.lineTo(ax + armW + 8 * scale, ay + armH / 2);   // Pfeilspitze
+  ctx.lineTo(ax + armW, ay + armH);
+  ctx.lineTo(ax, ay + armH);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(60,38,16,0.5)'; ctx.lineWidth = 0.8; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,240,205,0.5)'; ctx.fillRect(ax, ay + 1, armW, 1.5);   // Oberkanten-Licht
+  // Piktogramm links auf der Planke
+  const px = ax + 6 * scale, py = 0;
+  if (kind === 'tropen') {
+    ctx.strokeStyle = '#3f7a34'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, py + 3.5); ctx.lineTo(px, py - 1.5); ctx.stroke();
+    for (const d of [-1, 0, 1]) { ctx.beginPath(); ctx.moveTo(px, py - 1.5); ctx.lineTo(px + d * 3.4, py - 4.2); ctx.stroke(); }
+  } else if (kind === 'kueste') {
+    ctx.fillStyle = '#e8e2d6'; ctx.fillRect(px - 1.6, py - 4, 3.2, 8);
+    ctx.fillStyle = '#d24b3a'; ctx.fillRect(px - 1.6, py - 1.2, 3.2, 1.8);
+    ctx.fillStyle = '#ffd84a'; ctx.beginPath(); ctx.arc(px, py - 4.4, 1.1, 0, Math.PI * 2); ctx.fill();
+  } else {
+    // Alpen: Berg mit Schneekappe
+    ctx.fillStyle = '#6f7f8c'; ctx.beginPath(); ctx.moveTo(px - 4, py + 4); ctx.lineTo(px, py - 4.5); ctx.lineTo(px + 4, py + 4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#f4f8ff'; ctx.beginPath(); ctx.moveTo(px - 1.5, py - 1.2); ctx.lineTo(px, py - 4.5); ctx.lineTo(px + 1.5, py - 1.2); ctx.closePath(); ctx.fill();
+  }
+  // Label
+  ctx.fillStyle = '#3a240f';
+  ctx.font = `bold ${Math.round(8 * scale)}px system-ui, sans-serif`;
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.fillText(VAC_SIGN_LABEL[kind], px + 6 * scale, py + 0.5);
+  ctx.restore();
+  ctx.restore();
+}
+
+// Ein Strandschirm: brauner Mast + gestreiftes Kuppel-Dach (Frontansicht mit
+// sackendem Saum) + weicher Bodenschatten. Farb-Variante h wählt das Streifen-Duo.
+// #1-Belebung: `bird` setzt eine sitzende Möwe auf den Knauf (dezentes Idle über t).
+function drawBeachUmbrella(ctx: CanvasRenderingContext2D, cx: number, baseY: number, scale: number, h: number, bird = 0, t = 0) {
+  ctx.save();
+  ctx.translate(cx, baseY); ctx.scale(scale, scale);
+  // Bodenschatten
+  ctx.fillStyle = 'rgba(30,24,12,0.16)';
+  ctx.beginPath(); ctx.ellipse(3, -1, 17, 4, 0, 0, Math.PI * 2); ctx.fill();
+  // Mast
+  ctx.strokeStyle = '#6e4c2c'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -46); ctx.stroke();
+  // Kuppel-Dach: gestreifte Segmente (Apex oben, sackender Saum vorn)
+  const topY = -46, R = 30;
+  const duo = h === 0 ? ['#ff6f5c', '#fff3ea'] : h === 1 ? ['#ffb64a', '#fff3ea'] : ['#4cb8da', '#fff3ea'];
+  const segs = 8;
+  const rimY = (a: number) => topY + 11 + 5 * Math.sin(a);   // Saum sackt in der Mitte
+  for (let s = 0; s < segs; s++) {
+    const a0 = (s / segs) * Math.PI, a1 = ((s + 1) / segs) * Math.PI;
+    const x0 = R * Math.cos(a0), x1 = R * Math.cos(a1);
+    ctx.fillStyle = duo[s % 2];
+    ctx.beginPath();
+    ctx.moveTo(0, topY);
+    ctx.lineTo(x0, rimY(a0));
+    ctx.lineTo(x1, rimY(a1));
+    ctx.closePath(); ctx.fill();
+  }
+  // Zacken-Saum (kleine Spitzen an den Segmentgrenzen)
+  ctx.fillStyle = duo[0];
+  for (let s = 1; s < segs; s++) {
+    const a = (s / segs) * Math.PI;
+    const x = R * Math.cos(a), y = rimY(a);
+    ctx.beginPath(); ctx.moveTo(x - 2.4, y); ctx.lineTo(x + 2.4, y); ctx.lineTo(x, y + 3.4); ctx.closePath(); ctx.fill();
+  }
+  // leichter Glanz auf der Kuppel
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.beginPath(); ctx.moveTo(0, topY); ctx.lineTo(-R * 0.5, topY + 8); ctx.lineTo(-R * 0.2, topY + 9); ctx.closePath(); ctx.fill();
+  // Knauf
+  ctx.fillStyle = '#6e4c2c'; ctx.beginPath(); ctx.arc(0, topY - 1, 2, 0, Math.PI * 2); ctx.fill();
+  // #1: sitzende Möwe auf dem Knauf — leichtes Kopf-Wippen, seltenes Flügel-Lüften
+  if (bird) drawPerchedSeagull(ctx, 0, topY - 3, t);
+  ctx.restore();
+}
+
+// #1 · Sitzende Möwe (Silhouette): weißer Körper, grauer Rücken/Flügel, gelber
+// Schnabel. Idle: sanftes Kopf-Wippen + seltenes Flügel-Lüften (rein über t,
+// deterministisch). Lokale Koords, aufgerufen im Schirm-Transform.
+function drawPerchedSeagull(ctx: CanvasRenderingContext2D, ox: number, oy: number, t: number) {
+  const bob = Math.sin(t * 0.05) * 0.6;                       // Kopf-Wippen
+  const lift = Math.pow(Math.max(0, Math.sin(t * 0.028)), 8); // seltenes Flügel-Lüften 0..1
+  ctx.save();
+  ctx.translate(ox, oy - 6);
+  // Körper (weiß)
+  ctx.fillStyle = '#f4f6f8';
+  ctx.beginPath(); ctx.ellipse(0, 0, 6.5, 4.2, 0, 0, Math.PI * 2); ctx.fill();
+  // Rücken/Flügel (grau) — hebt sich beim „Lüften" leicht
+  ctx.fillStyle = '#b8c2cc';
+  ctx.save(); ctx.rotate(-lift * 0.5);
+  ctx.beginPath(); ctx.moveTo(-1, -1); ctx.quadraticCurveTo(6, -2 - lift * 3, 7.5, 2); ctx.quadraticCurveTo(3, 2.4, -1, 1.6); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // Schwanz
+  ctx.fillStyle = '#dfe6ec';
+  ctx.beginPath(); ctx.moveTo(-5, -1); ctx.lineTo(-10, 0.4); ctx.lineTo(-5, 1.8); ctx.closePath(); ctx.fill();
+  // Kopf (weiß) + Schnabel (gelb) + Auge
+  ctx.fillStyle = '#f8fafc';
+  ctx.beginPath(); ctx.arc(5.4, -3.4 + bob, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#f2a83a';
+  ctx.beginPath(); ctx.moveTo(7.6, -3.6 + bob); ctx.lineTo(11.4, -2.6 + bob); ctx.lineTo(7.6, -1.8 + bob); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1c2430';
+  ctx.beginPath(); ctx.arc(6.1, -3.8 + bob, 0.7, 0, Math.PI * 2); ctx.fill();
+  // Beinchen
+  ctx.strokeStyle = '#e0a44a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-0.5, 4); ctx.lineTo(-0.5, 6.4); ctx.moveTo(2, 4); ctx.lineTo(2, 6.4); ctx.stroke();
+  ctx.restore();
+}
+
+// #1 · Liegestuhl (Frontal-3/4-Silhouette): Holzrahmen + gestreifte Bespannung,
+// leicht zurückgelehnt. Verankert am Boden (baseY), lokale Skalierung.
+function drawBeachChair(ctx: CanvasRenderingContext2D, cx: number, baseY: number, scale: number, tint: number) {
+  ctx.save();
+  ctx.translate(cx, baseY); ctx.scale(scale, scale);
+  ctx.fillStyle = 'rgba(30,24,12,0.14)';
+  ctx.beginPath(); ctx.ellipse(0, -1, 13, 3, 0, 0, Math.PI * 2); ctx.fill();
+  const fabric = tint === 0 ? '#ff8a5c' : tint === 1 ? '#4cb8da' : '#ffce54';
+  // Rahmen
+  ctx.strokeStyle = '#8a6a3e'; ctx.lineWidth = 1.8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // Sitzfläche + Rückenlehne (zurückgelehnt)
+  const seatY = -8;
+  ctx.fillStyle = fabric;
+  ctx.beginPath();
+  ctx.moveTo(-11, seatY); ctx.lineTo(6, seatY);          // Sitzfläche
+  ctx.lineTo(15, seatY - 15);                            // Rückenlehne hoch
+  ctx.lineTo(9, seatY - 16); ctx.lineTo(-11, seatY + 1);
+  ctx.closePath(); ctx.fill();
+  // Streifen auf der Bespannung
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    const f = 0.25 + i * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(-11 + (6 - (-11)) * f, seatY);
+    ctx.lineTo(9 + (15 - 9) * f, seatY - 15.5 + f);
+    ctx.stroke();
+  }
+  // Beine
+  ctx.strokeStyle = '#8a6a3e'; ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.moveTo(-9, seatY); ctx.lineTo(-6, 0); ctx.moveTo(4, seatY); ctx.lineTo(7, 0); ctx.stroke();
+  ctx.restore();
+}
+
+// #1 · Strandhandtuch: flach auf dem Sand liegendes, gestreiftes Rechteck in
+// leichter Aufsicht-Perspektive (Parallelogramm).
+function drawBeachTowel(ctx: CanvasRenderingContext2D, cx: number, baseY: number, scale: number, tint: number) {
+  ctx.save();
+  ctx.translate(cx, baseY - 1); ctx.scale(scale, scale);
+  const base = tint === 0 ? '#ff8a5c' : tint === 1 ? '#4cb8da' : '#ffce54';
+  // Handtuch-Fläche (Parallelogramm, Aufsicht)
+  ctx.fillStyle = base;
+  ctx.beginPath();
+  ctx.moveTo(-14, -3); ctx.lineTo(12, -5); ctx.lineTo(15, 2); ctx.lineTo(-11, 4); ctx.closePath(); ctx.fill();
+  // Querstreifen
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.4;
+  for (let i = 1; i <= 3; i++) {
+    const f = i / 4;
+    ctx.beginPath();
+    ctx.moveTo(-14 + (12 - (-14)) * f, -3 + (-5 - (-3)) * f);
+    ctx.lineTo(-11 + (15 - (-11)) * f, 4 + (2 - 4) * f);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// „Reise"-Sportwagen für die Abschnitts-Übergänge (schlanke schwarze Silhouette
+// mit Speed-Lines), fährt nach rechts.
+function drawTravelCar(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  ctx.save();
+  ctx.translate(cx, cy); ctx.scale(s, s);
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-28 - i * 8, -6 + i * 3); ctx.lineTo(-16 - i * 8, -6 + i * 3); ctx.stroke(); }
+  // Karosserie
+  ctx.fillStyle = '#15171c';
+  ctx.beginPath();
+  ctx.moveTo(-22, 4); ctx.lineTo(-16, -2);
+  ctx.quadraticCurveTo(-6, -9, 6, -8);
+  ctx.quadraticCurveTo(16, -8, 22, -1);
+  ctx.lineTo(24, 4); ctx.closePath(); ctx.fill();
+  // Scheiben
+  ctx.fillStyle = '#5a6c7c';
+  ctx.beginPath(); ctx.moveTo(-8, -2); ctx.quadraticCurveTo(-2, -7, 6, -6); ctx.lineTo(10, -2); ctx.closePath(); ctx.fill();
+  // Räder
+  ctx.fillStyle = '#0a0a0c';
+  ctx.beginPath(); ctx.arc(-13, 5, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(14, 5, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#9aa2ab';
+  ctx.beginPath(); ctx.arc(-13, 5, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(14, 5, 1.6, 0, Math.PI * 2); ctx.fill();
+  // Scheinwerfer
+  ctx.fillStyle = 'rgba(255,240,180,0.95)'; ctx.fillRect(22, -1, 3, 2);
+  ctx.restore();
+}
+
+// Blittet EIN Urlaubs-Panorama, an der Bodenlinie verankert. `localFrac` (0..1)
+// schwenkt die Szene über den Abschnitt (0 = linker Rand, 1 = rechter Rand);
+// `alpha` steuert die Überblendung. Kein Kacheln → keine sichtbare Naht.
+function blitVacationPanorama(
+  ctx: CanvasRenderingContext2D, img: HTMLImageElement | null,
+  VW: number, bandH: number, localFrac: number, alpha: number,
+) {
+  if (!img || !img.width || alpha <= 0.01) return;
+  const scale = bandH / img.height;
+  const panoW = img.width * scale;
+  const lf = Math.max(0, Math.min(1, localFrac));
+  const panX = panoW <= VW ? (VW - panoW) / 2 : -(panoW - VW) * lf;
+  const prevA = ctx.globalAlpha;
+  if (alpha < 1) ctx.globalAlpha = alpha;
+  ctx.drawImage(img, 0, 0, img.width, img.height, Math.round(panX), 0, Math.ceil(panoW) + 1, bandH);
+  ctx.globalAlpha = prevA;
+}
+
 export const backgroundsMethods
  = {
+  drawCityBackground,
+  drawVacationBackground,
   clearBgSpriteCaches,
   drawDragonLairForeground,
   drawBluefieldForeground,

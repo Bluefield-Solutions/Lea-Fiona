@@ -257,8 +257,78 @@ function drawCandy(this: Renderer, x: number, y: number, w: number, h: number, f
   ctx.restore();
 }
 
+// Welt 19: Münze als Jakobsmuschel (Fächer mit Rippen), dreht sich wie eine Münze.
+function drawVacationShell(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, frame: number) {
+  const sx = Math.max(0.14, Math.abs(Math.cos(frame * 0.08)));
+  ctx.save();
+  ctx.translate(x + size / 2, y + size / 2);
+  ctx.scale(sx, 1);
+  const R = size * 0.46;
+  const hy = R * 0.62;                                   // Scharnier unten
+  const a0 = Math.PI * 1.15, a1 = Math.PI * 1.85;        // oberer Fächerbogen
+  const fan = () => { ctx.beginPath(); ctx.moveTo(0, hy); ctx.arc(0, hy, R, a0, a1, false); ctx.closePath(); };
+  ctx.fillStyle = '#f4d9b0'; fan(); ctx.fill();
+  ctx.strokeStyle = 'rgba(200,150,110,0.6)'; ctx.lineWidth = 1;
+  for (let i = -3; i <= 3; i++) {
+    const a = -Math.PI / 2 + i * 0.27;
+    ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(Math.cos(a) * R * 0.92, hy + Math.sin(a) * R * 0.92); ctx.stroke();
+  }
+  ctx.fillStyle = '#e8c090'; ctx.beginPath(); ctx.arc(0, hy, R * 0.14, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#c99a68'; ctx.lineWidth = 1.2; fan(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(-R * 0.22, hy - R * 0.5, R * 0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// Welt 19: die drei Sonder-Sammelobjekte (Slot 0 Postkarte · 1 Sonnenhut · 2 Cocktail),
+// sanft schwebend mit Glanz-Halo.
+function drawVacationSpecial(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, t: number, slot: number) {
+  const gy = cy + Math.sin(t * 0.08 + slot) * 2;
+  ctx.save();
+  const glow = ctx.createRadialGradient(cx, gy, 1, cx, gy, r * 2.1);
+  glow.addColorStop(0, 'rgba(255,236,170,0.5)'); glow.addColorStop(1, 'rgba(255,236,170,0)');
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx, gy, r * 2.1, 0, Math.PI * 2); ctx.fill();
+  const round = (rx: number, ry: number, rw: number, rh: number, rr: number) => {
+    const q = Math.max(0, Math.min(rr, rw / 2, rh / 2));
+    ctx.beginPath(); ctx.moveTo(rx + q, ry);
+    ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, q); ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, q);
+    ctx.arcTo(rx, ry + rh, rx, ry, q); ctx.arcTo(rx, ry, rx + rw, ry, q); ctx.closePath();
+  };
+  if (slot === 0) {
+    // Postkarte: cremeweiße Karte mit Briefmarke + Palme + Sonne.
+    ctx.save(); ctx.translate(cx, gy); ctx.rotate(-0.08);
+    ctx.fillStyle = '#fff8ec'; round(-r * 0.95, -r * 0.68, r * 1.9, r * 1.36, 2); ctx.fill();
+    ctx.strokeStyle = '#cab488'; ctx.lineWidth = 1; round(-r * 0.95, -r * 0.68, r * 1.9, r * 1.36, 2); ctx.stroke();
+    ctx.fillStyle = '#e85a86'; ctx.fillRect(r * 0.42, -r * 0.58, r * 0.42, r * 0.42);         // Briefmarke
+    ctx.fillStyle = '#ffcf4a'; ctx.beginPath(); ctx.arc(-r * 0.5, -r * 0.28, r * 0.2, 0, Math.PI * 2); ctx.fill(); // Sonne
+    ctx.strokeStyle = '#6b4a2e'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(-r * 0.05, r * 0.5); ctx.lineTo(r * 0.05, -r * 0.1); ctx.stroke(); // Palmstamm
+    ctx.fillStyle = '#3f9a4a';
+    for (const dx of [-1, 0, 1]) { ctx.beginPath(); ctx.ellipse(r * 0.05 + dx * r * 0.28, -r * 0.18, r * 0.28, r * 0.12, dx * 0.5, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  } else if (slot === 1) {
+    // Sonnenhut: Strohhut mit Band.
+    ctx.fillStyle = '#e7c98a'; ctx.beginPath(); ctx.ellipse(cx, gy + r * 0.45, r * 1.15, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0d79a'; ctx.beginPath(); ctx.ellipse(cx, gy + r * 0.25, r * 0.66, r * 0.62, 0, Math.PI, 0, true); ctx.fill();
+    ctx.fillStyle = '#e06a86'; ctx.beginPath(); ctx.ellipse(cx, gy + r * 0.3, r * 0.66, r * 0.16, 0, 0, Math.PI * 2); ctx.fill(); // Band
+    ctx.strokeStyle = 'rgba(150,110,50,0.5)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(cx, gy + r * 0.45, r * 1.15, r * 0.42, 0, 0, Math.PI * 2); ctx.stroke();
+  } else {
+    // Cocktail: Glas mit Getränk, Strohhalm & Kirsche.
+    ctx.strokeStyle = '#dfeaf0'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(cx - r * 0.7, gy - r * 0.55); ctx.lineTo(cx + r * 0.7, gy - r * 0.55); ctx.lineTo(cx, gy + r * 0.35); ctx.closePath();
+    ctx.fillStyle = 'rgba(220,240,250,0.35)'; ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff9a3c'; ctx.beginPath(); ctx.moveTo(cx - r * 0.56, gy - r * 0.42); ctx.lineTo(cx + r * 0.56, gy - r * 0.42); ctx.lineTo(cx, gy + r * 0.18); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#dfeaf0'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(cx, gy + r * 0.35); ctx.lineTo(cx, gy + r * 0.85); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, gy + r * 0.9, r * 0.45, r * 0.14, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#e85a86'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(cx + r * 0.2, gy - r * 0.55); ctx.lineTo(cx + r * 0.5, gy - r * 1.0); ctx.stroke(); // Strohhalm
+    ctx.fillStyle = '#e23b4a'; ctx.beginPath(); ctx.arc(cx - r * 0.3, gy - r * 0.5, r * 0.16, 0, Math.PI * 2); ctx.fill(); // Kirsche
+  }
+  ctx.restore();
+}
+
 function drawCoin(this: Renderer, x: number, y: number, size: number, frame: number) {
   const ctx = this.ctx;
+  // Welt 19: Münzen sind Muscheln (drehen sich wie eine Münze).
+  if (this.currentTheme === 'vacation') { drawVacationShell(ctx, x, y, size, frame); return; }
   const scaleX = Math.cos(frame * 0.08);
   const absScale = Math.abs(scaleX);
 
@@ -1141,6 +1211,9 @@ function drawSpecialCoin(this: Renderer, x: number, y: number, w: number, h: num
   const cx = x + w / 2;
   const cy = y + h / 2;
   const r = Math.min(w, h) / 2 - 1;
+
+  // Welt 19: drei Urlaubs-Andenken — Postkarte / Sonnenhut / Cocktail.
+  if (this.currentTheme === 'vacation') { drawVacationSpecial(ctx, cx, cy, r, t, slot); return; }
 
   if (this.currentTheme === 'plush') {
     // Lieblings-Kuscheltier zum Sammeln: goldener Teddy / rosa Hase / Plüsch-Stern

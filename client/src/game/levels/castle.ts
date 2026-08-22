@@ -178,7 +178,7 @@ export function createSchlossLevel(): LevelData {
   set(210, ground - 1, TileType.DECORATION_PROP);
 
   return {
-    name: 'World 8: Geister Schloss',
+    name: 'Geister Schloss',
     theme: 'castle',
     width,
     height,

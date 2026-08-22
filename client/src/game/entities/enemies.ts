@@ -17,6 +17,10 @@ import {
   SNAKE_BOSS_SPEED, SNAKE_BOSS_LUNGE_SPEED, SNAKE_BOSS_LUNGE_INTERVAL,
   SNAKE_BOSS_WINDUP, SNAKE_BOSS_LUNGE_FRAMES, SNAKE_BOSS_RECOVER, SNAKE_BOSS_HP,
   SNAKE_BOSS_HIT_STUN, SNAKE_BOSS_W, SNAKE_BOSS_H,
+  RAT_SPEED, TRASHCAN_SPEED,
+  GEYSER_INTERVAL, GEYSER_WARN, GEYSER_ACTIVE, GEYSER_HEIGHT,
+  RAT_BOSS_SPEED, RAT_BOSS_JUMP_FORCE, RAT_BOSS_JUMP_INTERVAL,
+  RAT_BOSS_HP, RAT_BOSS_HIT_STUN, RAT_BOSS_W, RAT_BOSS_H, RAT_BOSS_INTRO,
   PIRANHA_HIDE_TIME, PIRANHA_SHOW_TIME, SNAKE_SPEED, SPIDER_DROP_SPEED,
   SPIDER_SPEED, SPIKE_BALL_ROLL_RATE, TILE_SIZE,
   BANZAI_BILL_SPEED, BANZAI_BILL_SIZE, BANZAI_BILL_AGGRO_RANGE,
@@ -363,9 +367,18 @@ export class Mouse extends Entity {
   sniffTimer = 0;
   // Mauseloch-Interaktion (Logik/Positionen in entity_step).
   readonly homeX: number;      // Weltmitte des eigenen Lochs (= Spawn)
-  hiding = false;              // steckt gerade im Loch (unsichtbar/unverwundbar)
-  hideTimer = 0;
+  // Burrow-Sequenz: 0 draußen · 1 einsinken · 2 versteckt · 3 auftauchen.
+  burrow: 0 | 1 | 2 | 3 = 0;
+  burrowTimer = 0;
   hideCd = 0;                  // Schonfrist nach dem Auftauchen
+  // Fußspuren (Weltkoordinaten, verblassen). trackCd drosselt das Setzen.
+  tracks: { x: number; y: number; life: number }[] = [];
+  trackCd = 0;
+  // Käse-Köder (Logik in entity_step): neugierig zum Käse laufen & knabbern.
+  lured = false;
+  nibbling = false;
+  nibbleTimer = 0;
+  lureCd = 0;
 
   constructor(x: number, y: number) {
     super(x, y, 30, 28, EntityType.MOUSE);
@@ -382,11 +395,18 @@ export class Mouse extends Entity {
       return;
     }
     if (this.fleeing) {
-      // Panik-Sprint weg von der Figur — kein Schnuppern.
+      // Panik-Sprint zum Bau — kein Schnuppern/Knabbern.
       this.direction = this.fleeDir;
       this.velX = this.direction === Direction.LEFT ? -MOUSE_FLEE_SPEED : MOUSE_FLEE_SPEED;
       this.sniffing = false;
       this.sniffTimer = 0;
+    } else if (this.nibbling) {
+      this.velX = 0;     // steht am Käse und knabbert (Richtung von entity_step gesetzt)
+      this.sniffing = false;
+    } else if (this.lured) {
+      // Neugierig Richtung Käse laufen (Richtung von entity_step gesetzt).
+      this.velX = this.direction === Direction.LEFT ? -MOUSE_SPEED : MOUSE_SPEED;
+      this.sniffing = false;
     } else {
       this.sniffTimer++;
       if (this.sniffing) {
@@ -399,8 +419,8 @@ export class Mouse extends Entity {
     }
     this.velY += GRAVITY;
     if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
-    // Kurze Hüpfer nur beim normalen Umherlaufen (nicht beim Schnuppern).
-    if (this.onGround && !this.sniffing) {
+    // Kurze Hüpfer nur beim normalen Umherlaufen (nicht beim Schnuppern/Knabbern).
+    if (this.onGround && !this.sniffing && !this.nibbling) {
       this.jumpTimer++;
       if (this.jumpTimer >= MOUSE_JUMP_INTERVAL) {
         this.velY = MOUSE_JUMP_FORCE;
@@ -506,6 +526,152 @@ export class SnakeBoss extends Entity {
       this.deadTimer = 0;
       return true;
     }
+    return false;
+  }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/** Kanalratte (Stadt) — flinker Boden-Gegner, ein Kopfsprung besiegt sie. */
+export class Rat extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  edgeBehavior = true;
+
+  constructor(x: number, y: number) {
+    super(x, y, 32, 22, EntityType.RAT);
+    this.direction = Direction.LEFT;
+    this.velX = -RAT_SPEED;
+  }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) { this.deadTimer++; if (this.deadTimer > 28) this.alive = false; return; }
+    this.velX = this.direction === Direction.LEFT ? -RAT_SPEED : RAT_SPEED;
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+  }
+
+  stomp() { this.isDead = true; this.hitFlash = 7; this.velX = 0; this.deadTimer = 0; }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/** Wander-Mülltonne (Stadt) — schwerfälliger Boden-Gegner, ein Kopfsprung besiegt sie. */
+export class TrashCan extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  edgeBehavior = true;
+
+  constructor(x: number, y: number) {
+    super(x, y, 30, 32, EntityType.TRASH_CAN);
+    this.direction = Direction.LEFT;
+    this.velX = -TRASHCAN_SPEED;
+  }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) { this.deadTimer++; if (this.deadTimer > 30) this.alive = false; return; }
+    this.velX = this.direction === Direction.LEFT ? -TRASHCAN_SPEED : TRASHCAN_SPEED;
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+  }
+
+  stomp() { this.isDead = true; this.hitFlash = 7; this.velX = 0; this.deadTimer = 0; }
+
+  reverseDirection() {
+    this.direction = this.direction === Direction.LEFT ? Direction.RIGHT : Direction.LEFT;
+    this.velX = -this.velX;
+  }
+}
+
+
+/** Sprengbrunnen/Geysir (Stadt) — steht fest, bricht periodisch nach oben aus.
+ *  Zustände: 0 Ruhe · 1 Vorwarnung (Telegraph) · 2 aktiv (gefährlich). Der
+ *  gefährliche Strahl reicht `blastH` Pixel über die Basis; man springt drüber. */
+export class Geyser extends Entity {
+  phase: 0 | 1 | 2 = 0;
+  timer = GEYSER_INTERVAL;
+  readonly blastH = GEYSER_HEIGHT * TILE_SIZE;
+
+  constructor(x: number, y: number) {
+    super(x, y, 24, 12, EntityType.GEYSER);
+  }
+
+  update(dt: number) {
+    this.timer--;
+    if (this.timer <= 0) {
+      if (this.phase === 0) { this.phase = 1; this.timer = GEYSER_WARN; }
+      else if (this.phase === 1) { this.phase = 2; this.timer = GEYSER_ACTIVE; }
+      else { this.phase = 0; this.timer = GEYSER_INTERVAL; }
+    }
+  }
+
+  get active(): boolean { return this.phase === 2; }
+}
+
+
+/** Riesenratten-Boss (Stadt-Finale) — großer Ratten-Boss, trabt & springt,
+ *  drei Kopfsprünge besiegen ihn. OPTIONAL: kein bossGate → man kann ohne Sieg
+ *  ins Ziel. Analog DeerBoss (kinderfair, kein Projektil). */
+export class RatBoss extends Entity {
+  isDead = false;
+  deadTimer = 0;
+  edgeBehavior = true;
+  hp = RAT_BOSS_HP;
+  maxHp = RAT_BOSS_HP;
+  hitStun = 0;
+  jumpTimer = 0;
+  // Erster-Sichtkontakt-Auftritt (in entity_step ausgelöst): kurz aufbäumen.
+  sighted = false;
+  introTimer = 0;
+
+  constructor(x: number, y: number) {
+    super(x, y, RAT_BOSS_W, RAT_BOSS_H, EntityType.RAT_BOSS);
+    this.direction = Direction.LEFT;
+    this.velX = -RAT_BOSS_SPEED;
+  }
+
+  get rearing(): boolean { return this.introTimer > 0; }
+
+  update(dt: number) {
+    super.update(dt);
+    if (this.isDead) { this.deadTimer++; if (this.deadTimer > 46) this.alive = false; return; }
+    if (this.hitStun > 0) this.hitStun--;
+    // Auftritt: bäumt sich auf und wartet (kein Angriff), dann geht's los.
+    if (this.introTimer > 0) {
+      this.introTimer--;
+      this.velX = 0;
+      this.velY += GRAVITY;
+      if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+      return;
+    }
+    const phase = this.maxHp - this.hp;                 // 0..2
+    const spd = RAT_BOSS_SPEED * (1 + phase * 0.3);
+    this.velX = this.direction === Direction.LEFT ? -spd : spd;
+    this.velY += GRAVITY;
+    if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+    if (this.onGround) {
+      this.jumpTimer++;
+      const interval = Math.max(70, RAT_BOSS_JUMP_INTERVAL - phase * 22);
+      if (this.jumpTimer >= interval) { this.velY = RAT_BOSS_JUMP_FORCE; this.jumpTimer = 0; this.onGround = false; }
+    }
+  }
+
+  stomp(): boolean {
+    if (this.hitStun > 0) return false;
+    this.hp--;
+    this.hitFlash = 10;
+    this.hitStun = RAT_BOSS_HIT_STUN;
+    if (this.hp <= 0) { this.isDead = true; this.velX = 0; this.deadTimer = 0; return true; }
     return false;
   }
 

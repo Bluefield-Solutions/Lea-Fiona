@@ -20,6 +20,7 @@
   export {
     Goomba, Koopa, Boss, Bat, PiranhaPlant, Spider, Crab, Jellyfish, Kangaroo,
     Deer, BrownDeer, DeerBoss, Sheep, Turtle, Mouse, SnakeBoss,
+    Rat, TrashCan, Geyser, RatBoss,
     Snake, Ghost, Fish, BombOmb, BombExplosion, SpikeBall, Hornet,
     BanzaiBill, CharginChuck, BigBoo,
     Ape, Seagull, LavaSlime, Yeti, Knight, MiniUFO,

@@ -142,7 +142,7 @@ export function createTrampolineLevel(): LevelData {
   }
 
   return {
-    name: 'World 12: Superfly',
+    name: 'Superfly',
     theme: 'trampoline',
     width,
     height,

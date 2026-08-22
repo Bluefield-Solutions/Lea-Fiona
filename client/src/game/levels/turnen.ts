@@ -181,7 +181,7 @@ export function createTurnenLevel(): LevelData {
   }
 
   return {
-    name: 'World 12: Turnen',
+    name: 'Turnen',
     theme: 'gym',
     width,
     height,

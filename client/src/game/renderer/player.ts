@@ -217,6 +217,11 @@ function drawPlayer(
       pandaFrames: this.pandaFrames,
       elefantFrames: this.elefantFrames,
     });
+  } else if (this.currentTheme === 'vacation' && drawStephanCharacter(ctx, width, height, this.stephanFrames, {
+    frame, isJumping, isRunning, velY, velX, isDucking, time: this.time, landingFrame,
+  })) {
+    // Welt 19 „Urlaub": man spielt immer Stephan (echter Sprite, überschreibt
+    // die Lea/Fiona-Auswahl — wie das erzwungene Kuscheltier in der Plüschwelt).
   } else {
     this.drawPlayerSprite(
       ctx, 0, 0, width, height, frame, isJumping, isRunning, velY, isDucking, velX,
@@ -1039,6 +1044,52 @@ function pickMonkeyFrame(o: PlushOpts, walkCycle: number[] = [1, 2, 3, 4]): numb
     return walkCycle[Math.floor(o.time * spd) % walkCycle.length];
   }
   return 0;
+}
+
+// ── Welt 19 „Urlaub": Stephan-Spielfigur (15 echte Frames) ──────────────────
+interface StephanOpts {
+  frame: number; isJumping: boolean; isRunning: boolean;
+  velY: number; velX: number; isDucking: boolean; time: number; landingFrame?: number;
+}
+// Zustand → Stephan-Frame-Index.
+// 0 idle · 1 crouch-takeoff · 2 jump-rising · 3 jump-apex · 4 landing-crouch ·
+// 5..13 Laufzyklus · 14 idle-end.
+function pickStephanFrame(o: StephanOpts): number {
+  if (o.isDucking) return 4;
+  if (o.isJumping) {
+    if (o.velY < -1.5) return 2;   // Aufstieg
+    if (o.velY > 3) return 12;     // schneller Fall (Flight-Pose)
+    return 3;                      // Scheitel
+  }
+  if (Math.abs(o.velX) > 0.5) {
+    const cyc = [5, 6, 7, 8, 9, 10, 11, 12, 13];   // 9-Frame-Laufzyklus
+    const spd = o.isRunning ? 0.26 : 0.17;
+    return cyc[Math.floor(o.time * spd) % cyc.length];
+  }
+  // Idle: langsames „Atmen" zwischen Anfang- und End-Idle.
+  return (Math.floor(o.time / 44) % 2 === 0) ? 0 : 14;
+}
+// Blittet den gewählten Stephan-Frame, an den Füßen verankert (H = Boden),
+// mit derselben Squash/Stretch-„Gummi"-Idee wie die Plüsch-Figur.
+function drawStephanCharacter(
+  ctx: CanvasRenderingContext2D, W: number, H: number,
+  frames: (HTMLImageElement | null)[], o: StephanOpts,
+): boolean {
+  const img = frames[pickStephanFrame(o)] || frames[0];
+  if (!img || !img.width) return false;
+  const SPRITE_SCALE = 1.16;
+  const drawH = H * SPRITE_SCALE;
+  const drawW = drawH * (img.width / img.height);
+  const { sx, sy } = plushSquash(o as unknown as PlushOpts);
+  if (sx !== 1 || sy !== 1) {
+    ctx.save();
+    ctx.translate(W / 2, H); ctx.scale(sx, sy); ctx.translate(-W / 2, -H);
+    ctx.drawImage(img, W / 2 - drawW / 2, H - drawH, drawW, drawH);
+    ctx.restore();
+  } else {
+    ctx.drawImage(img, W / 2 - drawW / 2, H - drawH, drawW, drawH);
+  }
+  return true;
 }
 
 const PLUSH_PAL: Record<PlushForm, { body: string; belly: string; dark: string; inner: string }> = {

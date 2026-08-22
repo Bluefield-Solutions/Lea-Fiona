@@ -51,7 +51,13 @@ type Sfx =
   | 'snakeLunge'
   | 'bossHit'
   // Kuschel-Maus
-  | 'mousePiep';
+  | 'mousePiep'
+  // Stadt: schwarzes Monster & Ratten-Boss & Gewitter
+  | 'monsterRoar'
+  | 'ratScreech'
+  | 'thunder'
+  // Mathe-Quiz
+  | 'quizCorrect';
 
 interface ThemeSong {
   bpm: number;
@@ -63,6 +69,23 @@ interface ThemeSong {
 }
 
 const THEMES: Record<ThemeName, ThemeSong> = {
+  // Welt 19 „Urlaub": sonnige, entspannte Dur-Melodie (Ferien-Stimmung).
+  vacation: {
+    bpm: 118,
+    bassNotes: [131, 131, 165, 131, 147, 131, 196, 147],
+    leadNotes: [523, 587, 659, 784, 659, 587, 523, 494],
+    chord: [262, 330, 392],
+    waveLead: 'triangle',
+    waveBass: 'sine',
+  },
+  city: {
+    bpm: 128,
+    bassNotes: [98, 98, 131, 98, 116, 98, 131, 87],
+    leadNotes: [392, 440, 466, 523, 466, 440, 392, 349],
+    chord: [196, 233, 294],
+    waveLead: 'square',
+    waveBass: 'sawtooth',
+  },
   jungle: {
     bpm: 130,
     bassNotes: [110, 110, 165, 110, 138, 110, 165, 138],
@@ -466,6 +489,15 @@ class AudioEngine {
         this.tone(262, 0.45, 'triangle', 0.12, c, 0.01, 0.25);   // Bass-Fundament
         break;
       }
+      case 'quizCorrect': {
+        // Sanfter, freundlicher „Richtig"-Klang: zwei weiche Sinus-Töne, leicht
+        // ansteigend, mit dezenter Glanz-Oktave — bewusst runder/weicher als der
+        // Coin-Ton. Über pitchMul steigt er mit jeder gelösten Aufgabe etwas an.
+        this.tone(660, 0.10, 'sine', 0.15, now, 0.005, 0.06);
+        this.tone(880, 0.17, 'sine', 0.16, now + 0.075, 0.005, 0.12);
+        this.tone(1320, 0.14, 'sine', 0.05, now + 0.075, 0.004, 0.10);
+        break;
+      }
       case 'select': this.tone(880, 0.05, 'square', 0.16, now); break;
       case 'pause': this.tone(440, 0.06, 'triangle', 0.18, now); this.tone(660, 0.06, 'triangle', 0.18, now + 0.06); break;
       // Skid: very short tire-screech-style noise burst.
@@ -597,6 +629,26 @@ class AudioEngine {
       case 'snakeLunge':
         this.noise(0.16, now, 0.11);
         this.descend(920, 220, 0.16, 'sine', 0.10, now);
+        break;
+      // Donnergrollen: langes, tiefes Rauschen mit Sub-Bass, klingt aus.
+      case 'thunder':
+        this.noise(0.7, now, 0.14);
+        this.noise(0.5, now + 0.15, 0.09);
+        this.tone(55, 0.7, 'sine', 0.14, now + 0.02, 0.02, 0.5);
+        this.descend(90, 40, 0.6, 'triangle', 0.1, now + 0.05);
+        break;
+      // Ratten-Boss bäumt sich auf → schrilles Nager-Quieken (auf/ab).
+      case 'ratScreech':
+        this.ascend(900, 1600, 0.12, 'square', 0.09, now);
+        this.descend(1600, 700, 0.14, 'square', 0.08, now + 0.12);
+        this.noise(0.1, now, 0.05);
+        break;
+      // Schwarzes Monster taucht auf → tiefes, grollendes Brüllen.
+      case 'monsterRoar':
+        this.descend(180, 58, 0.5, 'sawtooth', 0.14, now);
+        this.tone(70, 0.42, 'sine', 0.16, now, 0.01, 0.3);
+        this.noise(0.42, now, 0.11);
+        this.bassPunch(now, 0.32);
         break;
       // Maus erschrickt/flieht oder taucht auf → kurzer, hoher Quieker „piep-piep".
       case 'mousePiep':

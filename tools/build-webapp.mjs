@@ -13,7 +13,8 @@
  * Splash-Screens aus brand-splash/ (tools/gen-splash.mjs, lokal committet).
  * Voraussetzung: vorher `npm run build:standalone` (dist-standalone/index.html).
  */
-import { writeFileSync, mkdirSync, readFileSync, rmSync, copyFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, rmSync, copyFileSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { DEVICES, ORIENTATIONS, splashFileName, splashMedia } from './webapp-devices.mjs';
 
 const OUT = 'webapp';
@@ -141,10 +142,31 @@ ${splashLinks.join('\n')}
     </style>
     <script>
       // Service Worker registrieren (nur in sicherem Kontext: https bzw. localhost;
-      // als einzelne file://-Datei bewusst NICHT).
+      // als einzelne file://-Datei bewusst NICHT). Mit Auto-Update: sobald ein
+      // neuer Service Worker die Kontrolle übernimmt (neuer Deploy), lädt die
+      // Seite EINMAL automatisch neu — so hängt niemand auf einer alten Version
+      // fest. Der Guard (hadController + refreshing) verhindert Reload-Schleifen
+      // und einen unnötigen Reload bei der allerersten Installation.
       if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+        var __lfHadController = !!navigator.serviceWorker.controller;
+        var __lfRefreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (__lfRefreshing) return;
+          __lfRefreshing = true;
+          if (__lfHadController) window.location.reload();
+        });
         window.addEventListener('load', function () {
-          navigator.serviceWorker.register('service-worker.js').catch(function () {});
+          navigator.serviceWorker.register('service-worker.js').then(function (reg) {
+            try { reg.update(); } catch (e) {}
+            // Neue Version im Hintergrund gefunden → installieren lassen; der SW
+            // ruft skipWaiting()/clients.claim() → controllerchange → Reload.
+            reg.addEventListener('updatefound', function () {
+              var nw = reg.installing;
+              if (nw) nw.addEventListener('statechange', function () {});
+            });
+            // Regelmäßig auf Updates prüfen, falls die App lange offen bleibt.
+            setInterval(function () { try { reg.update(); } catch (e) {} }, 60 * 60 * 1000);
+          }).catch(function () {});
         });
       }
       // Home-Bildschirm-Hinweis: nur auf iPhone-Safari und wenn NICHT schon als
@@ -173,5 +195,27 @@ console.log('  ✓ index.html (Icons/Splash/Manifest/SW/Hinweis injiziert)');
 
 // ── README (Hosting-Anleitung) -----------------------------------------
 writeFileSync(`${OUT}/README.md`, README_MD);
+
+// ── version.json (Live-Stand byte-genau prüfbar via /version.json) ------
+// WICHTIG: bewusst HIER erzeugt (normales Build-Skript), NICHT im deploy.yml.
+// Grund: der GitHub-Standard-Token darf `.github/workflows/*` nicht zurück auf
+// main pushen (fehlende workflows-Berechtigung) → eine im YAML ergänzte version.json
+// erreicht main nie. build-webapp.mjs deployt dagegen ganz normal übers Bundle und
+// wird vom (auch alten) Workflow aufgerufen → version.json entsteht ab dem nächsten
+// Deploy zuverlässig. Hashes = git-Blob-SHA1 je Datei unter client/src/game,
+// selbst berechnet (blob-Header + Inhalt), unabhängig vom git-Zustand im Runner.
+const gitBlob = (buf) => createHash('sha1').update(`blob ${buf.length}\0`).update(buf).digest('hex');
+const GAME_DIR = 'client/src/game';
+const vfiles = {};
+(function walk(d) {
+  for (const e of readdirSync(d)) {
+    const p = `${d}/${e}`;
+    if (statSync(p).isDirectory()) walk(p);
+    else vfiles[p.slice(GAME_DIR.length + 1)] = gitBlob(readFileSync(p));
+  }
+})(GAME_DIR);
+const sortedFiles = Object.fromEntries(Object.keys(vfiles).sort().map(k => [k, vfiles[k]]));
+writeFileSync(`${OUT}/version.json`, JSON.stringify({ buildId: BUILD_ID, fileCount: Object.keys(sortedFiles).length, files: sortedFiles }));
+console.log(`  ✓ version.json (${Object.keys(sortedFiles).length} Dateien, Blob-Hashes)`);
 
 console.log('FERTIG · webapp/ · Build-ID', BUILD_ID);

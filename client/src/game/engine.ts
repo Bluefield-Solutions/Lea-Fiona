@@ -103,6 +103,10 @@ export class GameEngine {
   touchJumpTriggered = false;
   currentLevelIndex = 0;
   unlockedLevels = 1;
+  // Stadt: einmaliger Monster-Brüll-Trigger pro Level (Reset in startLevel).
+  cityMonsterRoared = false;
+  cityLightningTimer = 220;   // Frames bis zum nächsten Blitz
+  cityThunderDelay = 0;       // Frames bis der Donner nach dem Blitz grollt
   // Persisted across level transitions so score/lives/coins survive.
   // Public because engine_internal/collisions.ts updates these on
   // flag-touch (level-complete carries the player's running stats).
@@ -853,6 +857,40 @@ export class GameEngine {
             this.lastCricketLevel = crickets;
           }
         }
+        // Stadt: schwarzes Monster brüllt beim Auftauchen (Level-Mitte) einmalig
+        // auf — Roar + Screen-Shake + kurzer „Näherkommen"-Puls.
+        if (this.level.theme === 'city') {
+          const span = Math.max(1, (this.camera.worldWidth || this.camera.width) - this.camera.width);
+          const p = Math.max(0, Math.min(1, this.camera.x / span));
+          const gewitter = getSettings().stadtGewitter;   // Blitze/Donner abschaltbar
+          if (p > 0.5 && !this.cityMonsterRoared) {
+            this.cityMonsterRoared = true;
+            audio.playSfx('monsterRoar');
+            this.shakeCamera(8, 30);
+            this.renderer.cityMonsterLunge = 1;
+            if (gewitter) this.renderer.cityFlash = 1;     // Blitz zum Monster-Auftritt
+          }
+          // Gewitter: periodische Blitze, im Sturm-Peak (Level-Mitte) häufiger.
+          // Zum FINALE hin (Nacht/Boss) zusätzlich verdichtet + etwas greller.
+          if (gewitter) {
+            const rainPeak = Math.exp(-Math.pow((p - 0.6) / 0.22, 2));   // 0..1, Peak ~0.6
+            const nbRaw = Math.max(0, Math.min(1, (p - 0.55) / 0.35));    // Nacht/Finale-Rampe
+            const nb = nbRaw * nbRaw * (3 - 2 * nbRaw);                   // smoothstep 0..1
+            this.cityLightningTimer--;
+            if (this.cityLightningTimer <= 0) {
+              this.renderer.cityFlash = Math.max(this.renderer.cityFlash, 0.85 + nb * 0.12);
+              this.cityThunderDelay = 10 + Math.floor(Math.random() * 10);
+              // Intervall kürzer im Sturm-Peak UND zum Finale (Nacht) → mehr Blitze;
+              // hart nach unten begrenzt, damit kein Dauer-Stroboskop entsteht.
+              this.cityLightningTimer = Math.max(80, Math.round(260 + Math.random() * 300 - rainPeak * 190 - nb * 150));
+            }
+            if (this.cityThunderDelay > 0) { this.cityThunderDelay--; if (this.cityThunderDelay === 0) audio.playSfx('thunder'); }
+          }
+        }
+        if (this.renderer.cityMonsterLunge > 0.01) this.renderer.cityMonsterLunge *= 0.93;
+        else this.renderer.cityMonsterLunge = 0;
+        if (this.renderer.cityFlash > 0.02) this.renderer.cityFlash *= 0.8;
+        else this.renderer.cityFlash = 0;
         break;
       case GameState.PAUSED:
         this.renderer.time++;
@@ -889,7 +927,11 @@ export class GameEngine {
           this.emit('hud');
           if (this.timeBonusRemaining === 0) this.finalizeLevelComplete();
         }
-        if (this.input.enter || this.touchJumpTriggered) {
+        // Im Mathe-Modus NICHT per Enter/Tap weiterspringen — das Rechen-Quiz ist
+        // das Tor. Sonst würde das „Committen"-Enter der Aufgaben das Level
+        // überspringen. Fortschritt kommt hier ausschließlich über das Quiz
+        // (continueToNextLevel nach bestandenem Quiz).
+        if ((this.input.enter || this.touchJumpTriggered) && !getSettings().mathMode) {
           this.touchJumpTriggered = false;
           // Enter überspringt eine noch laufende Bonus-Animation: drain
           // den Rest in einem Rutsch und springe sofort weiter, damit
@@ -988,6 +1030,12 @@ export class GameEngine {
     this.cancelFanfare();
     this.hitStopFrames = 0;
     this.bossGateOpened = false;
+    this.cityMonsterRoared = false;
+    this.renderer.cityMonsterLunge = 0;
+    this.renderer.cityFlash = 0;
+    this.renderer.cityUmbrella = 0;
+    this.cityLightningTimer = 220;
+    this.cityThunderDelay = 0;
     // Time-Attack-Geist: Aufzeichnung zurücksetzen, gespeicherten Geist laden.
     this.levelFrame = 0;
     this.ghostRec = [];

@@ -170,7 +170,7 @@ export function createWeltraumLevel(): LevelData {
   set(232, ground - 1, TileType.DECORATION_PROP);
 
   return {
-    name: 'World 10: Sterne Mission',
+    name: 'Sterne Mission',
     theme: 'space',
     width,
     height,

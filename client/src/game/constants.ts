@@ -413,6 +413,30 @@ export const MOUSE_SNIFF_DURATION = 34;  // Länge einer Schnupper-Pause
 export const MOUSE_HIDE_DURATION = 110;  // Frames unsichtbar im Loch
 export const MOUSE_HOLE_ENTER_DIST = 16; // Weltpixel Abstand zum Loch zum Reinflitzen
 export const MOUSE_HIDE_COOLDOWN = 90;   // Frames nach dem Auftauchen ohne erneutes Verstecken
+export const MOUSE_DIVE_FRAMES = 12;     // sichtbares Einsinken ins Loch (Squash)
+export const MOUSE_POP_FRAMES = 12;      // sichtbares Auftauchen aus dem Loch
+// Käse-Köder: die Maus läuft neugierig zum Käse am eigenen Loch und knabbert.
+export const MOUSE_NIBBLE_DIST = 15;     // Weltpixel Abstand zum Käse zum Knabbern
+export const MOUSE_NIBBLE_DURATION = 90; // Frames Knabbern
+export const MOUSE_LURE_COOLDOWN = 150;  // Frames normales Umherlaufen zwischen Knabber-Runden
+// ── Stadt-Welt (Level 18) ──────────────────────────────────────────────
+export const RAT_SPEED = 1.7;            // flinke Kanalratte
+export const TRASHCAN_SPEED = 0.6;       // schwerfällige Wander-Mülltonne
+// Sprengbrunnen (Geysir): periodischer, telegrafierter Dampf-Ausbruch zum Drüberspringen.
+export const GEYSER_INTERVAL = 150;      // Frames Ruhe zwischen Ausbrüchen
+export const GEYSER_WARN = 30;           // Vorwarn-/Telegraph-Frames
+export const GEYSER_ACTIVE = 46;         // aktive (gefährliche) Frames
+export const GEYSER_HEIGHT = 3;          // Kacheln Höhe des Strahls
+// Riesenratten-Boss (optional, überspringbar): drei Kopfsprünge.
+export const RAT_BOSS_SPEED = 1.0;
+export const RAT_BOSS_JUMP_FORCE = -7.5;
+export const RAT_BOSS_JUMP_INTERVAL = 120;
+export const RAT_BOSS_HP = 3;
+export const RAT_BOSS_HIT_STUN = 34;
+export const RAT_BOSS_W = 66;
+export const RAT_BOSS_H = 52;
+export const RAT_BOSS_SIGHT = 210;   // Weltpixel: erster Sichtkontakt löst den Auftritt aus
+export const RAT_BOSS_INTRO = 52;    // Frames Aufbäum-Inszenierung (kein Angriff)
 // Schlangen-Boss (Australien-Finale): kriecht, richtet sich auf (Telegraph),
 // schnellt vor (Lunge) und sackt danach kurz ab (Erholung = verwundbares
 // Fenster für den Kopfsprung). Drei Kopfsprünge besiegen ihn; mit jedem Treffer
@@ -525,6 +549,10 @@ export enum EntityType {
   TURTLE = 'turtle',
   MOUSE = 'mouse',
   SNAKE_BOSS = 'snake_boss',
+  RAT = 'rat',
+  TRASH_CAN = 'trash_can',
+  GEYSER = 'geyser',
+  RAT_BOSS = 'rat_boss',
   MINI_UFO = 'mini_ufo',
   UFO_LASER = 'ufo_laser',
   CAPE = 'cape',
@@ -552,11 +580,11 @@ export enum Direction {
 export type ThemeName =
   | 'jungle' | 'cave' | 'sky' | 'beach' | 'australia'
   | 'volcano' | 'ice' | 'castle' | 'underwater' | 'space' | 'school' | 'gym' | 'trampoline' | 'bluefield' | 'plush'
-  | 'dragon' | 'forest';
+  | 'dragon' | 'forest' | 'city' | 'vacation';
 
 export const THEME_NAMES: ThemeName[] = [
   'jungle', 'cave', 'sky', 'beach', 'australia',
-  'volcano', 'ice', 'castle', 'underwater', 'space', 'school', 'gym', 'trampoline', 'bluefield', 'plush', 'dragon', 'forest',
+  'volcano', 'ice', 'castle', 'underwater', 'space', 'school', 'gym', 'trampoline', 'bluefield', 'plush', 'dragon', 'forest', 'city', 'vacation',
 ];
 
 // ---------------------------------------------------------------------------
