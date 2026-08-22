@@ -31,7 +31,6 @@ echo "▸ Komplette Dateiliste zusammenstellen (alle Änderungen seit Baseline +
   | grep -vE '^(dist-standalone/|webapp/|node_modules/)' \
   | grep -vE '\.(b64|zip)$' \
   | grep -vE '^(_dbg\.mjs|_probe\.mjs|deploy\.yml)$' \
-  | grep -vE '^\.github/' \
   | grep -vE '^tools/(_|shot-|smoke-|city-)' \
   | grep -vE '^tools/make-(sprite|brown-reh)\.py$' \
   | grep -vE '^tools/\.last-build-size\.json$' \
