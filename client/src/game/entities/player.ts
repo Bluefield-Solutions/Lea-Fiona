@@ -42,7 +42,7 @@ export class Player extends Entity {
   isPoweredUp = false;
   // Gewählte Spielfigur: 'fiona' (Standard) oder 'lea'. Bestimmt das Sprite-Set
   // unabhängig von der Power-Größe (isPoweredUp). Wird aus dem Speicher gesetzt.
-  character: 'fiona' | 'lea' = 'fiona';
+  character: 'fiona' | 'lea' | 'stephan' = 'fiona';
   growTimer = 0;
   canDoubleJump = true;
   hasDoubleJumped = false;

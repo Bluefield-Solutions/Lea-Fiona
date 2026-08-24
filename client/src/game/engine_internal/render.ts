@@ -616,6 +616,8 @@ function renderWorldLayer(engine: GameEngine): void {
       engine.player.character === 'lea',
       // Feuerblume-Zustand (Plüsch-Welt: Elefant-Form + Wasserspritzer).
       engine.player.hasFire,
+      // Charakterwahl: Stephan-Sprite (echte Frames) global statt Lea/Fiona.
+      engine.player.character === 'stephan',
     );
     // Stadt: kurze Pfützen-Spiegelung der Figur, wenn sie über einer Pfütze steht
     // (vertikal gespiegelt an der Fußlinie, auf die Pfützen-Ellipse geclippt).

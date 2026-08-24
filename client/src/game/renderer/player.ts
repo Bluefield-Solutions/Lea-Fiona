@@ -94,6 +94,10 @@ function drawPlayer(
   useLeaSprite = false,
   // Feuerblume-Zustand (Plüsch-Welt: entscheidet Elefant-Form + Wasserspritzer).
   hasFire = false,
+  // Charakterwahl: true → Stephan (echte Sprite-Frames) global. Überschreibt
+  // die Lea/Fiona-Prozedur-Grafik, wird aber selbst von den erzwungenen
+  // Theme-Figuren (Plüsch-Tier, Welt-19-Stephan) übersteuert.
+  useStephanSprite = false,
 ) {
   const ctx = this.ctx;
 
@@ -192,6 +196,19 @@ function drawPlayer(
   if (isDead) {
     if (this.currentTheme === 'plush') {
       drawPlushDead(ctx, x, y, width, height, this.time);
+    } else if (useStephanSprite && this.currentTheme !== 'vacation') {
+      // Stephan-Tod (global gewählt): der echte Sprite kippt an der Fußlinie
+      // nach hinten (kurze, klare Todes-Pose). Fällt auf die Prozedur-Grafik
+      // zurück, falls die Frames noch nicht geladen sind.
+      ctx.save();
+      ctx.translate(x + width / 2, y + height);
+      ctx.rotate(-0.6);
+      ctx.translate(-width / 2, -height);
+      const ok = drawStephanCharacter(ctx, width, height, this.stephanFrames, {
+        frame, isJumping: false, isRunning: false, velY: 0, velX: 0, isDucking: true, time: this.time,
+      });
+      ctx.restore();
+      if (!ok) this.drawDeadPlayer(ctx, x, y, width, height, useLeaSprite);
     } else {
       this.drawDeadPlayer(ctx, x, y, width, height, useLeaSprite);
     }
@@ -217,11 +234,12 @@ function drawPlayer(
       pandaFrames: this.pandaFrames,
       elefantFrames: this.elefantFrames,
     });
-  } else if (this.currentTheme === 'vacation' && drawStephanCharacter(ctx, width, height, this.stephanFrames, {
+  } else if ((this.currentTheme === 'vacation' || useStephanSprite) && drawStephanCharacter(ctx, width, height, this.stephanFrames, {
     frame, isJumping, isRunning, velY, velX, isDucking, time: this.time, landingFrame,
   })) {
-    // Welt 19 „Urlaub": man spielt immer Stephan (echter Sprite, überschreibt
-    // die Lea/Fiona-Auswahl — wie das erzwungene Kuscheltier in der Plüschwelt).
+    // Welt 19 „Urlaub": man spielt immer Stephan. Zusätzlich global, wenn Stephan
+    // als Figur gewählt ist (echter Sprite, überschreibt die Lea/Fiona-Prozedur-
+    // Grafik — wie das erzwungene Kuscheltier in der Plüschwelt).
   } else {
     this.drawPlayerSprite(
       ctx, 0, 0, width, height, frame, isJumping, isRunning, velY, isDucking, velX,

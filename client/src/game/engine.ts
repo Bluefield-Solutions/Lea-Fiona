@@ -112,8 +112,10 @@ export class GameEngine {
   // flag-touch (level-complete carries the player's running stats).
   carryStats = { lives: PLAYER_START_LIVES, coins: 0, score: 0 };
   // Gewählte Spielfigur (persistent). Bestimmt das Sprite-Set für klein UND groß.
-  selectedCharacter: 'fiona' | 'lea' =
-    safeLocalGet('lf_character') === 'lea' ? 'lea' : 'fiona';
+  selectedCharacter: 'fiona' | 'lea' | 'stephan' = (() => {
+    const c = safeLocalGet('lf_character');
+    return c === 'lea' || c === 'stephan' ? c : 'fiona';
+  })();
   private listeners: Map<EngineEvent, Set<() => void>> = new Map();
   private audioBootstrapTeardown: (() => void) | null = null;
   private fanfareTimer: number | null = null;
@@ -382,8 +384,8 @@ export class GameEngine {
   }
   isAudioMuted(): boolean { return audio.isMuted(); }
 
-  /** Spielfigur wählen (Lea/Fiona). Persistiert + wirkt sofort. */
-  setCharacter(c: 'fiona' | 'lea') {
+  /** Spielfigur wählen (Lea/Fiona/Stephan). Persistiert + wirkt sofort. */
+  setCharacter(c: 'fiona' | 'lea' | 'stephan') {
     this.selectedCharacter = c;
     if (this.player) this.player.character = c;
     safeLocalSet('lf_character', c);

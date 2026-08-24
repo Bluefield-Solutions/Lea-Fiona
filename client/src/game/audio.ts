@@ -57,7 +57,11 @@ type Sfx =
   | 'ratScreech'
   | 'thunder'
   // Mathe-Quiz
-  | 'quizCorrect';
+  | 'quizCorrect'
+  // Meilenstein-Feier (5/10 Welten): sanftes „Ta-daa"
+  | 'milestone'
+  // Großes Finale (alle Welten geschafft): längeres, volleres „Ta-daaa"
+  | 'milestoneBig';
 
 interface ThemeSong {
   bpm: number;
@@ -496,6 +500,39 @@ class AudioEngine {
         this.tone(660, 0.10, 'sine', 0.15, now, 0.005, 0.06);
         this.tone(880, 0.17, 'sine', 0.16, now + 0.075, 0.005, 0.12);
         this.tone(1320, 0.14, 'sine', 0.05, now + 0.075, 0.004, 0.10);
+        break;
+      }
+      case 'milestone': {
+        // Sanftes, freundliches „Ta-daa" für Meilensteine — bewusst runder und
+        // weicher als die harte Square-Fanfare: kurzer Auftakt (G4) + warmer
+        // C-Dur-Akkord (Dreieck) mit Glanz-Oktave und einer aufsteigenden
+        // Glöckchen-Kaskade als sanfter Ausklang. Kindgerecht, nicht schrill.
+        this.tone(392, 0.12, 'triangle', 0.15, now, 0.006, 0.06);            // „ta" (G4)
+        const t2 = now + 0.15;
+        this.tone(523, 0.52, 'triangle', 0.16, t2, 0.012, 0.30);             // „daa" C5
+        this.tone(659, 0.52, 'triangle', 0.12, t2, 0.012, 0.30);             // E5
+        this.tone(784, 0.52, 'triangle', 0.11, t2, 0.012, 0.30);             // G5
+        this.tone(1046, 0.44, 'sine', 0.07, t2 + 0.02, 0.012, 0.32);         // Glanz-Oktave C6
+        [1319, 1568, 2093].forEach((f, i) => this.tone(f, 0.16, 'sine', 0.055, t2 + 0.14 + i * 0.06, 0.004, 0.12));
+        break;
+      }
+      case 'milestoneBig': {
+        // Großes Finale (alle Welten): aufsteigender Auftakt-Lauf → voller
+        // C-Dur-Akkord, der länger klingt, plus zweiter höherer Akkord-Schub
+        // und eine längere Glöckchen-Kaskade. Feierlich, aber weich (Dreieck).
+        const run = [392, 523, 659];
+        run.forEach((f, i) => this.tone(f, 0.11, 'triangle', 0.14, now + i * 0.075, 0.005, 0.05));
+        const tA = now + 0.26;
+        this.tone(523, 0.7, 'triangle', 0.17, tA, 0.012, 0.42);              // C5
+        this.tone(659, 0.7, 'triangle', 0.13, tA, 0.012, 0.42);              // E5
+        this.tone(784, 0.7, 'triangle', 0.12, tA, 0.012, 0.42);              // G5
+        this.tone(1046, 0.6, 'sine', 0.08, tA + 0.02, 0.012, 0.44);          // Glanz-Oktave
+        const tB = now + 0.6;                                                // zweiter, höherer Schub
+        this.tone(659, 0.6, 'triangle', 0.14, tB, 0.012, 0.40);             // E5
+        this.tone(784, 0.6, 'triangle', 0.12, tB, 0.012, 0.40);             // G5
+        this.tone(1046, 0.6, 'triangle', 0.11, tB, 0.012, 0.40);            // C6
+        this.tone(1568, 0.5, 'sine', 0.07, tB + 0.02, 0.012, 0.40);          // Glanz
+        [1319, 1568, 1976, 2093, 2637].forEach((f, i) => this.tone(f, 0.18, 'sine', 0.05, tB + 0.16 + i * 0.07, 0.004, 0.14));
         break;
       }
       case 'select': this.tone(880, 0.05, 'square', 0.16, now); break;

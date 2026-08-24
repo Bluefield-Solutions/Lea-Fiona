@@ -27,11 +27,11 @@ import { ProfilesPanel } from '../components/game/ProfilesPanel';
 import { SettingsPanel } from '../components/game/SettingsPanel';
 import runSheetFiona from '@assets/run_sheet_fiona.webp';
 import runSheetLea from '@assets/run_sheet_lea.webp';
+import { STEPHAN_FRAME_URLS, STEPHAN_FRAME_W, STEPHAN_FRAME_H } from '../game/assets/stephanSprites';
 import heroSky from '@assets/lyr_sky.webp';
 import heroHillsFar from '@assets/lyr_hillsfar.webp';
 import heroHillsNear from '@assets/lyr_hillsnear.webp';
 import heroGround from '@assets/lyr_ground.webp';
-import heroCollect from '@assets/lyr_collect.webp';
 import heroForeground from '@assets/lyr_foreground.webp';
 import { AlbumPanel } from '../components/game/AlbumPanel';
 
@@ -87,10 +87,96 @@ function QuickSlider({ label, value, onChange }: { label: string; value: number;
   );
 }
 
-function CharacterChooser({ value, onChange, variant = 'compact', noSelection = false }: { value: 'fiona' | 'lea'; onChange: (c: 'fiona' | 'lea') => void; variant?: 'compact' | 'hero'; noSelection?: boolean }) {
-  const opts: { id: 'fiona' | 'lea'; label: string; emoji: string; sheet: string; fw: number; fh: number; sheetW: number; color: string; anim: string }[] = [
+// Sammel-Objekte für das Hero-Titelbild: einzelne Münzen/Sterne fliegen von
+// rechts nach links und werden auf Figuren-Höhe „eingesammelt" — kurzes
+// Aufblitzen an der Stelle + Pling (sobald der Ton aktiv ist; playSfx ist ein
+// No-Op, solange Audio noch nicht durch eine Nutzer-Geste initialisiert wurde).
+function HeroCollectibles() {
+  const COLLECT_X = 49;                 // % (Mitte zwischen den Figuren)
+  const FRACTION = (104 - COLLECT_X) / (104 + 12);  // Anteil der Strecke bis zum Einsammeln
+  const items = React.useMemo(() => ([
+    { kind: 'coin', top: 34, dur: 6.4, delay: 0.0 },
+    { kind: 'star', top: 52, dur: 8.1, delay: 1.7 },
+    { kind: 'coin', top: 44, dur: 7.2, delay: 3.2 },
+    { kind: 'star', top: 61, dur: 9.0, delay: 4.6 },
+    { kind: 'coin', top: 38, dur: 7.7, delay: 5.9 },
+  ] as const), []);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const coinRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const topsRef = useRef<number[]>(items.map(i => i.top));
+  const timers = useRef<number[]>([]);
+
+  const spawnBurst = (topPct: number) => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    const b = document.createElement('div');
+    b.className = 'lf-hero-burst';
+    b.style.left = COLLECT_X + '%';
+    b.style.top = topPct + '%';
+    layer.appendChild(b);
+    window.setTimeout(() => b.remove(), 650);
+  };
+
+  const collect = (idx: number) => {
+    const el = coinRefs.current[idx];
+    if (el) el.classList.add('lf-collected');
+    spawnBurst(topsRef.current[idx]);
+    try { audio.playSfx('coin', 0, 1.04 + (idx % 3) * 0.05); } catch { /* Audio noch nicht bereit */ }
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' &&
+        window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return; // Bei „Bewegung reduzieren" keine fliegenden Objekte.
+    }
+    const t = timers.current;
+    // Erster Einsammel-Zeitpunkt je Objekt = Startverzögerung + Anteil bis Mitte.
+    items.forEach((it, idx) => {
+      t.push(window.setTimeout(() => collect(idx), (it.delay + FRACTION * it.dur) * 1000));
+    });
+    return () => { t.forEach(clearTimeout); t.length = 0; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Bei jedem Animations-Neustart: wieder sichtbar machen, neue Höhe würfeln und
+  // den nächsten Einsammel-Zeitpunkt dieses Zyklus planen (synchron zur Animation).
+  const onIter = (idx: number, dur: number) => {
+    const el = coinRefs.current[idx];
+    if (!el) return;
+    el.classList.remove('lf-collected');
+    const ny = 30 + Math.floor(Math.random() * 38);   // 30..67 %
+    topsRef.current[idx] = ny;
+    el.style.top = ny + '%';
+    timers.current.push(window.setTimeout(() => collect(idx), FRACTION * dur * 1000));
+  };
+
+  return (
+    <div ref={layerRef} aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+      {items.map((it, idx) => (
+        <div
+          key={idx}
+          ref={(el) => { coinRefs.current[idx] = el; }}
+          className={`lf-hero-collectible ${it.kind === 'star' ? 'lf-hero-star' : 'lf-hero-coin'}`}
+          style={{ top: it.top + '%', animationDuration: it.dur + 's', animationDelay: it.delay + 's' }}
+          onAnimationIteration={() => onIter(idx, it.dur)}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Wählbare Spielfiguren. Stephan (echter KI-Sprite, früher nur Welt 19) ist
+// jetzt überall spielbar — daher als dritte Option ergänzt.
+type Character = 'fiona' | 'lea' | 'stephan';
+
+function CharacterChooser({ value, onChange, variant = 'compact', noSelection = false }: { value: Character; onChange: (c: Character) => void; variant?: 'compact' | 'hero'; noSelection?: boolean }) {
+  // Figur-Optionen. Lea/Fiona nutzen einen horizontalen Lauf-Streifen (steps-
+  // Animation); Stephan (der echte KI-Sprite aus Welt 19, jetzt überall wählbar)
+  // hat 15 Einzel-Frames — im Menü zeigen wir sein Ruhe-Bild mit sanftem Hüpfer.
+  const opts: { id: Character; label: string; emoji: string; sheet?: string; fw: number; fh: number; sheetW?: number; color: string; anim?: string; img?: string }[] = [
     { id: 'fiona', label: 'Fiona', emoji: '🌸', sheet: runSheetFiona, fw: 47, fh: 72, sheetW: 188, color: '#ff86c8', anim: 'lf-run-fiona 0.5s steps(4) infinite' },
     { id: 'lea', label: 'Lea', emoji: '💛', sheet: runSheetLea, fw: 71, fh: 84, sheetW: 284, color: '#ffcf4a', anim: 'lf-run-lea 0.55s steps(4) infinite' },
+    { id: 'stephan', label: 'Stephan', emoji: '🧢', img: STEPHAN_FRAME_URLS[0], fw: STEPHAN_FRAME_W, fh: STEPHAN_FRAME_H, color: '#5ab0ff' },
   ];
   if (variant === 'hero') {
     return (
@@ -121,12 +207,24 @@ function CharacterChooser({ value, onChange, variant = 'compact', noSelection = 
                   border: `2px solid ${sel ? o.color : 'rgba(255,255,255,0.22)'}`,
                   display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
                 }}>
+                  {o.img ? (
+                    // Bild-basierte Figur (Stephan): Einzel-Frame, an Höhe skaliert,
+                    // nur sanfter Hüpfer/Idle — kein steps-Laufzyklus nötig.
+                    <div style={{
+                      width: 54, height: 54, marginTop: 4,
+                      backgroundImage: `url(${o.img})`, backgroundSize: 'contain',
+                      backgroundRepeat: 'no-repeat', backgroundPosition: 'center bottom',
+                      animation: sel ? 'lf-hero-hop 1.05s ease-in-out infinite' : 'lf-hero-idle 2.6s ease-in-out infinite',
+                      filter: 'drop-shadow(0 3px 5px rgba(0,0,0,0.45))',
+                    }} />
+                  ) : (
                   <div style={{
                     width: o.fw * 1.28, height: o.fh * 1.28, marginTop: -3,
-                    backgroundImage: `url(${o.sheet})`, backgroundSize: `${o.sheetW * 1.28}px ${o.fh * 1.28}px`, backgroundRepeat: 'no-repeat',
+                    backgroundImage: `url(${o.sheet})`, backgroundSize: `${(o.sheetW ?? o.fw) * 1.28}px ${o.fh * 1.28}px`, backgroundRepeat: 'no-repeat',
                     animation: sel ? `${o.anim}, lf-hero-hop 1.05s ease-in-out infinite` : 'lf-hero-idle 2.6s ease-in-out infinite',
                     filter: 'drop-shadow(0 3px 5px rgba(0,0,0,0.45))',
                   }} />
+                  )}
                 </div>
                 <span style={{
                   color: sel ? '#fff' : 'rgba(255,255,255,0.92)', fontWeight: 800,
@@ -183,18 +281,80 @@ export default function GamePage() {
   });
   // Zwei-Schritt-Startflow: erst Figur wählen, dann Level-Auswahl.
   const [charPicked, setCharPicked] = useState(false);
+  // P2.3: Scroll-Hinweis im Level-Grid — true, wenn nach unten noch mehr Level
+  // scrollbar sind (z. B. Handy quer, wo nur ~1 Reihe sichtbar ist).
+  const levelGridRef = useRef<HTMLDivElement>(null);
+  const [gridMore, setGridMore] = useState(false);
+  const updateGridMore = useCallback(() => {
+    const el = levelGridRef.current;
+    if (!el) { setGridMore(false); return; }
+    setGridMore(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
+  }, []);
+  // Neu messen, sobald die Level-Auswahl sichtbar wird oder sich die Größe/der
+  // Inhalt ändert (Drehen/Resize/Layout settelt async). ResizeObserver auf dem
+  // Grid ist robust gegen spätes Layout (SVG/Fonts) — plus rAF + kurzer Timeout
+  // als Sicherheitsnetz, falls der Observer noch nicht feuert.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const el = levelGridRef.current;
+    const r = requestAnimationFrame(updateGridMore);
+    const t = window.setTimeout(updateGridMore, 350);
+    const t2 = window.setTimeout(updateGridMore, 800);
+    window.addEventListener('resize', updateGridMore);
+    let ro: ResizeObserver | null = null;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(updateGridMore);
+      ro.observe(el);
+    }
+    return () => {
+      cancelAnimationFrame(r); window.clearTimeout(t); window.clearTimeout(t2);
+      window.removeEventListener('resize', updateGridMore);
+      ro?.disconnect();
+    };
+  }, [charPicked, gameState, updateGridMore]);
+  // Meilenstein-Belohnung: kleine Feier (Konfetti + Banner), wenn erstmalig
+  // 5 / 10 / alle Welten geschafft sind. Bereits gefeierte Meilensteine werden
+  // pro Profil im Speicher gemerkt, damit die Feier nur EINMAL erscheint.
+  const MILESTONES = React.useMemo(() => Array.from(new Set([5, 10, LEVELS.length])).filter((m) => m > 0 && m <= LEVELS.length).sort((a, b) => a - b), []);
+  const [celebrateMilestone, setCelebrateMilestone] = useState<number | null>(null);
+  useEffect(() => {
+    if (gameState !== GameState.TITLE || !charPicked) return;
+    const done = LEVELS.reduce((n, _l, i) => n + (getLevelStars(i) > 0 ? 1 : 0), 0);
+    let stored: number[] = [];
+    try { stored = (safeLocalGet('lf_milestones_v1') || '').split(',').filter(Boolean).map(Number); } catch { /* egal */ }
+    const newly = MILESTONES.filter((m) => done >= m && !stored.includes(m));
+    if (newly.length) {
+      const top = Math.max(...newly);
+      setCelebrateMilestone(top);
+      try { safeLocalSet('lf_milestones_v1', Array.from(new Set([...stored, ...newly])).sort((a, b) => a - b).join(',')); } catch { /* egal */ }
+      // Großes Finale (alle Welten) klingt voller & länger als 5/10.
+      try { audio.playSfx(top >= LEVELS.length ? 'milestoneBig' : 'milestone'); } catch { /* Audio evtl. nicht bereit */ }
+    }
+  }, [gameState, charPicked, unlocked, MILESTONES]);
+  // Feier nach kurzer Zeit automatisch ausblenden — das große Finale bleibt
+  // etwas länger stehen als ein Zwischen-Meilenstein.
+  useEffect(() => {
+    if (celebrateMilestone == null) return;
+    const dur = celebrateMilestone >= LEVELS.length ? 6200 : 4000;
+    const t = window.setTimeout(() => setCelebrateMilestone(null), dur);
+    return () => window.clearTimeout(t);
+  }, [celebrateMilestone]);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
   const [muted, setMuted] = useState<boolean>(false);
-  const [character, setCharacterState] = useState<'fiona' | 'lea'>(
-    safeLocalGet('lf_character') === 'lea' ? 'lea' : 'fiona',
-  );
-  const handleCharacterChange = (c: 'fiona' | 'lea') => {
+  const [character, setCharacterState] = useState<Character>(() => {
+    const c = safeLocalGet('lf_character');
+    return c === 'lea' || c === 'stephan' ? c : 'fiona';
+  });
+  const handleCharacterChange = (c: Character) => {
     setCharacterState(c);
     safeLocalSet('lf_character', c);
     engineRef.current?.setCharacter(c);
   };
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isPortrait, setIsPortrait] = useState<boolean>(false);
+  // Nur echte Handys sperren wir im Hochformat (kürzere Kante < 480px).
+  // Tablets im Hochformat sind gut spielbar und werden NICHT gesperrt.
+  const [smallPhone, setSmallPhone] = useState<boolean>(false);
 
   // Profile/settings/album modal state.
   const [modal, setModal] = useState<ModalKind>(null);
@@ -422,6 +582,10 @@ export default function GamePage() {
     forceTick(n => n + 1);
   };
   const togglePause = () => engineRef.current?.togglePause();
+  // P2.2: Dezentes Klick-Feedback für Menü-Buttons. Nutzt den kurzen „select"-Ton
+  // etwas tiefer & leiser (via Pitch) — respektiert Ton-Aus/SFX-Lautstärke von
+  // selbst (playSfx läuft über sfxGain). Fehler ignorieren (Audio evtl. nicht bereit).
+  const uiClick = () => { try { audio.playSfx('select', 0, 0.72); } catch { /* Audio noch nicht bereit */ } };
   const toggleMute = () => {
     const engine = engineRef.current;
     if (!engine) return;
@@ -473,6 +637,7 @@ export default function GamePage() {
     const onOrient = () => {
       if (typeof window === 'undefined') return;
       setIsPortrait(window.innerHeight > window.innerWidth);
+      setSmallPhone(Math.min(window.innerWidth, window.innerHeight) < 480);
     };
     onFs();
     onOrient();
@@ -803,6 +968,34 @@ export default function GamePage() {
           from { transform: translateX(0); }
           to   { transform: translateX(-50%); }
         }
+        /* Sammel-Objekte: fliegen nach links und werden auf Figuren-Höhe
+           „eingesammelt" (kurz aufblitzen + verschwinden), dann respawnen. */
+        .lf-hero-collectible {
+          position: absolute; left: 104%; width: 3%; aspect-ratio: 1 / 1;
+          animation-name: lf-hero-fly; animation-timing-function: linear; animation-iteration-count: infinite;
+          will-change: left; transition: opacity .22s ease, transform .22s ease;
+        }
+        .lf-hero-collectible.lf-collected { opacity: 0; transform: scale(1.9); }
+        .lf-hero-coin {
+          border-radius: 50%;
+          background: radial-gradient(circle at 36% 30%, #fff4b8, #ffd166 55%, #d99a2a 100%);
+          box-shadow: 0 0 7px rgba(255,209,102,0.75), inset 0 -2px 3px rgba(150,100,20,0.5), inset 0 2px 2px rgba(255,255,255,0.65);
+        }
+        .lf-hero-star {
+          background: #ffe27a; box-shadow: 0 0 8px rgba(255,226,122,0.85);
+          clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+        }
+        @keyframes lf-hero-fly { from { left: 104%; } to { left: -12%; } }
+        .lf-hero-burst {
+          position: absolute; width: 7%; aspect-ratio: 1 / 1; transform: translate(-50%, -50%);
+          border-radius: 50%; pointer-events: none;
+          background: radial-gradient(circle, rgba(255,247,205,0.95), rgba(255,209,102,0.5) 45%, rgba(255,209,102,0) 70%);
+          animation: lf-hero-burst .6s ease-out both;
+        }
+        @keyframes lf-hero-burst {
+          0%   { transform: translate(-50%,-50%) scale(0.3); opacity: 1; }
+          100% { transform: translate(-50%,-50%) scale(2.5); opacity: 0; }
+        }
         @keyframes lf-sheen {
           0%   { background-position: -200% center; }
           100% { background-position: 200% center; }
@@ -836,6 +1029,24 @@ export default function GamePage() {
           0%   { transform: translateY(12px); opacity: 0; }
           100% { transform: translateY(0); opacity: 1; }
         }
+        /* P2.3: sanft auf-und-ab hüpfender „mehr Level ↓"-Pfeil. */
+        @keyframes lf-bounce-down { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+        .lf-bounce-down { display: inline-block; animation: lf-bounce-down 1.1s ease-in-out infinite; }
+        /* Meilenstein-Feier: Banner „poppt" auf, Konfetti fällt herab. */
+        @keyframes lf-celebrate-pop {
+          0% { transform: scale(0.6); opacity: 0; }
+          55% { transform: scale(1.06); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes lf-confetti-fall {
+          0% { transform: translateY(-40px) rotate(0deg); opacity: 0; }
+          12% { opacity: 1; }
+          100% { transform: translateY(88vh) rotate(var(--lf-cspin, 360deg)); opacity: 0; }
+        }
+        .lf-confetti { position: absolute; top: 0; animation: lf-confetti-fall linear forwards; will-change: transform, opacity; }
+        @media (prefers-reduced-motion: reduce) {
+          .lf-confetti { display: none; }
+        }
         /* Laufende Figuren am unteren Rand. Frame-Wechsel via steps() +
            Bewegung quer über den Bildschirm. */
         @keyframes lf-run-fiona { from { background-position-x: 0; } to { background-position-x: -188px; } }
@@ -856,6 +1067,7 @@ export default function GamePage() {
         @media (prefers-reduced-motion: reduce) { .lf-continue-btn { animation: none !important; } }
         @media (prefers-reduced-motion: reduce) {
           .lf-floaty, .lf-title, .lf-hero-stage, .lf-hero-cloud, .lf-hero-stage img, .lf-par-track { animation: none !important; }
+          .lf-hero-collectible, .lf-hero-burst { display: none !important; }
         }
         /* Querformat auf niedrigen Geräten (z.B. iPhone quer): kompakteres
            Layout, damit Titel, Button und Levelraster ohne Abschneiden in die
@@ -897,7 +1109,10 @@ export default function GamePage() {
         />
       </div>
 
-      {/* Top-right HUD button cluster (always visible). */}
+      {/* Top-right HUD button cluster — NUR im Spiel/Ende, NICHT im Titel/Level-
+          Auswahl. Dort gibt es die eigene Kopfleiste (Profil-Pille + Quick-
+          Settings), sonst überlappen sich die beiden Leisten. */}
+      {gameState !== GameState.TITLE && (
       <div
         style={{
           position: 'absolute',
@@ -946,10 +1161,11 @@ export default function GamePage() {
           </HudButton>
         )}
       </div>
+      )}
 
       {/* Portrait-rotation hint: only on touch devices in portrait orientation.
           Pointer-events stay enabled so the user can dismiss / interact. */}
-      {touch && isPortrait && (
+      {touch && isPortrait && smallPhone && (
         <div
           data-testid="portrait-overlay"
           style={{
@@ -979,6 +1195,17 @@ export default function GamePage() {
         <div
           data-testid="title-overlay"
           className="lf-title-overlay"
+          // P2.2: Ein dezentes Klick-Feedback für ALLE Menü-Buttons im Titel-
+          // /Levelauswahl-Overlay — zentral in der Capture-Phase, damit kein
+          // Button einzeln verkabelt werden muss. Level-Karten sind ausgenommen
+          // (die haben ihren eigenen Start-Sound), damit sich nichts überlagert.
+          onClickCapture={(e) => {
+            const btn = (e.target as HTMLElement)?.closest?.('button');
+            if (!btn) return;
+            const tid = btn.getAttribute('data-testid') || '';
+            if (tid.startsWith('button-level-')) return;
+            uiClick();
+          }}
           style={{
             position: 'absolute',
             inset: 0,
@@ -993,6 +1220,61 @@ export default function GamePage() {
             background: 'radial-gradient(80% 55% at 50% 24%, rgba(130,160,255,0.10) 0%, rgba(130,160,255,0) 60%), radial-gradient(120% 90% at 50% 6%, rgba(12,9,40,0.04) 0%, rgba(10,8,34,0.22) 55%, rgba(7,5,26,0.30) 100%), radial-gradient(150% 120% at 50% 42%, rgba(0,0,0,0) 58%, rgba(6,4,20,0.26) 100%)',
           }}
         >
+          {/* P4: Meilenstein-Feier — Konfetti + Banner, wenn erstmals 5/10/alle
+              Welten geschafft sind. Rein visuell, blendet sich selbst aus. */}
+          {celebrateMilestone != null && (() => {
+            // Großes Finale (alle Welten) fällt spürbar größer aus als ein
+            // Zwischen-Meilenstein: mehr Konfetti, größeres Banner, goldener Rahmen.
+            const isFinal = celebrateMilestone >= LEVELS.length;
+            const pieces = isFinal ? 60 : 26;
+            const emojis = isFinal ? ['🎉','🏆','⭐','🎈','💛','🌈','✨','🍬','🎊','👑'] : ['🎉','⭐','🎈','💛','🌈','✨','🍬'];
+            return (
+            <div data-testid="milestone-celebration" data-final={isFinal ? 'true' : 'false'} aria-live="polite" style={{
+              position: 'absolute', inset: 0, zIndex: 60, pointerEvents: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+            }}>
+              {Array.from({ length: pieces }).map((_, i) => {
+                const em = emojis[i % emojis.length];
+                const left = (i * 37 + 7) % 100;
+                const dur = (isFinal ? 2.8 : 2.4) + (i % 5) * 0.5;
+                const delay = (i % (isFinal ? 9 : 6)) * 0.12;
+                const size = (isFinal ? 16 : 14) + (i % 4) * (isFinal ? 8 : 6);
+                const spin = (i % 2 ? 1 : -1) * (360 + (i % 3) * 180);
+                return (
+                  <span key={i} className="lf-confetti" style={{
+                    left: `${left}%`, fontSize: size,
+                    animationDuration: `${dur}s`, animationDelay: `${delay}s`,
+                    ['--lf-cspin' as string]: `${spin}deg`,
+                    filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.35))',
+                  }}>{em}</span>
+                );
+              })}
+              <div style={{
+                animation: `lf-celebrate-pop ${isFinal ? 520 : 420}ms cubic-bezier(.2,.9,.3,1.2) both`,
+                textAlign: 'center', padding: isFinal ? '26px 40px' : '18px 26px', borderRadius: isFinal ? 26 : 22,
+                background: isFinal
+                  ? 'linear-gradient(160deg, rgba(58,40,96,0.96), rgba(26,18,52,0.96))'
+                  : 'linear-gradient(160deg, rgba(40,28,72,0.94), rgba(20,14,40,0.94))',
+                border: isFinal ? '2px solid rgba(255,214,120,0.85)' : '1px solid rgba(255,214,120,0.5)',
+                boxShadow: isFinal
+                  ? '0 26px 80px rgba(0,0,0,0.6), 0 0 46px rgba(255,205,90,0.55)'
+                  : '0 20px 60px rgba(0,0,0,0.55), 0 0 26px rgba(255,200,90,0.35)',
+                color: '#fff',
+              }}>
+                <div style={{ fontSize: isFinal ? 64 : 44, lineHeight: 1, marginBottom: isFinal ? 8 : 6 }}>{isFinal ? '🏆' : '🎉'}</div>
+                <div style={{
+                  fontSize: isFinal ? 26 : 20, fontWeight: 900, letterSpacing: '0.01em',
+                  ...(isFinal ? { background: 'linear-gradient(90deg,#ffe27a,#ff9f5a,#ff77b0)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'transparent' } : {}),
+                }}>
+                  {isFinal ? `Alle ${LEVELS.length} Welten geschafft!` : `${celebrateMilestone} Welten geschafft!`}
+                </div>
+                <div style={{ marginTop: isFinal ? 6 : 4, fontSize: isFinal ? 15 : 13, fontWeight: 600, color: '#ffe6a6' }}>
+                  {isFinal ? '🌟 Du hast das ganze Abenteuerland gemeistert! 🌟' : 'Weiter so — das nächste Ziel wartet!'}
+                </div>
+              </div>
+            </div>
+            );
+          })()}
           {/* Sichtbarer Build-/Versions-Stempel (Bauzeit) — unten rechts, dezent.
               So ist auf einen Blick prüfbar, ob die neueste Version live ist. */}
           <div style={{
@@ -1026,7 +1308,7 @@ export default function GamePage() {
           {/* Laufende Figuren am unteren Rand (dekorativ). Auf der Figurenwahl
               ausgeblendet, da das große Hero-Bild die Figuren bereits zeigt. */}
           {charPicked && (
-          <div aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
+          <div aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0, opacity: 0.5 }}>
             <div className="lf-runwrap" style={{
               left: 0, bottom: 'clamp(4px, 1.5vh, 16px)', width: 47, height: 72,
               animation: 'lf-walk-rl 18s linear infinite',
@@ -1065,12 +1347,12 @@ export default function GamePage() {
               onClick={() => { refreshProfileState(); setModal('profiles'); }}
               style={{
                 pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 8,
-                padding: '8px 16px',
+                padding: '10px 18px', minHeight: 44,
                 background: 'rgba(255,255,255,0.10)',
                 backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
                 color: '#fff', border: '1px solid rgba(255,255,255,0.22)',
                 borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.3)', touchAction: 'manipulation',
               }}
               aria-label={`Profil wechseln, aktuell ${activeProfile.name}`}
             >
@@ -1164,13 +1446,30 @@ export default function GamePage() {
                 label="📊 Performance" value={settings.showDebug}
                 onChange={(on) => applySettingsPatch({ showDebug: on })}
               />
+              {/* Direkt-Zugriffe (früher im separaten HUD oben rechts, das im
+                  Titel entfernt wurde, um die Doppel-Leiste zu vermeiden). */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button type="button" data-testid="quick-album"
+                  onClick={() => { audio.playSfx('albumOpen'); refreshProfileState(); setModal('album'); setShowQuickSettings(false); }}
+                  style={{ flex: 1, minHeight: 44, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', touchAction: 'manipulation' }}
+                >🏅 Album</button>
+                <button type="button" data-testid="quick-settings-full"
+                  onClick={() => { refreshProfileState(); setModal('settings'); setShowQuickSettings(false); }}
+                  style={{ flex: 1, minHeight: 44, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', touchAction: 'manipulation' }}
+                >⚙ Mehr</button>
+                <button type="button" data-testid="quick-fullscreen"
+                  onClick={toggleFullscreen}
+                  style={{ flex: 1, minHeight: 44, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 16, cursor: 'pointer', touchAction: 'manipulation' }}
+                  aria-label={isFullscreen ? 'Vollbild verlassen' : 'Vollbild'}
+                >{isFullscreen ? '⤢' : '⛶'}</button>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowQuickSettings(false)}
                 style={{
-                  marginTop: 2, padding: '8px 0', borderRadius: 10, border: 'none',
-                  background: 'rgba(255,255,255,0.12)', color: '#fff', fontSize: 12,
-                  fontWeight: 600, cursor: 'pointer',
+                  marginTop: 2, padding: '10px 0', borderRadius: 10, border: 'none',
+                  background: 'rgba(255,255,255,0.12)', color: '#fff', fontSize: 13,
+                  fontWeight: 700, cursor: 'pointer', touchAction: 'manipulation',
                 }}
               >Schließen</button>
             </div>
@@ -1245,15 +1544,14 @@ export default function GamePage() {
                 }} />
                 {/* Parallax-Ebenen: je zwei nahtlose Kacheln in einer 200%-Spur,
                     die nach links läuft. Tiefe = Tempo: ferne Hügel langsam,
-                    nahe schneller, Boden schnell (Vorwärts-Illusion), und
-                    Sammel-Objekte (Münzen/Sterne) auf Figuren-Ebene ziehen mit
-                    der Welt vorbei. Alle „Welt"-Ebenen teilen ein kohärentes,
-                    lebhaftes Tempo, damit die Schritte passen (kein Rutschen). */}
+                    nahe schneller, Boden schnell (Vorwärts-Illusion). Alle
+                    „Welt"-Ebenen teilen ein kohärentes, lebhaftes Tempo, damit
+                    die Schritte passen (kein Rutschen). Die Sammel-Objekte sind
+                    jetzt echte Einzel-Elemente (siehe HeroCollectibles). */}
                 {[
                   { src: heroHillsFar, dur: '38s' },
                   { src: heroHillsNear, dur: '20s' },
                   { src: heroGround, dur: '8s' },
-                  { src: heroCollect, dur: '7s' },
                 ].map((L, i) => (
                   <div key={i} aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
                     <div className="lf-par-track" style={{ display: 'flex', width: '200%', height: '100%', animation: `lf-parscroll ${L.dur} linear infinite` }}>
@@ -1286,6 +1584,9 @@ export default function GamePage() {
                   transformOrigin: 'center bottom', willChange: 'background-position, transform',
                   animation: 'lf-hero-legcycle 0.4s steps(4, jump-none) infinite, lf-hero-hopC 0.4s ease-in-out infinite',
                 }} />
+                {/* Sammel-Objekte: einzelne Münzen/Sterne fliegen nach links und
+                    werden auf Figuren-Höhe „eingesammelt" (Aufblitzen + Pling). */}
+                <HeroCollectibles />
                 {/* Vordergrund-Deko (Büsche/Blumen): ganz vorne, am schnellsten —
                     zieht vor den Figuren vorbei und verstärkt die Tiefe. */}
                 <div aria-hidden style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
@@ -1311,8 +1612,10 @@ export default function GamePage() {
             </div>
           ) : (
           <>
-          {/* Abenteuer-Kopf der Level-Auswahl: klare Überschrift + Fortschritt. */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, margin: '0 0 12px', pointerEvents: 'auto' }}>
+          {/* Abenteuer-Kopf der Level-Auswahl: klare Überschrift + Fortschritt.
+              Auf smallPhone (flaches Handy-Querformat) enger stapeln, damit unten
+              mehr Level-Reihen sichtbar bleiben. */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: smallPhone ? 3 : 6, margin: smallPhone ? '0 0 3px' : '0 0 12px', pointerEvents: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
               <span style={{ fontSize: 'clamp(15px,3vw,22px)', fontWeight: 900, color: '#fff', letterSpacing: '0.05em', textShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>🗺️ Wähle deine Welt</span>
               {(() => {
@@ -1325,8 +1628,56 @@ export default function GamePage() {
                 );
               })()}
             </div>
+            {/* P3.1: Fortschritt sichtbarer — kleine Fortschrittsleiste über die
+                geschafften Welten, gibt Kindern ein greifbares Ziel. Im flachen
+                Handy-Querformat (smallPhone) ausgeblendet, um dem Level-Grid +
+                Scroll-Hinweis vertikalen Platz zu geben. */}
+            {!smallPhone && (() => {
+              const done = LEVELS.reduce((n, _l, i) => n + (getLevelStars(i) > 0 ? 1 : 0), 0);
+              const pct = Math.round((done / LEVELS.length) * 100);
+              const complete = done >= LEVELS.length;
+              return (
+                <div
+                  data-testid="progress-bar"
+                  role="progressbar"
+                  aria-valuemin={0} aria-valuemax={LEVELS.length} aria-valuenow={done}
+                  aria-label={`Fortschritt: ${done} von ${LEVELS.length} Welten geschafft`}
+                  style={{ width: 'min(84vw, 340px)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, pointerEvents: 'none' }}
+                >
+                  <div style={{ position: 'relative', width: '100%', height: 10, borderRadius: 999, background: 'rgba(16,12,34,0.55)', border: '1px solid rgba(255,255,255,0.16)' }}>
+                    <div style={{
+                      position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pct}%`,
+                      background: complete ? 'linear-gradient(90deg,#8affc1,#48e08a)' : 'linear-gradient(90deg,#ffe27a,#ff9f5a)',
+                      borderRadius: 999, transition: 'width 400ms ease',
+                      boxShadow: '0 0 8px rgba(255,159,90,0.5)',
+                    }} />
+                    {/* P4: Meilenstein-Marken (5/10/alle) als greifbare Ziele —
+                        erreichte leuchten, offene sind gedämpft. */}
+                    {MILESTONES.map((m) => {
+                      const reached = done >= m;
+                      const last = m === LEVELS.length;
+                      return (
+                        <span key={m} aria-hidden title={last ? 'Alle Welten' : `${m} Welten`} style={{
+                          position: 'absolute', top: '50%', left: `${(m / LEVELS.length) * 100}%`,
+                          transform: 'translate(-50%,-50%)', fontSize: reached ? 13 : 11, lineHeight: 1,
+                          filter: reached ? 'drop-shadow(0 0 4px rgba(255,214,120,0.95))' : 'grayscale(0.6) opacity(0.5)',
+                          transition: 'font-size 200ms ease, filter 200ms ease',
+                        }}>{last ? '🏆' : '⭐'}</span>
+                      );
+                    })}
+                  </div>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,0.72)', letterSpacing: '0.02em' }}>
+                    {complete ? '🎉 Alle Welten geschafft!' : `Nächstes Ziel: Welt ${done + 1}`}
+                  </span>
+                </div>
+              );
+            })()}
             {/* Modus-Umschalter: „Alle Level" (Default, nichts gesperrt) vs.
                 „Kampagne" (nach und nach freispielen). Gebunden an unlockAllWorlds. */}
+            {/* Der Modus-Umschalter ist im Mathe-Modus wirkungslos (dort steuert
+                die Rechen-Progression die Freischaltung) → dann ausblenden und
+                stattdessen einen kurzen Hinweis zeigen (kein Widerspruch mehr). */}
+            {!settings.mathMode ? (
             <div
               role="radiogroup"
               aria-label="Spielmodus"
@@ -1343,8 +1694,8 @@ export default function GamePage() {
                     data-testid={`mode-${mode}`}
                     onClick={() => applySettingsPatch({ unlockAllWorlds: mode === 'all' })}
                     style={{
-                      padding: '6px 16px', borderRadius: 999, border: 'none', cursor: 'pointer',
-                      fontSize: 12.5, fontWeight: 800, letterSpacing: '0.02em',
+                      padding: '10px 18px', minHeight: 44, borderRadius: 999, border: 'none', cursor: 'pointer',
+                      fontSize: 14, fontWeight: 800, letterSpacing: '0.02em', touchAction: 'manipulation',
                       background: active ? 'linear-gradient(90deg,#ffe27a,#ff9f5a)' : 'transparent',
                       color: active ? '#5a3a12' : 'rgba(255,255,255,0.82)',
                       boxShadow: active ? '0 2px 10px rgba(255,159,90,0.45)' : 'none',
@@ -1354,6 +1705,11 @@ export default function GamePage() {
                 );
               })}
             </div>
+            ) : smallPhone ? null : (
+              <div style={{ pointerEvents: 'none', fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,0.72)', background: 'rgba(16,12,34,0.5)', padding: '6px 14px', borderRadius: 999 }}>
+                🧮 Mathe-Modus: Level werden nacheinander freigespielt
+              </div>
+            )}
             {/* Sehr dezenter Mathe-Modus-Umschalter: klein, gedämpft. Gesperrte
                 Progression ab Level 1 + Rechen-Quiz nach jedem Level. Default AN. */}
             <button
@@ -1365,25 +1721,25 @@ export default function GamePage() {
               title="Mathe-Modus: nach jedem Level 3 Rechenaufgaben (Lea bis 50, Fiona bis 10). Start ab Level 1."
               onClick={() => applySettingsPatch(settings.mathMode ? { mathMode: false } : { mathMode: true, mathUnlocked: 1 })}
               style={{
-                pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5,
-                padding: '2px 8px', borderRadius: 999, cursor: 'pointer', background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.12)',
-                color: settings.mathMode ? 'rgba(150,225,175,0.75)' : 'rgba(255,255,255,0.38)',
-                fontSize: 10.5, fontWeight: 600, letterSpacing: '0.01em', opacity: 0.8,
+                pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '11px 16px', minHeight: 44, borderRadius: 999, cursor: 'pointer', background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)', touchAction: 'manipulation',
+                color: settings.mathMode ? 'rgba(150,225,175,0.85)' : 'rgba(255,255,255,0.5)',
+                fontSize: 12.5, fontWeight: 600, letterSpacing: '0.01em', opacity: 0.85,
                 transition: 'color 120ms, opacity 120ms',
               }}
             >
-              <span aria-hidden style={{ fontSize: 11 }}>🧮</span>
+              <span aria-hidden style={{ fontSize: 13 }}>🧮</span>
               <span style={{
-                width: 7, height: 7, borderRadius: '50%',
+                width: 8, height: 8, borderRadius: '50%',
                 background: settings.mathMode ? '#7fe0a2' : 'rgba(255,255,255,0.25)',
                 boxShadow: settings.mathMode ? '0 0 5px rgba(127,224,162,0.8)' : 'none',
               }} />
               Mathe
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13 }}>Du spielst als <b style={{ color: '#fff' }}>{character === 'fiona' ? 'Fiona' : 'Lea'}</b></span>
-              <button className="lf-topbtn" type="button" onClick={() => setCharPicked(false)} style={{ pointerEvents: 'auto', padding: '4px 12px', borderRadius: 999, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Figur ändern</button>
+              <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13 }}>Du spielst als <b style={{ color: '#fff' }}>{character === 'fiona' ? 'Fiona' : character === 'stephan' ? 'Stephan' : 'Lea'}</b></span>
+              <button className="lf-topbtn" type="button" onClick={() => setCharPicked(false)} style={{ pointerEvents: 'auto', padding: '11px 18px', minHeight: 44, borderRadius: 999, background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', touchAction: 'manipulation' }}>Figur ändern</button>
               {stickers.includes('super_collector') && (
                 <span
                   data-testid="badge-super-collector"
@@ -1400,7 +1756,17 @@ export default function GamePage() {
             </div>
           </div>
 
+          <div style={{
+            position: 'relative', width: 'min(94vw, 880px)', maxWidth: 880, zIndex: 1,
+            // Das Grid darf schrumpfen, damit es (samt „mehr Level ↓") auch im
+            // flachen Handy-Querformat im sichtbaren Bereich bleibt und intern
+            // scrollt, statt unter den Bildschirmrand zu rutschen.
+            flex: '0 1 auto', minHeight: 0, maxHeight: 'min(60vh, 460px)',
+            display: 'flex', flexDirection: 'column',
+          }}>
           <div
+            ref={levelGridRef}
+            onScroll={updateGridMore}
             role="group"
             aria-label="Levelauswahl"
             className="lf-level-grid"
@@ -1408,9 +1774,9 @@ export default function GamePage() {
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(104px, 1fr))',
               gap: 12,
-              maxWidth: 880,
-              width: 'min(94vw, 880px)',
-              maxHeight: 'min(60vh, 460px)',
+              width: '100%',
+              flex: '1 1 auto',
+              minHeight: 0,
               overflowY: 'auto',
               padding: 6,
               pointerEvents: 'auto',
@@ -1584,6 +1950,31 @@ export default function GamePage() {
                 </button>
               );
             })}
+          </div>
+            {/* P2.3: weicher Verlauf + „mehr Level ↓" — nur wenn nach unten noch
+                Karten scrollbar sind (v. a. Handy quer). Klick scrollt weiter. */}
+            <div
+              data-testid="level-scroll-hint"
+              aria-hidden={!gridMore}
+              onClick={() => { const el = levelGridRef.current; if (el) el.scrollBy({ top: el.clientHeight * 0.8, behavior: 'smooth' }); }}
+              style={{
+                position: 'absolute', left: 6, right: 6, bottom: 0, height: 46,
+                display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                paddingBottom: 6, borderRadius: '0 0 12px 12px',
+                background: 'linear-gradient(180deg, rgba(16,12,34,0) 0%, rgba(16,12,34,0.55) 78%)',
+                pointerEvents: gridMore ? 'auto' : 'none',
+                opacity: gridMore ? 1 : 0, transition: 'opacity 200ms ease',
+                cursor: 'pointer', zIndex: 3,
+              }}
+            >
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '3px 12px', borderRadius: 999,
+                background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.22)',
+                color: '#fff', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.02em',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+              }}>mehr Level <span className="lf-bounce-down" aria-hidden>↓</span></span>
+            </div>
           </div>
           <div
             data-testid="text-title-hint"

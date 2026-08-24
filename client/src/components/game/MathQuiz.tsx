@@ -1,6 +1,7 @@
 import React from 'react';
 import runSheetFiona from '@assets/run_sheet_fiona.webp';
 import runSheetLea from '@assets/run_sheet_lea.webp';
+import { STEPHAN_FRAME_URLS } from '../../game/assets/stephanSprites';
 import { audio } from '../../game/audio';
 
 // Mathe-Modus: nach jedem Level 3 Rechenaufgaben (Plus/Minus, keine negativen
@@ -25,9 +26,13 @@ function makeQuestion(maxN: number): Q {
   return { text: `${a} + ${b}`, answer: a + b };
 }
 
+// Für Lea/Fiona ist sheetW = 4×fw (Streifen; die Anzeige zeigt statisch das
+// erste Frame). Für Stephan nutzen wir ein einzelnes Frame (sheetW = fw), auf
+// eine mascot-taugliche Größe herunterskaliert (Seitenverhältnis ~157:176).
 const MASCOT: Record<string, { sheet: string; fw: number; fh: number; sheetW: number }> = {
   fiona: { sheet: runSheetFiona, fw: 47, fh: 72, sheetW: 188 },
   lea: { sheet: runSheetLea, fw: 71, fh: 84, sheetW: 284 },
+  stephan: { sheet: STEPHAN_FRAME_URLS[0], fw: 54, fh: 60, sheetW: 54 },
 };
 
 export function MathQuiz(
