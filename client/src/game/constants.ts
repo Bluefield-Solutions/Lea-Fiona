@@ -1,13 +1,25 @@
 export const TILE_SIZE = 32;
+// GEGNER-/Item-Gravitation (GETEILT). Wird von enemies.ts vielfach genutzt →
+// NICHT für Spieler-Tuning ändern, sonst fallen alle Gegner anders. Der Spieler
+// nutzt für den Steigflug bewusst PLAYER_GRAVITY_RISE (siehe unten).
 export const GRAVITY = 0.48;
-export const GRAVITY_FALLING = 0.72;
-export const GRAVITY_APEX = 0.22;
+// MOV-001/002 (Movement Gold Standard v1.0, 2026-08-24): Sprung „entfloatet".
+// Spieler-eigene Steig-Gravitation (ersetzt die geteilte GRAVITY im Steigflug),
+// stärkere Fall-Gravitation und weniger Apex-Float → kürzere Airtime/Apex-Zeit,
+// mehr Gewicht, bei ~gleicher Sprunghöhe (reachability-sicher).
+// Vorher: RISE=GRAVITY 0.48 · FALLING 0.72 · APEX 0.22.
+export const PLAYER_GRAVITY_RISE = 0.68;
+export const GRAVITY_FALLING = 1.02;
+export const GRAVITY_APEX = 0.37;
 export const MAX_FALL_SPEED = 12;
 export const PLAYER_SPEED = 3.5;
-// Top-speed when sprinting — bumped a notch so running feels noticeably
-// faster than walking instead of a small nudge.
-export const PLAYER_RUN_SPEED = 7.5;
-export const PLAYER_JUMP_FORCE = -10.5;
+// Top-speed when sprinting — deutlich schneller als Walk (3.5), aber MOV-002:
+// von 7.5 → 6.8 gesenkt, damit die Laufsprung-Weite nicht ganze Lücken
+// trivialisiert (zusammen mit der kürzeren Airtime aus MOV-001).
+export const PLAYER_RUN_SPEED = 6.8;
+// MOV-001: Absprung-Impuls von -10.5 → -11.8 erhöht, um die Zielhöhe trotz der
+// stärkeren Gravitation zu halten (schneller hoch + runter = weniger floaty).
+export const PLAYER_JUMP_FORCE = -11.8;
 export const PLAYER_BOUNCE_FORCE = -9.5;
 // Sprungfeder (SPRING_STONE): katapultiert die Spielerin deutlich höher als ein
 // normaler Sprung — Umwelt-Interaktion, erreicht sonst unerreichbare Bereiche.

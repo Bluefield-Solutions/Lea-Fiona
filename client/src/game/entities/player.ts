@@ -4,7 +4,7 @@ import {
   APEX_THRESHOLD, BOUNCE_BOOST_MULT, CAPE_GLIDE_GRAVITY, CAPE_GLIDE_MAX_FALL,
   CLIMB_SPEED, SWING_RELEASE_VX, SWING_RELEASE_VY, CLOCK_DURATION_FRAMES, COIN_VALUE, COYOTE_TIME, DUCK_SPEED_MULT,
   VINE_RELEASE_VX_CAP, VINE_JUMP_VY, VINE_JUMP_VX, VINE_GRAB_COOLDOWN,
-  Direction, EntityType, FRICTION, GRAVITY,
+  Direction, EntityType, FRICTION, GRAVITY, PLAYER_GRAVITY_RISE,
   GRAVITY_APEX, GRAVITY_FALLING, GROUND_POUND_LOCK_FRAMES, GROUND_POUND_MIN_AIRTIME,
   ICE_FRICTION, JUMP_BUFFER_TIME, MAGNET_DURATION_FRAMES, MAX_FALL_SPEED,
   PLAYER_BOUNCE_FORCE, PLAYER_FIREBALL_COOLDOWN, PLAYER_JUMP_FORCE, PLAYER_RUN_SPEED,
@@ -997,7 +997,9 @@ export class Player extends Entity {
     } else if (this.velY > 0) {
       grav = this.jumpHeld ? GRAVITY_FALLING * 0.85 : GRAVITY_FALLING;
     } else {
-      grav = GRAVITY;
+      // MOV-001: spieler-eigene Steig-Gravitation (nicht die geteilte Gegner-
+      // GRAVITY), damit „Entfloaten" die Gegner-Physik nicht mitverändert.
+      grav = PLAYER_GRAVITY_RISE;
     }
 
     this.velY += grav;
