@@ -88,6 +88,16 @@ export function createBeachLevel(): LevelData {
   addBlock('magnet', 55, ground - 4);
   addCoinRow(52, 4, ground - 4);
   addCoinArc(58, 4, ground - 5, 3);
+  // Power-Up-gegatete Bonus-Nische (Audit C2): ein überdachter Tunnel (Decke →
+  // nicht überspringbar), dessen Eingang eine Feuer-Ranke sperrt. Die Feuerblume
+  // aus Beat 2 (col 38) brennt sie weg → das Feuer-Power-Up bekommt eine echte
+  // Aufgabe. Rein optional (Sackgasse mit Münzen), nie auf dem Flaggen-Pfad.
+  addBricks(60, 4, ground - 3);            // Decke cols 60–63
+  set(63, ground - 1, TileType.BRICK);     // rechte Wand
+  set(63, ground - 2, TileType.BRICK);
+  addCoinRow(61, 2, ground - 2);           // Belohnung im Tunnel
+  addCoinRow(61, 2, ground - 1);
+  entities.push({ type: EntityType.FIRE_BARRIER, x: 60 * TILE_SIZE, y: ground * TILE_SIZE, hTiles: 2 });
 
   // BEAT 4 — Klippen & Plattformen (67–92): Lücke + Aufstieg (Möwen entfernt).
   fillGround(70, 92, ground);

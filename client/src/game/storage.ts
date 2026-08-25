@@ -527,13 +527,24 @@ export function ownsCosmetic(id: string): boolean {
   return active().ownedCosmetics.includes(id);
 }
 
+/** Summe aller gesammelten Sterne (über alle Level). Für die Sterne-Senke. */
+export function getTotalStars(): number {
+  let sum = 0;
+  for (const v of Object.values(active().levelStars)) sum += Math.max(0, Math.min(3, v || 0));
+  return sum;
+}
+
 /**
- * Kauft einen Kosmetik-Hut: prüft Besitz + Kontostand, bucht ab und legt den
- * Hut sofort an. Rückgabe: 'ok' | 'owned' (schon gekauft) | 'poor' (zu teuer).
+ * Kauft einen Kosmetik-Hut: prüft Besitz, Kontostand UND (optional) genug
+ * gesammelte Sterne, bucht Münzen ab und legt den Hut sofort an. Sterne werden
+ * NICHT verbraucht (sie sind eine Schwelle, keine Währung — so bleibt das
+ * Album-Sammelziel erhalten). Rückgabe:
+ *   'ok' | 'owned' (schon gekauft) | 'poor' (zu wenig Münzen) | 'stars' (zu wenig Sterne).
  */
-export function buyCosmetic(id: string, price: number): 'ok' | 'owned' | 'poor' {
+export function buyCosmetic(id: string, price: number, starReq = 0): 'ok' | 'owned' | 'poor' | 'stars' {
   const p = active();
   if (p.ownedCosmetics.includes(id)) return 'owned';
+  if (starReq > 0 && getTotalStars() < starReq) return 'stars';
   if (p.totalCoins < price) return 'poor';
   p.totalCoins -= price;
   p.ownedCosmetics.push(id);

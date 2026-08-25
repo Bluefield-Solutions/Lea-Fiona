@@ -254,6 +254,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'double_jump',     name: 'Flügel-Fee',           description: 'Schnapp dir die Flügel — Doppelsprung freigeschaltet!', icon: '🪽' },
   // Großer Meilenstein: in JEDER Welt alle Sonder-Münzen gesammelt.
   { id: 'super_collector',  name: 'Super-Sammlerin',      description: 'Sammle in jeder Welt alle Sonder-Münzen!',        icon: '👑' },
+  // Meilenstein-Sammel-Sticker: werden bei der 5-/10-Welten-Feier vergeben
+  // (die alle-Welten-Feier vergibt 'all_levels'). Append, niemals umsortieren.
+  { id: 'milestone_5',  name: '5-Welten-Fest',   description: 'Feiere deine ersten 5 geschafften Welten.', icon: '🎉' },
+  { id: 'milestone_10', name: '10-Welten-Party',  description: 'Feiere 10 geschaffte Welten.',              icon: '🎊' },
 ];
 
 const BY_ID: Map<string, AchievementDef> = new Map(ACHIEVEMENTS.map(a => [a.id, a]));

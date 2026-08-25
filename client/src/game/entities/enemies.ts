@@ -5,7 +5,8 @@ import {
   BOMB_OMB_FUSE_FRAMES, CRAB_SPEED, Direction, ENEMY_SPEED,
   EntityType, FISH_FLY_AMPLITUDE, FISH_FLY_SPEED, FISH_SPEED,
   GHOST_FLY_AMPLITUDE, GHOST_FLY_SPEED, GHOST_SPEED, GRAVITY,
-  HORNET_AGGRO_RANGE, HORNET_AMPLITUDE, HORNET_DIVE_SPEED, HORNET_FLY_SPEED,
+  HORNET_AGGRO_RANGE, HORNET_AMPLITUDE, HORNET_DIVE_SPEED, HORNET_FLY_SPEED, HORNET_WINDUP,
+  BANZAI_BILL_WINDUP, CHUCK_WINDUP, SEAGULL_WINDUP,
   HORNET_SPEED, JELLYFISH_FLY_AMPLITUDE, JELLYFISH_FLY_SPEED, JELLYFISH_SPEED,
   KANGAROO_JUMP_FORCE, KANGAROO_JUMP_INTERVAL, KANGAROO_SPEED,
   DEER_SPEED, DEER_JUMP_FORCE, DEER_JUMP_INTERVAL, MAX_FALL_SPEED,
@@ -1349,6 +1350,8 @@ export class Hornet extends Entity {
   startY: number;
   flyTimer = 0;
   diving = false;
+  windupTimer = 0;       // Telegraphing (D1): >0 = holt sichtbar zum Sturz aus
+  private windupArmed = false;
   // Re-evaluated each frame against the player position by the engine
   // before update() is called. Stored on the entity so the engine can
   // pass the player ref through `chase(playerCenterX, playerCenterY)`.
@@ -1387,9 +1390,35 @@ export class Hornet extends Entity {
     const dx = this.targetingValid ? this.targetX - cx : 0;
     const dy = this.targetingValid ? this.targetY - cy : 0;
     const dist = this.targetingValid ? Math.hypot(dx, dy) : Number.POSITIVE_INFINITY;
-    this.diving = this.targetingValid && dist < HORNET_AGGRO_RANGE;
+    const inAggro = this.targetingValid && dist < HORNET_AGGRO_RANGE;
+
+    // Telegraphing (D1): Bevor der Sturz startet, kurz sichtbar ausholen
+    // (Aushol-Ruck nach oben + Warn-Blitz via windupTimer). Verlässt der
+    // Spieler das Aggro-Fenster während des Ausholens, wird abgebrochen.
+    if (!this.diving) {
+      if (inAggro) {
+        if (this.windupTimer <= 0 && !this.windupArmed) { this.windupTimer = HORNET_WINDUP; this.windupArmed = true; }
+        if (this.windupTimer > 0) {
+          this.windupTimer -= dt;
+          this.x -= Math.sign(dx || 1) * 0.4 * dt;                 // minimal zurückziehen
+          this.y = this.startY + Math.sin(this.flyTimer * HORNET_FLY_SPEED) * HORNET_AMPLITUDE - 5;
+          if (this.windupTimer <= 0) { this.windupTimer = 0; this.diving = true; }
+          return;
+        }
+      } else {
+        this.windupArmed = false; this.windupTimer = 0;
+      }
+    }
 
     if (this.diving) {
+      // Aufgeben: Spieler entkommen oder Sturz durchgezogen → zurück in den
+      // Ruheflug steigen und neu telegraphieren dürfen.
+      if (!inAggro || this.y > this.startY + 160) {
+        this.diving = false; this.windupArmed = false;
+        this.x += this.velX * dt * 0.5;
+        if (this.y > this.startY) this.y -= 2 * dt;
+        return;
+      }
       // Dive: aim at player. Normalise so X and Y feel proportional.
       // Clamp each component to HORNET_DIVE_SPEED so a tiny dist (player
       // half-overlapping the hornet) can't blow up the per-axis velocity
@@ -1429,6 +1458,7 @@ export class BanzaiBill extends Entity {
   isDead = false;
   deadTimer = 0;
   active = false;
+  windupTimer = 0;       // Telegraphing (D1): brummt sichtbar auf, bevor er losfliegt
   spawnX: number;
   flyTimer = 0;
 
@@ -1444,7 +1474,10 @@ export class BanzaiBill extends Entity {
     if (this.active) return;
     const dx = playerX - (this.x + this.width / 2);
     const dy = playerY - (this.y + this.height / 2);
-    if (Math.hypot(dx, dy) < BANZAI_BILL_AGGRO_RANGE) this.active = true;
+    if (Math.hypot(dx, dy) < BANZAI_BILL_AGGRO_RANGE) {
+      this.active = true;
+      this.windupTimer = BANZAI_BILL_WINDUP;   // erst brummen, dann losfliegen
+    }
   }
 
   update(dt: number) {
@@ -1458,6 +1491,8 @@ export class BanzaiBill extends Entity {
     }
     if (!this.active) return;
     this.flyTimer += dt;
+    // Telegraphing (D1): kurz aufbrummen (windupTimer > 0), erst dann losfliegen.
+    if (this.windupTimer > 0) { this.windupTimer -= dt; return; }
     this.x += this.velX * dt;
   }
 }
@@ -1477,6 +1512,8 @@ export class CharginChuck extends Entity {
   hitsTaken = 0;
   stunTimer = 0;
   charging = false;
+  windupTimer = 0;       // Telegraphing (D1): >0 = „scharrt" vor dem Sprint
+  private windupArmed = false;
   edgeBehavior = false; // läuft über Klippen wie ein Goomba ohne Angst
   private targetX = 0;
   private targetingValid = false;
@@ -1513,10 +1550,22 @@ export class CharginChuck extends Entity {
     if (this.targetingValid) {
       const dx = this.targetX - (this.x + this.width / 2);
       if (Math.abs(dx) < CHUCK_AGGRO_RANGE) {
-        this.charging = true;
         this.direction = dx < 0 ? Direction.LEFT : Direction.RIGHT;
+        // Telegraphing (D1): kurzes „Scharren" auf der Stelle, bevor er sprintet.
+        if (!this.charging) {
+          if (this.windupTimer <= 0 && !this.windupArmed) { this.windupTimer = CHUCK_WINDUP; this.windupArmed = true; }
+          if (this.windupTimer > 0) {
+            this.windupTimer -= dt;
+            this.velX = 0;
+            this.velY += GRAVITY;
+            if (this.velY > MAX_FALL_SPEED) this.velY = MAX_FALL_SPEED;
+            if (this.windupTimer <= 0) { this.windupTimer = 0; this.charging = true; }
+            return;
+          }
+        }
       } else {
         this.charging = false;
+        this.windupArmed = false; this.windupTimer = 0;
       }
     }
     const speed = this.charging ? CHUCK_CHARGE_SPEED : CHUCK_WALK_SPEED;
@@ -1531,6 +1580,7 @@ export class CharginChuck extends Entity {
     this.hitFlash = 7;
     this.stunTimer = CHUCK_STUN_FRAMES;
     this.charging = false;
+    this.windupArmed = false; this.windupTimer = 0;   // nach dem Stun neu telegraphieren
     if (this.hitsTaken >= CHUCK_HITS_TO_KILL) {
       this.isDead = true;
     this.hitFlash = 7;
@@ -1678,6 +1728,8 @@ export class Seagull extends Entity {
   startY: number;
   flyTimer = 0;
   diving = false;
+  windupTimer = 0;       // Telegraphing (D1)
+  private windupArmed = false;
   diveCooldown = 0;
   isDead = false;
   deadTimer = 0;
@@ -1729,8 +1781,15 @@ export class Seagull extends Entity {
         if (Math.abs(dx) < SEAGULL_AGGRO_RANGE) {
           this.direction = dx < 0 ? Direction.LEFT : Direction.RIGHT;
         }
+        // Telegraphing (D1): kurzes Aushol-Fenster, bevor der Sturz startet.
         if (Math.abs(dx) < 70 && this.targetY > this.y + 30) {
-          this.diving = true;
+          if (this.windupTimer <= 0 && !this.windupArmed) { this.windupTimer = SEAGULL_WINDUP; this.windupArmed = true; }
+          if (this.windupTimer > 0) {
+            this.windupTimer -= dt;
+            if (this.windupTimer <= 0) { this.windupTimer = 0; this.diving = true; this.windupArmed = false; }
+          }
+        } else {
+          this.windupArmed = false; this.windupTimer = 0;
         }
       }
     }

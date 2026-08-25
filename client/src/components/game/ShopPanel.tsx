@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { COSMETICS } from '../../game/cosmetics';
 import {
   getWalletCoins, getOwnedCosmetics, getEquippedCosmetic,
-  buyCosmetic, setEquippedCosmetic,
+  buyCosmetic, setEquippedCosmetic, getTotalStars,
 } from '../../game/storage';
 import { audio } from '../../game/audio';
 
@@ -17,13 +17,14 @@ export function ShopPanel() {
   const bump = () => setTick(t => t + 1);
 
   const wallet = getWalletCoins();
+  const stars = getTotalStars();
   const owned = new Set(getOwnedCosmetics());
   const equipped = getEquippedCosmetic();
 
-  const onBuy = (id: string, price: number) => {
-    const res = buyCosmetic(id, price);
+  const onBuy = (id: string, price: number, starReq: number) => {
+    const res = buyCosmetic(id, price, starReq);
     if (res === 'ok') { audio.playSfx('oneUp'); bump(); }
-    else if (res === 'poor') { audio.playSfx('select'); } // nicht genug — dezent
+    else { audio.playSfx('select'); } // zu wenig Münzen/Sterne — dezent
   };
   const onEquip = (id: string | null) => {
     setEquippedCosmetic(id);
@@ -47,10 +48,15 @@ export function ShopPanel() {
         border: '2px solid #ffd54a',
       }}>
         <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)', fontWeight: 700 }}>
-          Deine Münzen aus allen Levels — kauf dir schöne Hüte! 🎩
+          Münzen kaufen Hüte — Premium-Hüte brauchen zusätzlich Sterne! ⭐
         </span>
-        <span data-testid="text-shop-wallet" style={{ fontSize: 20, fontWeight: 900, color: '#ffd54a', whiteSpace: 'nowrap' }}>
-          🪙 {wallet}
+        <span style={{ display: 'flex', gap: 12, whiteSpace: 'nowrap' }}>
+          <span data-testid="text-shop-wallet" style={{ fontSize: 20, fontWeight: 900, color: '#ffd54a' }}>
+            🪙 {wallet}
+          </span>
+          <span data-testid="text-shop-stars" style={{ fontSize: 20, fontWeight: 900, color: '#ffe45e' }}>
+            ⭐ {stars}
+          </span>
         </span>
       </div>
 
@@ -79,7 +85,10 @@ export function ShopPanel() {
         {COSMETICS.map(c => {
           const isOwned = owned.has(c.id);
           const isEquipped = equipped === c.id;
-          const canAfford = wallet >= c.price;
+          const starReq = c.starCost ?? 0;
+          const enoughStars = stars >= starReq;
+          const enoughCoins = wallet >= c.price;
+          const canBuy = enoughCoins && enoughStars;
           return (
             <div
               key={c.id}
@@ -100,27 +109,44 @@ export function ShopPanel() {
               <div style={{ fontSize: 13, fontWeight: 800, color: isOwned ? '#ffe9a8' : 'rgba(255,255,255,0.9)' }}>
                 {c.name}
               </div>
-              <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.65)', margin: '3px 0 8px', lineHeight: 1.2, minHeight: 26 }}>
+              <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.65)', margin: '3px 0 6px', lineHeight: 1.2, minHeight: 26 }}>
                 {c.hint}
               </div>
+
+              {/* Sterne-Voraussetzung (nur Premium-Hüte). */}
+              {starReq > 0 && !isOwned && (
+                <div
+                  data-testid={`shop-starreq-${c.id}`}
+                  style={{
+                    fontSize: 11, fontWeight: 800, marginBottom: 6,
+                    color: enoughStars ? '#7cf29b' : '#ff9ea0',
+                  }}
+                >
+                  {enoughStars ? '✓' : '🔒'} braucht ⭐ {starReq}
+                </div>
+              )}
 
               {!isOwned ? (
                 <button
                   type="button"
                   data-testid={`button-shop-buy-${c.id}`}
-                  onClick={() => onBuy(c.id, c.price)}
-                  disabled={!canAfford}
-                  title={canAfford ? `Kaufen für ${c.price} Münzen` : `Du brauchst noch ${c.price - wallet} Münzen`}
+                  onClick={() => onBuy(c.id, c.price, starReq)}
+                  disabled={!canBuy}
+                  title={
+                    !enoughStars ? `Du brauchst noch ${starReq - stars} Sterne`
+                    : !enoughCoins ? `Du brauchst noch ${c.price - wallet} Münzen`
+                    : `Kaufen für ${c.price} Münzen`
+                  }
                   style={{
                     width: '100%', padding: '7px 6px', borderRadius: 10,
-                    cursor: canAfford ? 'pointer' : 'not-allowed',
+                    cursor: canBuy ? 'pointer' : 'not-allowed',
                     fontSize: 12.5, fontWeight: 800,
-                    color: canAfford ? '#5a3a00' : 'rgba(255,255,255,0.55)',
-                    background: canAfford ? 'linear-gradient(160deg,#ffd54a,#ffb347)' : 'rgba(255,255,255,0.08)',
-                    border: 'none', opacity: canAfford ? 1 : 0.8,
+                    color: canBuy ? '#5a3a00' : 'rgba(255,255,255,0.55)',
+                    background: canBuy ? 'linear-gradient(160deg,#ffd54a,#ffb347)' : 'rgba(255,255,255,0.08)',
+                    border: 'none', opacity: canBuy ? 1 : 0.8,
                   }}
                 >
-                  🪙 {c.price}{!canAfford ? ' 🔒' : ''}
+                  🪙 {c.price}{!canBuy ? ' 🔒' : ''}
                 </button>
               ) : isEquipped ? (
                 <div

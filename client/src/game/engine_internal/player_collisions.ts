@@ -74,7 +74,16 @@ export function playerHit(engine: GameEngine, entity?: Entity): void {
   // Frames die Eingabe-Beschleunigung, damit der Rückstoß sichtbar ausklingt und
   // die Kontrolle danach schnell zurückkehrt (kein Kontrollverlust-Frust).
   const applyKnockback = (strength = 5.5) => {
-    const dir = p.direction < 0 ? 1 : -1; // weg von der Laufrichtung (meist vom Gegner)
+    // Richtung: bevorzugt WEG vom tatsächlichen Gegner (fairer als „entgegen der
+    // Blickrichtung" — sonst schleudert ein Treffer von hinten den Spieler noch
+    // tiefer in die Gefahr). Tile-Hazards ohne Gegner: entgegen der Laufrichtung.
+    let dir: number;
+    if (entity) {
+      const pc = p.x + p.width / 2, ec = entity.x + entity.width / 2;
+      dir = pc >= ec ? 1 : -1;
+    } else {
+      dir = p.direction < 0 ? 1 : -1;
+    }
     p.velX = dir * strength;
     p.velY = Math.min(p.velY, -4.5);
     p.onGround = false;

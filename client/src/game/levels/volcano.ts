@@ -96,6 +96,16 @@ export function createVulkanLevel(): LevelData {
   addBlock('magnet', 57, ground - 4);
   addCoinRow(54, 4, ground - 4);
   addCoinArc(60, 4, ground - 5, 3);
+  // Power-Up-gegatete Bonus-Nische (Audit C2): überdachter Feuer-Tunnel, dessen
+  // Eingang eine Feuer-Ranke sperrt. Die Feuerblume aus Beat 2 (col 37) brennt
+  // sie weg → das Feuer-Power-Up bekommt hier (thematisch im Vulkan) eine echte
+  // Aufgabe. Optional (Sackgasse mit Münzen), nie auf dem Flaggen-Pfad.
+  addBricks(61, 4, ground - 3);            // Decke cols 61–64 (nicht überspringbar)
+  set(64, ground - 1, TileType.BRICK);     // rechte Wand
+  set(64, ground - 2, TileType.BRICK);
+  addCoinRow(62, 2, ground - 2);           // Belohnung im Tunnel
+  addCoinRow(62, 2, ground - 1);
+  entities.push({ type: EntityType.FIRE_BARRIER, x: 61 * TILE_SIZE, y: ground * TILE_SIZE, hTiles: 2 });
 
   // BEAT 4 — Stachelball-Einführung (67–94): Signature + Bodenstacheln.
   fillGround(67, 94, ground);

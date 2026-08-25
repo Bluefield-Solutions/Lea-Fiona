@@ -17,6 +17,12 @@ export interface CosmeticDef {
   name: string;
   /** Preis in Münzen (Wallet = Profile.totalCoins). */
   price: number;
+  /**
+   * Zusätzlich nötige gesammelte Sterne (Summe aus levelStars, max 3×Welten).
+   * 0/undefined = nur Münzen. Gibt den Sternen ein Ziel (Sterne-Senke): die
+   * Premium-Hüte verlangen ECHTE Spielleistung, nicht nur Münzen-Grinding.
+   */
+  starCost?: number;
   /** Emoji für die Shop-Kachel (nur UI, nicht das In-Game-Rendering). */
   emoji: string;
   /** Kurzer, kindgerechter Ein-Zeiler für die Kachel. */
@@ -29,8 +35,9 @@ export const COSMETICS: CosmeticDef[] = [
   { id: 'cap',      name: 'Cappy',       price: 40,  emoji: '🧢', hint: 'Eine coole Schirmmütze.' },
   { id: 'party',    name: 'Partyhut',    price: 60,  emoji: '🎉', hint: 'Bunt und spitz — für jede Party.' },
   { id: 'zylinder', name: 'Zylinder',    price: 85,  emoji: '🎩', hint: 'Ein schicker hoher Hut.' },
-  { id: 'krone',    name: 'Krönchen',    price: 120, emoji: '👑', hint: 'Für echte Heldinnen: eine Goldkrone.' },
-  { id: 'stern',    name: 'Sternenreif', price: 160, emoji: '⭐', hint: 'Ein leuchtender Sternen-Haarreif.' },
+  // Premium: zusätzlich Sterne nötig (Sterne-Senke).
+  { id: 'krone',    name: 'Krönchen',    price: 120, starCost: 20, emoji: '👑', hint: 'Nur für Sterne-Sammler: eine Goldkrone.' },
+  { id: 'stern',    name: 'Sternenreif', price: 160, starCost: 35, emoji: '⭐', hint: 'Der Sternen-Haarreif für echte Meisterinnen.' },
 ];
 
 const BY_ID: Map<string, CosmeticDef> = new Map(COSMETICS.map(c => [c.id, c]));

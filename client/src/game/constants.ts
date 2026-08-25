@@ -268,6 +268,9 @@ export const HORNET_AMPLITUDE = 22;
 export const HORNET_FLY_SPEED = 0.05;
 export const HORNET_DIVE_SPEED = 3.2;
 export const HORNET_AGGRO_RANGE = 180;
+// Telegraphing (Audit D1): faires Vorwarn-Fenster (Frames), bevor der schnelle
+// Angriff startet — der Gegner holt sichtbar aus (Aushol-Ruck + Warn-Blitz).
+export const HORNET_WINDUP = 16;
 
 // ---------------------------------------------------------------------------
 // Schmetterlingsumhang (Cape / Glider) ability: while held jump in the
@@ -489,6 +492,7 @@ export const GHOST_FLY_SPEED = 0.028;
 export const BANZAI_BILL_SPEED = 1.5;
 export const BANZAI_BILL_SIZE = 64;
 export const BANZAI_BILL_AGGRO_RANGE = 480;
+export const BANZAI_BILL_WINDUP = 26;   // großes Geschoss deutlich vor-telegraphieren
 
 // Chargin' Chuck — gepanzerter Footballer aus SMW. Schlendert
 // langsam in eine Richtung, sieht er den Spieler in Reichweite,
@@ -500,6 +504,7 @@ export const CHUCK_CHARGE_SPEED = 3.6;
 export const CHUCK_AGGRO_RANGE = 240;
 export const CHUCK_HITS_TO_KILL = 3;
 export const CHUCK_STUN_FRAMES = 30;
+export const CHUCK_WINDUP = 20;   // kurzes „Anlauf-Scharren" vor dem Sprint
 
 // Big Boo — riesiger Geist aus SMW. Bewegt sich nur, wenn der
 // Spieler NICHT in seine Richtung schaut. Schaut der Spieler hin,
@@ -615,6 +620,7 @@ export const SEAGULL_AMPLITUDE = 18;
 export const SEAGULL_FLY_SPEED = 0.04;
 export const SEAGULL_DIVE_SPEED = 4.5;
 export const SEAGULL_AGGRO_RANGE = 220;
+export const SEAGULL_WINDUP = 15;   // kurzes Innehalten/Steigen vor dem Sturz
 
 // Lava-Slime (Volcano): hüpft langsam
 export const LAVA_SLIME_HOP_INTERVAL = 75;

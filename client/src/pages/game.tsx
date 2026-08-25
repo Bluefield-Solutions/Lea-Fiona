@@ -14,7 +14,7 @@ import {
   listProfiles, getActiveProfile, switchProfile, createProfile,
   deleteProfile, renameProfile,
   getSettings, updateSettings, type Settings, type Profile,
-  getStickers,
+  getStickers, unlockSticker,
   safeLocalGet, safeLocalSet,
 } from '../game/storage';
 import { getAchievement } from '../game/achievements';
@@ -323,6 +323,17 @@ export default function GamePage() {
     const done = LEVELS.reduce((n, _l, i) => n + (getLevelStars(i) > 0 ? 1 : 0), 0);
     let stored: number[] = [];
     try { stored = (safeLocalGet('lf_milestones_v1') || '').split(',').filter(Boolean).map(Number); } catch { /* egal */ }
+    // Meilenstein-Sammel-Sticker (Tier 2): für JEDEN erreichten Meilenstein
+    // den dauerhaften Album-Sticker sichern — auch rückwirkend für Stände, die
+    // 5/10 schon vor diesem Update gefeiert haben (unlockSticker ist idempotent).
+    let gained = false;
+    for (const m of MILESTONES) {
+      if (done < m) continue;
+      const id = m >= LEVELS.length ? 'all_levels' : `milestone_${m}`;
+      if (unlockSticker(id)) gained = true;
+    }
+    if (gained) setStickers(getStickers());
+
     const newly = MILESTONES.filter((m) => done >= m && !stored.includes(m));
     if (newly.length) {
       const top = Math.max(...newly);

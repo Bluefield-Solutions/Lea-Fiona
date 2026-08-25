@@ -484,6 +484,15 @@ function renderWorldLayer(engine: GameEngine): void {
       engine.renderer.drawUFOLaser(screen.x, screen.y, entity.width, entity.height, engine.renderer.time);
     }
     if (entity.hitFlash > 0) engine.renderer.ctx.filter = 'none';
+
+    // Telegraphing (Audit D1): schnelle Angreifer holen sichtbar aus. Solange
+    // windupTimer > 0 läuft, schwebt ein pulsierendes Warn-„!" über dem Gegner
+    // — faires Vorwarn-Fenster für Kinder, bevor Sturz/Sprint/Abschuss startet.
+    if ((entity instanceof Hornet || entity instanceof Seagull
+         || entity instanceof BanzaiBill || entity instanceof CharginChuck)
+        && !entity.isDead && entity.windupTimer > 0) {
+      drawEnemyTelegraph(engine.renderer.ctx, screen.x + entity.width / 2, screen.y, engine.renderer.time);
+    }
   }
 
   // Ground-pound shockwaves: drawn AFTER entities so they overlay them.
@@ -1645,6 +1654,29 @@ function drawWaterHazardWarnings(engine: GameEngine, startCol: number, endCol: n
     const cy = screen.y - 15 + bob;              // über dem Boden schwebend
     drawCautionTriangle(ctx, cx, cy, 15);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Telegraphing (Audit D1): pulsierendes Warn-„!" über einem schnellen
+// Angreifer, solange er ausholt. (cx, topY) = Kopf-Oberkante-Mitte.
+function drawEnemyTelegraph(ctx: CanvasRenderingContext2D, cx: number, topY: number, t: number): void {
+  const pulse = 0.55 + 0.45 * Math.sin(t * 0.5);
+  const bob = Math.sin(t * 0.5) * 1.6;
+  const y = topY - 13 + bob;
+  ctx.save();
+  // expandierender Warn-Ring
+  const ringR = 8 + pulse * 5;
+  ctx.strokeStyle = `rgba(255,70,70,${0.5 * (1 - pulse)})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, y, ringR, 0, Math.PI * 2); ctx.stroke();
+  // roter Kreis mit weißem „!"
+  ctx.fillStyle = '#ff3b3b';
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, y, 7.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(cx - 1.1, y - 4, 2.2, 5);
+  ctx.beginPath(); ctx.arc(cx, y + 3.4, 1.3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------

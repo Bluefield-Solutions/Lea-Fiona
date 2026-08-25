@@ -14,6 +14,7 @@ import { getSpecialCoinsCollected, getLevelStars } from '../../game/storage';
 const COLLECT_IDS = new Set([
   'plush_teddy', 'plush_hase', 'plush_stern', 'plush_kuschelband',
   'first_special', 'super_collector',
+  'milestone_5', 'milestone_10', 'half_worlds',
 ]);
 // '_clear'-Sticker sind Welt-Abschlüsse — außer diese beiden Kunststücke.
 const NOT_WORLD = new Set(['no_hit_clear', 'speedrun_clear']);
