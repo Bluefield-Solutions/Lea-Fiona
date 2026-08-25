@@ -31,6 +31,7 @@ import {
   getSettings, addLifetimeCoins, unlockSticker, hasSticker,
   getSpecialCoinsCollected, recordLevelStars,
   isDoubleJumpUnlocked,
+  getEquippedCosmetic,
   safeLocalGet, safeLocalSet,
 } from './storage';
 import {
@@ -1062,6 +1063,8 @@ export class GameEngine {
     this.camera.height = this.renderer.viewportH;
     this.player = new Player(this.level.playerStart.x, this.level.playerStart.y, this.carryStats.lives);
     this.player.character = this.selectedCharacter;
+    // Kuschel-Shop: angelegten Hut aus dem Profil übernehmen (rein visuell).
+    this.player.cosmetic = getEquippedCosmetic();
     // Doppelsprung (Paket 2): nur wenn die Flügel-Fähigkeit freigeschaltet ist.
     this.player.doubleJumpUnlocked = isDoubleJumpUnlocked();
     this.player.coins = this.carryStats.coins;

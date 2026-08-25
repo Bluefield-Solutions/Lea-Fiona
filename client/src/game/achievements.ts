@@ -31,7 +31,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   {
     id: 'all_levels',
     name: 'Welten-Meisterin',
-    description: 'Schaffe alle 16 Welten.',
+    description: 'Schaffe alle 19 Welten.',
     icon: '🏆',
   },
   {
@@ -186,6 +186,26 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     name: 'Drachenbezwingerin',
     description: 'Besiege den grünen Drachen in der Drachenhöhle.',
     icon: '🐲',
+  },
+  // Fehlende Welt-Durchgespielt-Sticker ergänzt (Welt 3/18/19), damit das Album
+  // vollständig komplettierbar ist (append, niemals umsortieren).
+  {
+    id: 'forest_clear',
+    name: 'Dämmerwald-Heldin',
+    description: 'Schaffe den Wald der Dämmerung.',
+    icon: '🌲',
+  },
+  {
+    id: 'city_clear',
+    name: 'Dächer-Läuferin',
+    description: 'Schaffe die Stadt über den Dächern.',
+    icon: '🏙️',
+  },
+  {
+    id: 'vacation_clear',
+    name: 'Ferien-Heldin',
+    description: 'Schaffe Stephans Urlaub.',
+    icon: '🏝️',
   },
   // Sammelbare Kuschel-Sticker (versteckt im Plüsch-Traumland).
   {

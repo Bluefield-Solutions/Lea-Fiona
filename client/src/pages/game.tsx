@@ -34,6 +34,7 @@ import heroHillsNear from '@assets/lyr_hillsnear.webp';
 import heroGround from '@assets/lyr_ground.webp';
 import heroForeground from '@assets/lyr_foreground.webp';
 import { AlbumPanel } from '../components/game/AlbumPanel';
+import { ShopPanel } from '../components/game/ShopPanel';
 
 // Height (CSS px) reserved at the bottom of the screen for the touch
 // controls while playing, so they sit below the playfield, not on top of it.
@@ -1142,6 +1143,14 @@ export default function GamePage() {
           🏅
         </HudButton>
         <HudButton
+          testId="button-shop"
+          onClick={() => { audio.playSfx('albumOpen'); refreshProfileState(); setModal('shop'); }}
+          title="Kuschel-Shop"
+          ariaLabel="Kuschel-Shop öffnen"
+        >
+          🛍️
+        </HudButton>
+        <HudButton
           testId="button-settings"
           onClick={() => { refreshProfileState(); setModal('settings'); }}
           title="Einstellungen"
@@ -1453,6 +1462,10 @@ export default function GamePage() {
                   onClick={() => { audio.playSfx('albumOpen'); refreshProfileState(); setModal('album'); setShowQuickSettings(false); }}
                   style={{ flex: 1, minHeight: 44, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', touchAction: 'manipulation' }}
                 >🏅 Album</button>
+                <button type="button" data-testid="quick-shop"
+                  onClick={() => { audio.playSfx('albumOpen'); refreshProfileState(); setModal('shop'); setShowQuickSettings(false); }}
+                  style={{ flex: 1, minHeight: 44, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', touchAction: 'manipulation' }}
+                >🛍️ Shop</button>
                 <button type="button" data-testid="quick-settings-full"
                   onClick={() => { refreshProfileState(); setModal('settings'); setShowQuickSettings(false); }}
                   style={{ flex: 1, minHeight: 44, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', touchAction: 'manipulation' }}
@@ -2266,6 +2279,14 @@ export default function GamePage() {
         <ModalOverlay testId="album-overlay" title="Sticker-Album" onClose={() => setModal(null)}>
           <AlbumPanel unlocked={stickers} />
           <PrimaryButton testId="button-album-close" onClick={() => setModal(null)}>Schließen</PrimaryButton>
+        </ModalOverlay>
+      )}
+
+      {/* Kuschel-Shop modal (F1 Münz-Senke). */}
+      {modal === 'shop' && (
+        <ModalOverlay testId="shop-overlay" title="🛍️ Kuschel-Shop" onClose={() => { refreshProfileState(); setModal(null); }}>
+          <ShopPanel />
+          <PrimaryButton testId="button-shop-close" onClick={() => { refreshProfileState(); setModal(null); }}>Schließen</PrimaryButton>
         </ModalOverlay>
       )}
 

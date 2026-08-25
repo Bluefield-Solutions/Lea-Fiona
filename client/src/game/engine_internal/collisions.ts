@@ -129,11 +129,13 @@ export function runFlagCollision(engine: GameEngine): boolean {
       engine.emitEvent('unlock');
     }
     engine.grantAchievementById('first_steps');
-    // Per-theme clear stickers: each of the 13 worlds has its own badge so
+    // Per-theme clear stickers: each of the 19 worlds has its own badge so
     // kids can chase a complete album by finishing every theme at least
     // once. Mapping is keyed off the level's theme name (see level.ts).
     const themeStickers: Record<string, string> = {
       jungle: 'jungle_clear',
+      plush: 'plush_clear',
+      forest: 'forest_clear',
       cave: 'cave_clear',
       sky: 'sky_clear',
       beach: 'beach_clear',
@@ -147,8 +149,9 @@ export function runFlagCollision(engine: GameEngine): boolean {
       gym: 'gym_clear',
       trampoline: 'trampoline_clear',
       bluefield: 'bluefield_clear',
-      plush: 'plush_clear',
       dragon: 'dragon_clear',
+      city: 'city_clear',
+      vacation: 'vacation_clear',
     };
     const themeSticker = themeStickers[level.theme];
     if (themeSticker) engine.grantAchievementById(themeSticker);

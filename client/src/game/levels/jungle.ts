@@ -76,6 +76,10 @@ export function createJungleLevel(): LevelData {
   // ====================================================================
   //  BEAT 2 — Erste Lücke (cols 25–44): Springen lernen.
   // ====================================================================
+  // Faires Telegraphing (Gameplay-Audit G-Wasser): Warnung vor tödlichem Wasser
+  // wird jetzt schild-frei über den globalen Gefahren-Marker gelöst (siehe
+  // render.ts drawWaterHazardWarnings) — Tutorial-Schilder sind Owner-seitig
+  // (v460) global ausgeblendet, ein SIGN-Tile wäre unsichtbar gewesen.
   addWater(26, 27);
   fillGround(28, 44, ground);
   addBlock('fire', 32, ground - 4);

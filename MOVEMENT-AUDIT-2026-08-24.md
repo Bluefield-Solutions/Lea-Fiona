@@ -297,3 +297,53 @@ Typ: **RECOMMENDATION** · Prio **P3** · Aufwand **S** · Regression **niedrig*
 - **maxJumpHeight-Band 3,2–3,8 T → 4,0–4,5 T.** Grund/Evidence: Die Reachability-Envelope belegt einen realen Vertikalbedarf bis ~4,4 T; ein niedrigeres Band würde Level unpassierbar machen. Entfloatet wird daher primär über die *Airtime/Apex-Zeit*, nicht die absolute Höhe.
 - **run-jump-distance-Band 6–8 T → 8–10 T.** Grund: exakt 6–8 T verlangt runSpeed ≤ ~5,8 (zu langsam, Run-Feel leidet). 8,7 T ist deutlich besser als 12,9 T und liegt weit über dem realen Level-Bedarf (≤ 5 T laut Reachability-BFS).
 - **Offen (Folge-Ticket MOV-006):** Tap-Minimum 0,71 T ist theoretisch (1-Frame-Druck, für Menschen praktisch nicht triggerbar; realer Kurzdruck ≈ 8 F → 2,86 T). Optional Jump-Cut leicht abschwächen, falls das gefühlte Minimum zu klein wirkt.
+
+---
+
+## I) MOV-005 UMGESETZT — Movement-Lab-Regressionstest
+
+**Datum:** 2026-08-24 · **Datei:** `tools/movement-tests.mjs` · **Aufruf:** `npm run test:movement` (baut → misst → asserted; Exit ≠0 = Regression).
+
+**Ansatz:** Baut über den echten Engine-Build (`testStep`, headless) eine **kontrollierte Flach-/Kanten-Umgebung** und misst die Kennzahlen deterministisch. Wichtig: **voller Engine-Reset (`startLevel`) pro Messung** — ohne ihn pflanzten sich interne Zustände zwischen Messungen fort und verfälschten den 2. Bewegungslauf (langwierig diagnostiziert; jetzt sauber isoliert).
+
+**13 harte Checks (aktuell alle grün, Exit 0):** walkTopSpeed 3,5 · runTopSpeed 6,8 · Time-to-Max Walk 7F/Run 8F · stopDist ≤0,35T · reversalRun 14F · jumpHeight 4,4T · timeToApex 333ms · airtime 633ms · variableJump monoton (0,71<2,86<4,4) · runJump≥standJump (4,96T) · **FPS-Invarianz** (Höhe identisch bei Tick-Chunk 1/2/4) · Coyote feuert @3F. → Die MOV-001/002-Zielwerte sind damit **automatisiert regressionsgeschützt**.
+
+**2 informative Messungen (nicht gate-blockierend, harness-sensibel):**
+- `Coyote @12F feuert = true` (erwartet false bei 8F-Fenster). Mögliches echtes Verhalten (effektives Fenster länger durch Buffer/Coyote-Interaktion) ODER Testartefakt → **MOV-008: verifizieren**.
+- `Jump-Buffer @5F feuert = false` (erwartet true). Wahrscheinlich Testartefakt (Buffer funktioniert im echten Spiel; In-Game-Soak fehlerfrei) → **MOV-009: robustere Messung**.
+
+**Movement-Lab-Szene (visuell, MOV-005b, offen):** Der automatisierte Teil steht; eine sichtbare Debug-Level-Szene mit beschrifteten Sprung-/Lücken-Markern ist als optionaler Folgeschritt vermerkt.
+
+---
+
+## J) MOV-008 + MOV-009 ABGESCHLOSSEN — Assist-Fenster real vermessen & hart gegated
+
+**Datum:** 2026-08-24 · **Methode:** direkte `coyoteTimer`-Ablesung + Fire-Test je Verzögerung (Engine, `testStep`).
+
+**Coyote (MOV-008):** `coyoteTimer` läuft nach dem Kantenabgang sauber 8→0 (−1 pro Airborne-Frame). Ein Sprung feuert bei **Delay 1–7**, ab Delay 8 nicht mehr (der Timer wird am Frame-Anfang dekrementiert, BEVOR der Sprung-Trigger prüft). **Effektives Fenster = 7 Frames ≈ 117 ms** — genau im Zielband, **kein** Defekt. Das frühere „@12 feuert" war ein Testartefakt (Figur hatte die Kante noch nicht sauber verlassen).
+
+**Jump-Buffer (MOV-009):** freier Fall, Landeframe 36; ein Sprung-Edge feuert bei **Vorlauf 0–6 Frames**, ab 7 nicht mehr. **Effektives Fenster = 6 Frames ≈ 100 ms** — im Zielband. Das frühere „@5 feuert = false" war ebenfalls ein Testartefakt.
+
+**Korrektur zur Ist-Beschreibung (A.4):** Coyote/Buffer sind mit `COYOTE_TIME/JUMP_BUFFER_TIME = 8` konfiguriert, das **nutzbare** Fenster ist durch die Dekrement-vor-Prüfung-Reihenfolge aber 7 (Coyote) bzw. 6 (Buffer) Frames.
+
+**Test:** Beide Fenster sind jetzt **harte** Checks im `movement-tests.mjs` (Coyote feuert @3/@6, NICHT @10; Buffer feuert @2/@5, NICHT @10). Gesamt **18/18 Checks grün**.
+
+---
+
+## K) P-METER / SPRINT-BOOST gegen den entfloateten Bogen (MOV-010)
+
+**Datum:** 2026-08-24 · **Methode:** Sim + Engine-Messung (P-Meter voll laden → Sprung), Engine deckt Sim exakt.
+
+**Kette (Code):** `jumpForce = (PLAYER_JUMP_FORCE − speedBonus·1.0)`; bei P-Charge zusätzlich `×1.20`. Mit den neuen Konstanten:
+
+| Sprung | v0 | Höhe | Time-to-Apex | Airtime |
+|---|---|---|---|---|
+| Stand | −11,8 | 4,40 T | 333 ms | 650 ms |
+| Run (speedBonus≈1) | −12,8 | 4,96 T | 350 ms | 683 ms |
+| **P-Boost (Run + geladen)** | **−15,36** | **6,25 T** | **350 ms** | 717 ms |
+
+**Befund:** Der P-Boost-Sprung ist mit ~6,25 T ein deutlicher Belohnungssprung — aber **Apex bleibt 350 ms** und Airtime nur +67 ms ggü. Run. Das **Entfloaten (stärkere Gravitation) gilt also auch für den geboosteten Bogen**: höher, aber nicht floatiger, gut lesbar/reproduzierbar. Kein Fix nötig.
+
+**Reachability:** Der P-Boost macht Bereiche nur *zusätzlich* erreichbar (Bonus über der Basis-Envelope 4,4 T, mit der der BFS rechnet) → kann Level-Durchspielbarkeit nie brechen. Verbraucht sich beim Sprung (SMB3-typisch), muss neu erlaufen werden.
+
+**Ins Gate aufgenommen (4 harte Checks):** P-Meter lädt bei Vollsprint · P-Boost > Run-Sprung · P-Boost-Höhe 5,5–7,0 T · **P-Boost Apex ≤ 420 ms** (garantiert, dass der Boost-Sprung snappy bleibt). Zusätzlich: Das Lab räumt jetzt Gegner/Items (`g.entities`), damit Vollsprint-/Horizontal-Messungen nicht an Level-1-Gegnern hängenbleiben. **Movement-Gate jetzt 22/22 grün.**

@@ -111,6 +111,14 @@ export interface Profile {
    * Laden automatisch, damit niemand mitten im Spiel den Doppelsprung verliert.
    */
   doubleJumpUnlocked: boolean;
+  /**
+   * Kuschel-Shop (F1 „Münz-Senke"): gekaufte Kosmetik-Hüte (IDs aus
+   * cosmetics.ts). `totalCoins` ist die Wallet, aus der gekauft wird — so
+   * bekommen gesammelte Münzen endlich ein Ziel.
+   */
+  ownedCosmetics: string[];
+  /** Aktuell angelegter Hut (ID) oder null = kein Hut. */
+  equippedCosmetic: string | null;
 }
 
 export interface SaveData {
@@ -167,6 +175,8 @@ function makeProfile(name: string, overrides?: Partial<Profile>): Profile {
     specialCoinsCollected: {},
     levelStars: {},
     doubleJumpUnlocked: false,
+    ownedCosmetics: [],
+    equippedCosmetic: null,
     ...overrides,
   };
 }
@@ -257,6 +267,10 @@ function sanitizeProfile(p: unknown, fallbackName: string): Profile {
     // Fähigkeit plötzlich verlieren). Frische Stände (nur Welt 1) erspielen sie.
     doubleJumpUnlocked: o.doubleJumpUnlocked === true
       || (typeof o.unlockedLevels === 'number' && Math.floor(o.unlockedLevels) > 1),
+    ownedCosmetics: Array.isArray(o.ownedCosmetics)
+      ? Array.from(new Set(o.ownedCosmetics.filter(s => typeof s === 'string') as string[]))
+      : [],
+    equippedCosmetic: typeof o.equippedCosmetic === 'string' ? o.equippedCosmetic : null,
   };
 }
 
@@ -372,6 +386,7 @@ function cloneProfile(p: Profile): Profile {
     settings: { ...p.settings },
     specialCoinsCollected: sc,
     levelStars: { ...p.levelStars },
+    ownedCosmetics: [...p.ownedCosmetics],
   };
 }
 
@@ -486,6 +501,56 @@ export function getGhost(levelIndex: number): number[] | null {
 
 export function addLifetimeCoins(n: number) {
   active().totalCoins += n;
+  scheduleWrite();
+}
+
+// ---- Kuschel-Shop: Wallet (totalCoins) + Kosmetik (F1 Münz-Senke) ----
+/** Aktueller Münz-Kontostand (Wallet), aus dem im Shop gekauft wird. */
+export function getWalletCoins(): number {
+  return active().totalCoins;
+}
+
+/** Zieht n Münzen ab, wenn genug da sind. true = erfolgreich abgebucht. */
+export function spendCoins(n: number): boolean {
+  const p = active();
+  if (n <= 0 || p.totalCoins < n) return false;
+  p.totalCoins -= n;
+  scheduleWrite();
+  return true;
+}
+
+export function getOwnedCosmetics(): string[] {
+  return [...active().ownedCosmetics];
+}
+
+export function ownsCosmetic(id: string): boolean {
+  return active().ownedCosmetics.includes(id);
+}
+
+/**
+ * Kauft einen Kosmetik-Hut: prüft Besitz + Kontostand, bucht ab und legt den
+ * Hut sofort an. Rückgabe: 'ok' | 'owned' (schon gekauft) | 'poor' (zu teuer).
+ */
+export function buyCosmetic(id: string, price: number): 'ok' | 'owned' | 'poor' {
+  const p = active();
+  if (p.ownedCosmetics.includes(id)) return 'owned';
+  if (p.totalCoins < price) return 'poor';
+  p.totalCoins -= price;
+  p.ownedCosmetics.push(id);
+  p.equippedCosmetic = id; // frisch Gekauftes gleich anlegen
+  scheduleWrite();
+  return 'ok';
+}
+
+export function getEquippedCosmetic(): string | null {
+  return active().equippedCosmetic;
+}
+
+/** Legt einen (besessenen) Hut an oder nimmt ihn ab (null). */
+export function setEquippedCosmetic(id: string | null): void {
+  const p = active();
+  if (id !== null && !p.ownedCosmetics.includes(id)) return; // nur Besessenes
+  p.equippedCosmetic = id;
   scheduleWrite();
 }
 

@@ -32,6 +32,12 @@ const _s2 = { x: 0, y: 0 };
 // SIGN-Tiles bleiben in den Daten (nicht-solide, kein Gameplay-Effekt), werden
 // aber nicht mehr gezeichnet. Auf true setzen, um Schilder zurückzuholen.
 const SHOW_TUTORIAL_SIGNS = false;
+// Faires Telegraphing tödlichen Wassers (Gameplay-Audit „G-Wasser"): ein
+// kleiner, schild-freier Gefahren-Marker (Warndreieck mit „!") schwebt an der
+// Anlaufkante jeder tödlichen Wasserstelle. Für Nicht-Leser sofort lesbar,
+// passt zum cleanen Look (kein Text-Schild) und gilt für ALLE Über-Welten mit
+// tödlichem Wasser. Auf false setzen, um die Marker global abzuschalten.
+const SHOW_WATER_HAZARD_WARN = true;
 // Fix B-02: Tutorial-Schilder nennen fest Tastatur-Tasten (Shift/F). Auf
 // Touch-/Mobilgeräten existieren diese nicht → übersetze die Hinweise auf die
 // Touch-Bedienung. Nur bei isMobile aktiv; am Desktop bleiben die Tastentexte.
@@ -224,6 +230,11 @@ function renderWorldLayer(engine: GameEngine): void {
   // keinen Palette-Eintrag hat) liegen sonst als Fremdkörper auf dem Foto-Sandweg.
   if (engine.renderer.quality !== 'low' && !isVacation) {
     renderGroundDecor(engine, startCol, endCol, startRow, endRow);
+  }
+
+  // Gefahren-Marker vor tödlichem Wasser (schild-frei, siehe Konstante oben).
+  if (SHOW_WATER_HAZARD_WARN && engine.physics?.waterHazard) {
+    drawWaterHazardWarnings(engine, startCol, endCol);
   }
 
   // Tutorial signs — drawn after the tile pass so the wooden text-board
@@ -668,6 +679,19 @@ function renderWorldLayer(engine: GameEngine): void {
       ctx.restore();
     }
     drawPlayerSprite();
+
+    // Kuschel-Shop: gekaufter Kosmetik-Hut über dem Kopf (rein visuell).
+    if (engine.player.cosmetic && !engine.player.isDead) {
+      const pw = engine.player.width, ph = engine.player.height;
+      const facing = engine.player.direction >= 0 ? 1 : -1;
+      // Kopf-Oberkante; beim Ducken sitzt der Kopf tiefer.
+      const headTop = playerScreen.y + ph * (engine.player.isDucking ? 0.42 : 0.06);
+      const cx = playerScreen.x + pw / 2;
+      // Sanfte Idle-Wippe synchron zur Figur.
+      const bob = engine.player.onGround && !engine.player.isRunning
+        ? Math.sin(engine.renderer.time * 0.08) * 0.6 : 0;
+      drawCosmeticHat(engine.renderer.ctx, engine.player.cosmetic, cx, headTop + bob, pw, facing);
+    }
 
     // Stadt: Regenschirm-Figur — bei kräftigem Regen öffnet die Spielerin im
     // Stehen automatisch einen kleinen Schirm (rein visuell). Der Öffnungsgrad
@@ -1573,6 +1597,218 @@ function forestFgForbidden(level: GameEngine['level']): number[][] {
   }
   _fgForbiddenCache.set(level, zones);
   return zones;
+}
+
+// ---------------------------------------------------------------------------
+// Gefahren-Marker vor tödlichem Wasser (Gameplay-Audit „G-Wasser").
+// Findet je Wasserstelle die linke ANLAUFKANTE (fester, begehbarer Boden direkt
+// links von tödlichem Wasser — genau die Kante, an der ein von links nach rechts
+// laufendes Kind ungewarnt hineinfällt) und zeichnet dort ein sanft wippendes
+// gelbes Warndreieck mit „!". Kein Text → auch für Nicht-Leser sofort lesbar.
+// Die Anlaufkante (nicht jede Wasser-Spalte) bekommt den Marker, damit der Look
+// ruhig bleibt. Rein visuell, keine Kollision, kein Gameplay-Effekt.
+const _deadlyWater = (t: TileType): boolean =>
+  t === TileType.WATER_TOP || t === TileType.WATER;
+
+// Oberste tödliche-Wasser-Reihe einer Spalte (oder -1). Nur „Oberflächen"-Wasser
+// nahe der Bodenlinie ist relevant — tiefes Deko-Wasser bleibt außen vor.
+function _waterSurfaceRow(level: GameEngine['level'], col: number): number {
+  const H = level.height;
+  for (let r = 0; r < H; r++) {
+    if (_deadlyWater(level.tiles[r]?.[col])) return r;
+  }
+  return -1;
+}
+
+function drawWaterHazardWarnings(engine: GameEngine, startCol: number, endCol: number): void {
+  const level = engine.level;
+  const ctx = engine.renderer.ctx;
+  const TS = TILE_SIZE;
+  const t = engine.renderer.time;
+  // Etwas über den sichtbaren Rand hinaus prüfen, damit ein Marker am Bildrand
+  // nicht plötzlich auftaucht/verschwindet.
+  const from = Math.max(1, startCol - 1);
+  const to = Math.min(level.width - 1, endCol + 1);
+  for (let c = from; c <= to; c++) {
+    const wsr = _waterSurfaceRow(level, c);
+    if (wsr < 0) continue;                       // Spalte c hat kein tödliches Wasser
+    // Linke Anlaufkante: c-1 ist an der Wasseroberfläche fester, begehbarer Boden.
+    const lipT = level.tiles[wsr]?.[c - 1] ?? TileType.EMPTY;
+    if (!isSolidForCollision(lipT)) continue;    // links ist selbst Wasser/Luft → keine Kante
+    if (_deadlyWater(lipT)) continue;
+    // Marker über der Bodenkante (Tile c-1), leicht Richtung Wasser gerückt.
+    const gx = (c - 1) * TS;
+    const gy = wsr * TS;
+    const screen = engine.camera.worldToScreenInto(gx, gy, _s);
+    const bob = Math.sin(t * 0.12 + c) * 2.2;
+    const cx = screen.x + TS * 0.86;             // an die rechte (Wasser-)Kante des Lip-Tiles
+    const cy = screen.y - 15 + bob;              // über dem Boden schwebend
+    drawCautionTriangle(ctx, cx, cy, 15);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Kuschel-Shop: prozedurale Kosmetik-Hüte über dem Kopf der Figur (F1).
+// (cx, topY) = Kopf-Oberkante-Mitte; w = Spielerbreite (Skalierung); facing = ±1.
+// Alle Hüte zeichnen von topY nach OBEN, sitzen also auf dem Kopf. Keine Assets.
+function drawCosmeticHat(
+  ctx: CanvasRenderingContext2D, id: string, cx: number, topY: number, w: number, facing: number,
+): void {
+  const u = w / 24; // Referenz: Spielerbreite ~24px
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const outline = (lw: number, col: string) => { ctx.lineWidth = lw; ctx.strokeStyle = col; };
+  switch (id) {
+    case 'blume': {
+      // Blümchen seitlich am Kopf (Richtung Blickseite).
+      const fx = cx + facing * 6 * u, fy = topY + 2 * u, r = 3.1 * u;
+      ctx.fillStyle = '#ff8fc4';
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(fx + Math.cos(a) * r, fy + Math.sin(a) * r, 2.2 * u, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath(); ctx.arc(fx, fy, 2.1 * u, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'schleife': {
+      // Große Schleife obendrauf.
+      const by = topY - 1 * u, wing = 5.2 * u, hh = 3.6 * u;
+      ctx.fillStyle = '#ff5fa2'; outline(1.4, '#b33071');
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx, by);
+        ctx.lineTo(cx + s * wing, by - hh);
+        ctx.lineTo(cx + s * wing, by + hh);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      }
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath(); ctx.arc(cx, by, 1.9 * u, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'cap': {
+      // Schirmmütze: Kuppel + Schirm in Blickrichtung.
+      const baseY = topY + 1.5 * u, r = 6.2 * u;
+      ctx.fillStyle = '#2f7bd6'; outline(1.3, '#1c4f8f');
+      ctx.beginPath(); ctx.arc(cx, baseY, r, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+      // Schirm
+      ctx.beginPath();
+      ctx.moveTo(cx + facing * 1 * u, baseY);
+      ctx.quadraticCurveTo(cx + facing * 9 * u, baseY + 0.5 * u, cx + facing * 10.5 * u, baseY + 2.4 * u);
+      ctx.quadraticCurveTo(cx + facing * 8 * u, baseY + 2.2 * u, cx + facing * 1 * u, baseY + 1.6 * u);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#eef4ff';
+      ctx.beginPath(); ctx.arc(cx, baseY - r * 0.62, 1.5 * u, 0, Math.PI * 2); ctx.fill(); // Knopf
+      break;
+    }
+    case 'party': {
+      // Spitzer Kegel-Hut mit Streifen + Bommel.
+      const baseY = topY + 2 * u, apexY = topY - 12 * u, half = 5.4 * u;
+      const grd = ctx.createLinearGradient(cx - half, apexY, cx + half, baseY);
+      grd.addColorStop(0, '#ff6b6b'); grd.addColorStop(0.5, '#ffd23f'); grd.addColorStop(1, '#4fc3f7');
+      ctx.fillStyle = grd; outline(1.3, '#7a3d9c');
+      ctx.beginPath();
+      ctx.moveTo(cx, apexY); ctx.lineTo(cx + half, baseY); ctx.lineTo(cx - half, baseY);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      // Bommel
+      ctx.fillStyle = '#fff3b0';
+      ctx.beginPath(); ctx.arc(cx, apexY, 2 * u, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'zylinder': {
+      // Zylinder: Krempe + hoher Zylinder + Band.
+      const brimY = topY + 1.5 * u;
+      ctx.fillStyle = '#2b2b33'; outline(1.3, '#000');
+      ctx.beginPath(); ctx.ellipse(cx, brimY, 8 * u, 2.2 * u, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillRect(cx - 5 * u, topY - 11 * u, 10 * u, 12.5 * u);
+      ctx.strokeRect(cx - 5 * u, topY - 11 * u, 10 * u, 12.5 * u);
+      ctx.fillStyle = '#e0413f';
+      ctx.fillRect(cx - 5 * u, brimY - 3.4 * u, 10 * u, 2.6 * u); // Band
+      break;
+    }
+    case 'krone': {
+      // Goldkrone mit Zacken + Edelsteinen.
+      const baseY = topY + 1 * u, topZ = topY - 6.5 * u, half = 6.4 * u;
+      ctx.fillStyle = '#ffcf33'; outline(1.3, '#b8860b');
+      ctx.beginPath();
+      ctx.moveTo(cx - half, baseY);
+      ctx.lineTo(cx - half, topZ + 2 * u);
+      ctx.lineTo(cx - half * 0.5, baseY - 3 * u);
+      ctx.lineTo(cx, topZ);
+      ctx.lineTo(cx + half * 0.5, baseY - 3 * u);
+      ctx.lineTo(cx + half, topZ + 2 * u);
+      ctx.lineTo(cx + half, baseY);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      const gems: [number, string][] = [[-half * 0.5, '#ff5fa2'], [0, '#4fc3f7'], [half * 0.5, '#7cf29b']];
+      for (const [dx, col] of gems) {
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(cx + dx, baseY - 1.4 * u, 1.5 * u, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'stern': {
+      // Haarreif mit leuchtendem Stern.
+      const arcY = topY + 2 * u;
+      outline(1.8 * u, '#c9a0ff');
+      ctx.beginPath(); ctx.arc(cx, arcY, 6.2 * u, Math.PI * 1.08, Math.PI * 1.92); ctx.stroke();
+      const sx = cx, sy = topY - 6 * u;
+      // Glühen
+      const gl = ctx.createRadialGradient(sx, sy, 0, sx, sy, 6 * u);
+      gl.addColorStop(0, 'rgba(255,240,150,0.9)'); gl.addColorStop(1, 'rgba(255,240,150,0)');
+      ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(sx, sy, 6 * u, 0, Math.PI * 2); ctx.fill();
+      // Fünfzackiger Stern
+      ctx.fillStyle = '#ffe45e'; outline(1.1, '#d9a400');
+      ctx.beginPath();
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+        const rr = i % 2 === 0 ? 4 * u : 1.7 * u;
+        const px = sx + Math.cos(a) * rr, py = sy + Math.sin(a) * rr;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      break;
+    }
+    default: break;
+  }
+  ctx.restore();
+}
+
+// Ein kompaktes Warndreieck (gelb, dunkler Rand, „!") — zentriert auf (cx, cy),
+// `s` = Höhe in px. Bewusst simpel & flach, damit es zum Tile-Look passt.
+function drawCautionTriangle(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number): void {
+  const half = s * 0.62;
+  ctx.save();
+  // weicher Schlagschatten für Ablösung vom Hintergrund
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - s * 0.5 + 1.5);
+  ctx.lineTo(cx + half + 1.2, cy + s * 0.5 + 1.5);
+  ctx.lineTo(cx - half + 1.2, cy + s * 0.5 + 1.5);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.fill();
+  // gelbes Dreieck
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - s * 0.5);
+  ctx.lineTo(cx + half, cy + s * 0.5);
+  ctx.lineTo(cx - half, cy + s * 0.5);
+  ctx.closePath();
+  ctx.fillStyle = '#FFD23F';
+  ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#8A5A00';
+  ctx.stroke();
+  // Ausrufezeichen
+  ctx.fillStyle = '#5A3A00';
+  const bx = cx, top = cy - s * 0.14;
+  ctx.fillRect(bx - 1.1, top, 2.2, s * 0.34);
+  ctx.beginPath();
+  ctx.arc(bx, top + s * 0.46, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 // ===========================================================================

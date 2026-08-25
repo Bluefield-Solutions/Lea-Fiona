@@ -43,6 +43,9 @@ export class Player extends Entity {
   // Gewählte Spielfigur: 'fiona' (Standard) oder 'lea'. Bestimmt das Sprite-Set
   // unabhängig von der Power-Größe (isPoweredUp). Wird aus dem Speicher gesetzt.
   character: 'fiona' | 'lea' | 'stephan' = 'fiona';
+  // Kuschel-Shop: angelegter Kosmetik-Hut (ID aus cosmetics.ts) oder null.
+  // Rein visuell; wird beim Levelstart aus dem Speicher gesetzt.
+  cosmetic: string | null = null;
   growTimer = 0;
   canDoubleJump = true;
   hasDoubleJumped = false;

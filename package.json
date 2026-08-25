@@ -10,7 +10,9 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "test": "playwright test",
-    "qa:reach": "npm run build:standalone && cp dist-standalone/index.html /tmp/real.html && node tools/level-reachability.mjs"
+    "qa:reach": "npm run build:standalone && cp dist-standalone/index.html /tmp/real.html && node tools/level-reachability.mjs",
+    "test:movement": "npm run build:standalone && cp dist-standalone/index.html /tmp/real.html && node tools/movement-tests.mjs",
+    "qa:gate": "npm run build:standalone && cp dist-standalone/index.html /tmp/real.html && node tools/level-reachability.mjs && node tools/movement-tests.mjs"
   },
   "dependencies": {
     "express": "^5.0.1",

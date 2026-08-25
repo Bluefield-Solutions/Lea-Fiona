@@ -26,7 +26,7 @@ export interface LevelInfo {
 // One of: 'profiles' | 'settings' | 'album' | null. Modals are mutually
 // exclusive — opening one closes the others to keep focus management
 // simple and predictable for keyboard users.
-export type ModalKind = null | 'profiles' | 'settings' | 'album';
+export type ModalKind = null | 'profiles' | 'settings' | 'album' | 'shop';
 
 export interface PadProps {
   children: React.ReactNode;
