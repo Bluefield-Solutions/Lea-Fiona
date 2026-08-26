@@ -1,5 +1,5 @@
 import { TileType, TILE_SIZE, EntityType } from '../constants';
-import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom } from '../levelHelpers';
+import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom, fixPowerBlocksOverHills } from '../levelHelpers';
 import type { LevelData, EntitySpawn } from '../level';
 import { smoothGroundY } from '../terrain';
 
@@ -96,6 +96,18 @@ export function createSkyLevel(): LevelData {
   addBlock('magnet', 53, ground - 4);
   addCoinRow(50, 4, ground - 4);
   addCoinArc(55, 4, ground - 5, 3);
+  // Vertikalität (Audit C1): ein echter Aufzug-Schacht. Die vertikale
+  // Moving-Platform (cols 47–49, siehe movingPlatforms unten) fährt vom Boden
+  // hoch zur Belohnungs-Wolke. Nur per Aufzug erreichbar → nutzt die Höhe des
+  // Levels. Der Erreichbarkeits-Prüfer modelliert vertikale Plattformen;
+  // optionaler Hochweg, nie auf dem Flaggen-Pfad → 19/19 bleibt.
+  addOneWayRow(47, 4, ground - 10);        // Belohnungs-Wolke ganz oben (row 3)
+  addCoinRow(47, 4, ground - 11);          // Münzen darüber (row 2)
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube — Bodenstampfer
+  // (↓ in der Luft) bricht durch, darunter Münzen. Drüberlaufen bleibt normal
+  // (kein Softlock) → der Stampf-Move bekommt eine echte Aufgabe.
+  for (const c of [59, 60, 61]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(59, 3, ground + 1);
 
   // ====================================================================
   //  BEAT 4 — Banzai-Bill-Einführung (cols 63–88): neuer Gegner + Warnung.
@@ -218,6 +230,8 @@ export function createSkyLevel(): LevelData {
   // 4) Hang freiräumen: blockierende Tiles im Hügelkorridor ausbauen (zentral,
   // korrekte Groß-Figur-Kopffreiheit — siehe clearHillHeadroom).
   clearHillHeadroom(tiles, terrainHills, width, height);
+  // QS-Fix: über Hügeln von clearHillHeadroom gelöschte Power-Up-Blöcke retten.
+  fixPowerBlocksOverHills({ tiles, hills: terrainHills, width, height, groundRow: ground, powerBlocks });
 
   // Unterirdischer Geheim-Raum (Mario-Stil): Pipe im Boden → Hohlraum mit Münzen.
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 87, roomL: 83 });
@@ -234,6 +248,9 @@ export function createSkyLevel(): LevelData {
     terrainHills,
     movingPlatforms: [
       { centerCol: 62, centerRow: ground - 2, widthTiles: 3, amplitudeTiles: 3, path: 'horizontal', speed: 0.8 },
+      // Vertikaler Aufzug (Audit C1): fährt vom Boden (row 12) hoch zur
+      // Belohnungs-Wolke (row 3). centerRow 8 ± 4 → rows 4..12.
+      { centerCol: 47, centerRow: ground - 5, widthTiles: 3, amplitudeTiles: 4, path: 'vertical', speed: 0.7 },
     ],
     playerStart: { x: 3 * TILE_SIZE, y: (ground - 2) * TILE_SIZE },
     flagPosition: { x: 192 * TILE_SIZE, y: (ground - 10) * TILE_SIZE },

@@ -40,150 +40,11 @@ export const T = {
   DECO: TileType.DECORATION_PROP,
 };
 
-export class LevelBuilder {
-  width: number;
-  height: number;
-  tiles: TileType[][];
-  entities: EntitySpawn[] = [];
-
-  constructor(width: number, height: number) {
-    this.width = width;
-    this.height = height;
-    this.tiles = [];
-    for (let y = 0; y < height; y++) {
-      this.tiles[y] = new Array(width).fill(TileType.EMPTY);
-    }
-  }
-
-  set(col: number, row: number, tile: TileType) {
-    if (row >= 0 && row < this.height && col >= 0 && col < this.width) {
-      this.tiles[row][col] = tile;
-    }
-  }
-
-  fillGround(startCol: number, endCol: number, topRow: number, top: TileType = TileType.GROUND_TOP, body: TileType = TileType.GROUND) {
-    for (let col = startCol; col <= endCol; col++) {
-      this.set(col, topRow, top);
-      for (let row = topRow + 1; row < this.height; row++) {
-        this.set(col, row, body);
-      }
-    }
-  }
-
-  addBricks(startCol: number, length: number, row: number) {
-    for (let col = startCol; col < startCol + length; col++) {
-      this.set(col, row, TileType.BRICK);
-    }
-  }
-
-  addPipe(col: number, topRow: number) {
-    this.set(col, topRow, TileType.PIPE_TOP_LEFT);
-    this.set(col + 1, topRow, TileType.PIPE_TOP_RIGHT);
-    for (let row = topRow + 1; row < this.height; row++) {
-      this.set(col, row, TileType.PIPE_BODY_LEFT);
-      this.set(col + 1, row, TileType.PIPE_BODY_RIGHT);
-    }
-  }
-
-  addStairs(startCol: number, dir: number, maxH: number, baseRow: number, tile: TileType = TileType.STONE) {
-    for (let step = 0; step < maxH; step++) {
-      const col = dir > 0 ? startCol + step : startCol - step;
-      for (let row = baseRow - step - 1; row < baseRow; row++) {
-        this.set(col, row, tile);
-      }
-    }
-  }
-
-  addWoodBridge(startCol: number, length: number, row: number) {
-    for (let col = startCol; col < startCol + length; col++) {
-      this.set(col, row, TileType.WOOD_PLATFORM);
-    }
-  }
-
-  addPlatformRow(startCol: number, length: number, row: number) {
-    for (let col = startCol; col < startCol + length; col++) {
-      this.set(col, row, TileType.PLATFORM);
-    }
-  }
-
-  // Semisolid one-way platform run: jump up through from below, land on top,
-  // drop through with Down+Jump. Rendered as a wooden plank.
-  addOneWayRow(startCol: number, length: number, row: number) {
-    for (let col = startCol; col < startCol + length; col++) {
-      this.set(col, row, TileType.WOOD_PLATFORM);
-    }
-  }
-
-  addVines(col: number, fromRow: number, toRow: number) {
-    for (let row = fromRow; row <= toRow; row++) {
-      this.set(col, row, TileType.DECORATION_VINE);
-    }
-  }
-
-  addSeaweed(col: number, fromRow: number, toRow: number) {
-    for (let row = fromRow; row <= toRow; row++) {
-      this.set(col, row, TileType.SEAWEED);
-    }
-  }
-
-  addWater(startCol: number, endCol: number) {
-    for (let col = startCol; col <= endCol; col++) {
-      this.set(col, this.height - 2, TileType.WATER_TOP);
-      this.set(col, this.height - 1, TileType.WATER);
-    }
-  }
-
-  addLava(startCol: number, endCol: number) {
-    for (let col = startCol; col <= endCol; col++) {
-      this.set(col, this.height - 2, TileType.LAVA_TOP);
-      this.set(col, this.height - 1, TileType.LAVA);
-    }
-  }
-
-  addSpikes(startCol: number, endCol: number, row: number) {
-    for (let col = startCol; col <= endCol; col++) {
-      this.set(col, row, TileType.SPIKE);
-    }
-  }
-
-  addRockFormation(startCol: number, w: number, h: number, baseRow: number, tile: TileType = TileType.STONE) {
-    for (let col = startCol; col < startCol + w; col++) {
-      for (let row = baseRow - h; row < baseRow; row++) {
-        this.set(col, row, tile);
-      }
-    }
-  }
-
-  spawn(type: EntityType, col: number, row: number, offsetX = 0, offsetY = 0) {
-    this.entities.push({ type, x: col * TILE_SIZE + offsetX, y: row * TILE_SIZE + offsetY });
-  }
-
-  spawnPx(type: EntityType, x: number, y: number) {
-    this.entities.push({ type, x, y });
-  }
-
-  addCoin(col: number, row: number) {
-    this.entities.push({ type: EntityType.COIN, x: col * TILE_SIZE + 6, y: row * TILE_SIZE + 6 });
-  }
-
-  addCoinRow(startCol: number, count: number, row: number) {
-    for (let i = 0; i < count; i++) this.addCoin(startCol + i, row);
-  }
-
-  addCoinArc(startCol: number, count: number, baseRow: number, arcHeight: number) {
-    for (let i = 0; i < count; i++) {
-      const t = count > 1 ? i / (count - 1) : 0.5;
-      const rowOffset = Math.round(-arcHeight * Math.sin(t * Math.PI));
-      this.addCoin(startCol + i, baseRow + rowOffset);
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
-// Free-function helpers used by the older `create*Level` factories that don't
-// (yet) use `LevelBuilder`. Centralizing them here removes the per-level
-// duplication of `set/fillGround/addBricks/...`. Each legacy level just calls
-// `bindHelpers(g)` once and destructures the helpers it needs.
+// Free-function helpers used by the `create*Level` factories. Centralizing them
+// here removes the per-level duplication of `set/fillGround/addBricks/...`. Each
+// level just calls `bindHelpers(g)` once and destructures the helpers it needs.
 // ---------------------------------------------------------------------------
 export interface TileGrid {
   tiles: TileType[][];
@@ -340,54 +201,6 @@ export function bindCoinHelpers(entities: EntitySpawn[]) {
 /** Warp-Spezifikation (inline, um zirkulären Import aus level.ts zu vermeiden). */
 type WarpSpec = { from: { col: number; row: number }; to: { x: number; y: number } };
 
-/**
- * Baut eine geheime Bonus-Kammer hoch oben (row 0–6) plus Eingangs- und
- * Rück-Röhre und gibt die zwei Warp-Spezifikationen zurück (rein + zurück).
- * Die Kammer liegt bewusst weit über dem Spielboden, damit ihr Boden nicht
- * als unsichtbare Decke über dem normalen Sprungbereich wirkt. Aufrufer muss
- * sicherstellen, dass entryCol/chamberL in einem ruhigen Abschnitt liegen.
- */
-export function buildBonusChamber(o: {
-  set: (col: number, row: number, t: TileType) => void;
-  addCoinRow: (startCol: number, count: number, row: number) => void;
-  ground: number;
-  entryCol: number;   // Eingangs-Röhre (col, col+1), Mündung auf ground-2
-  chamberL: number;   // linke Kammerwand; Kammer = chamberL .. chamberL+13
-}): WarpSpec[] {
-  const { set, addCoinRow, ground, entryCol, chamberL } = o;
-  const camTop = 0, camBot = 5, camR = chamberL + 13;
-  // Eingangs-Röhre (ragt zwei Tiles aus dem Boden).
-  set(entryCol, ground - 2, TileType.PIPE_TOP_LEFT);
-  set(entryCol + 1, ground - 2, TileType.PIPE_TOP_RIGHT);
-  for (let r = ground - 1; r <= ground + 1; r++) {
-    set(entryCol, r, TileType.PIPE_BODY_LEFT);
-    set(entryCol + 1, r, TileType.PIPE_BODY_RIGHT);
-  }
-  // Kammer-Hülle (Decke, Boden + Substanz, zwei Wände).
-  for (let c = chamberL; c <= camR; c++) {
-    set(c, camTop, TileType.GROUND);
-    set(c, camBot, TileType.GROUND_TOP);
-    set(c, camBot + 1, TileType.GROUND);
-  }
-  for (let r = camTop; r <= camBot + 1; r++) {
-    set(chamberL, r, TileType.GROUND);
-    set(camR, r, TileType.GROUND);
-  }
-  // Innenraum freiräumen (wichtig in Höhlen, wo sonst Fels stehen bliebe).
-  for (let c = chamberL + 1; c < camR; c++) {
-    for (let r = camTop + 1; r < camBot; r++) set(c, r, TileType.EMPTY);
-  }
-  // Münzbelohnung.
-  addCoinRow(chamberL + 2, 10, 2);
-  addCoinRow(chamberL + 2, 10, 3);
-  // Rück-Röhre auf dem Kammer-Boden.
-  set(camR - 3, camBot - 1, TileType.PIPE_TOP_LEFT);
-  set(camR - 2, camBot - 1, TileType.PIPE_TOP_RIGHT);
-  return [
-    { from: { col: entryCol, row: ground - 2 }, to: { x: (chamberL + 2) * TILE_SIZE, y: 2 * TILE_SIZE } },
-    { from: { col: camR - 3, row: camBot - 1 }, to: { x: (entryCol + 3) * TILE_SIZE, y: (ground - 2) * TILE_SIZE } },
-  ];
-}
 
 /**
  * Baut einen geheimen UNTERIRDISCHEN Bonus-Raum (Mario-Stil) plus Eingangs-
@@ -429,4 +242,87 @@ export function buildUndergroundRoom(o: {
     { from: { col: entryCol, row: ground - 2 }, to: { x: (roomL + 2) * TILE_SIZE, y: roomTop * TILE_SIZE } },
     { from: { col: roomR - 3, row: roomBot }, to: { x: (entryCol + 3) * TILE_SIZE, y: (ground - 2) * TILE_SIZE } },
   ];
+}
+
+/**
+ * QS-Fix (2026-08-25): rettet Power-Up-Blöcke, die über Hügeln von
+ * `clearHillHeadroom` gelöscht wurden (Item erschien nie). MUSS NACH der
+ * Hügel-/Terrain-Bearbeitung aufgerufen werden.
+ *
+ * Für jeden registrierten Power-Block (in `powerBlocks`), dessen Kachel kein
+ * QUESTION_BLOCK (mehr) ist: erst die Engine-Toleranz (±2) prüfen und ggf. auf
+ * einen nahen ?-Block umbiegen; sonst einen frischen ?-Block sicher ÜBER der
+ * geglätteten Hügel-Oberfläche der Spalte platzieren (erreichbar, außerhalb des
+ * Kopffreiheits-Bandes) und den Array-Eintrag entsprechend korrigieren. Mutiert
+ * `tiles` und die Arrays in `powerBlocks` in-place. Gibt die Änderungen zurück.
+ */
+export function fixPowerBlocksOverHills(opts: {
+  tiles: TileType[][];
+  hills: HillSpec[] | undefined;
+  width: number;
+  height: number;
+  groundRow: number;
+  powerBlocks: Record<string, string[]>;
+}): string[] {
+  const { tiles, hills, height, groundRow, powerBlocks } = opts;
+  const isQ = (c: number, r: number) => tiles[r]?.[c] === TileType.QUESTION_BLOCK;
+  const isEmpty = (c: number, r: number) => r >= 0 && r < height && (tiles[r]?.[c] ?? TileType.EMPTY) === TileType.EMPTY;
+  const moved: string[] = [];
+  for (const kind of Object.keys(powerBlocks)) {
+    const arr = powerBlocks[kind];
+    for (let i = 0; i < arr.length; i++) {
+      const [c, r] = arr[i].split(',').map(Number);
+      if (isQ(c, r)) continue; // bereits gültig
+      // 1) Engine-Toleranz: nahen ?-Block (±2) suchen und darauf umbiegen.
+      let remap: [number, number] | null = null;
+      for (let rad = 1; rad <= 2 && !remap; rad++)
+        for (let dr = -rad; dr <= rad && !remap; dr++)
+          for (let dc = -rad; dc <= rad && !remap; dc++)
+            if (Math.max(Math.abs(dr), Math.abs(dc)) === rad && isQ(c + dc, r + dr)) remap = [c + dc, r + dr];
+      if (remap) { arr[i] = `${remap[0]},${remap[1]}`; moved.push(`${kind} ${c},${r}→${arr[i]} (umgebogen)`); continue; }
+      // 2) Frischen ?-Block über der Oberfläche platzieren.
+      const sy = smoothGroundY(hills, c * TILE_SIZE + TILE_SIZE / 2);
+      const surfR = sy !== null ? Math.round(sy / TILE_SIZE) : groundRow;
+      let tr = surfR - 4; // 4 über der Oberfläche: bewusster Sprung, außerhalb des Clear-Bandes
+      if (!isEmpty(c, tr)) { // ausweichen, falls belegt
+        let alt = -1;
+        for (const cand of [surfR - 3, surfR - 5, surfR - 2, surfR - 6]) { if (isEmpty(c, cand)) { alt = cand; break; } }
+        if (alt >= 0) tr = alt;
+      }
+      if (tr < 0) tr = 0;
+      tiles[tr][c] = TileType.QUESTION_BLOCK;
+      arr[i] = `${c},${tr}`;
+      moved.push(`${kind} ${c},${r}→${c},${tr} (neu gesetzt)`);
+    }
+  }
+  return moved;
+}
+
+/**
+ * QS-Invariante (2026-08-26): keine Münze darf in einer Solid-Kachel stecken
+ * (sonst optisch „im Block" und schwer/nicht einsammelbar). Hebt betroffene
+ * Münz-Entities (COIN/COIN_SPINNING/SPECIAL_COIN) bis zu 4 Kacheln nach oben in
+ * die erste freie Zelle derselben Spalte. Rein additive Korrektur, idempotent.
+ * Hazards (Wasser/Lava/Stachel), Einweg-Plattformen & Deko gelten NICHT als
+ * solid — Münzen dürfen bewusst darüber/darauf liegen. Gibt die Anzahl der
+ * gehobenen Münzen zurück.
+ */
+export function liftCoinsOffSolids(level: {
+  tiles: TileType[][]; entities: EntitySpawn[]; width: number; height: number;
+}): number {
+  const SOLID = new Set<number>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 19, 21, 24, 25, 26, 27, 28, 29, 34, 35]);
+  const { tiles, entities, width, height } = level;
+  const solidAt = (c: number, r: number) =>
+    r >= 0 && r < height && c >= 0 && c < width && SOLID.has(tiles[r]?.[c] as number);
+  let lifted = 0;
+  for (const e of entities) {
+    if (e.type !== EntityType.COIN && e.type !== EntityType.COIN_SPINNING && e.type !== EntityType.SPECIAL_COIN) continue;
+    const c = Math.round(e.x / TILE_SIZE);
+    const r = Math.round(e.y / TILE_SIZE);
+    if (!solidAt(c, r)) continue;
+    let nr = r, guard = 0;
+    while (solidAt(c, nr) && guard < 4) { nr--; guard++; }
+    if (nr !== r && !solidAt(c, nr)) { e.y += (nr - r) * TILE_SIZE; lifted++; }
+  }
+  return lifted;
 }

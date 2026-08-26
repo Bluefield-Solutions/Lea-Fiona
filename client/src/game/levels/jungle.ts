@@ -1,6 +1,6 @@
 import { TileType, TILE_SIZE, EntityType } from '../constants';
 import { smoothGroundY } from '../terrain';
-import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom } from '../levelHelpers';
+import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom, fixPowerBlocksOverHills } from '../levelHelpers';
 import type { LevelData, EntitySpawn } from '../level';
 
 const _ = TileType.EMPTY;
@@ -320,6 +320,8 @@ export function createJungleLevel(): LevelData {
 
   // Kopffreiheit über Anstiegen GARANTIEREN (zentral, korrekte Groß-Figur-Höhe).
   clearHillHeadroom(tiles, terrainHills, width, height);
+  // QS-Fix: über Hügeln von clearHillHeadroom gelöschte Power-Up-Blöcke retten.
+  fixPowerBlocksOverHills({ tiles, hills: terrainHills, width, height, groundRow: ground, powerBlocks });
 
   // Geheime Bonus-Kammer (Warp-Röhre) an flachem Abschnitt OHNE Power-Blöcke
   // in der Nähe (sonst verdeckt der Kammerboden die Feuerblume u. a.).

@@ -1,6 +1,6 @@
 import { TileType, TILE_SIZE, EntityType } from '../constants';
 import { smoothGroundY } from '../terrain';
-import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom } from '../levelHelpers';
+import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom, fixPowerBlocksOverHills } from '../levelHelpers';
 import type { LevelData, EntitySpawn } from '../level';
 
 const _ = TileType.EMPTY;
@@ -90,6 +90,14 @@ export function createAustraliaLevel(): LevelData {
   addBlock('magnet', 53, ground - 4);
   addCoinRow(50, 4, ground - 4);
   addCoinArc(56, 4, ground - 5, 3);
+  // Vertikalität (Audit C1): vertikaler Aufzug (cols 47–49, siehe
+  // movingPlatforms) hoch zur Belohnungs-Terrasse. Optionaler Hochweg → 19/19.
+  addOneWayRow(47, 4, ground - 10);
+  addCoinRow(47, 4, ground - 11);
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube — Bodenstampfer
+  // (↓ in der Luft) bricht durch, darunter Münzen. Drüberlaufen bleibt normal.
+  for (const c of [59, 60, 61]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(59, 3, ground + 1);
 
   // BEAT 4 — Schlangen-Fokus (63–88): Schlangen + Warnschild.
   fillGround(63, 88, ground);
@@ -201,6 +209,8 @@ export function createAustraliaLevel(): LevelData {
   // 4) Hang freiräumen: blockierende Tiles im Hügel-Korridor ausbauen (zentral,
   // korrekte Groß-Figur-Kopffreiheit — siehe clearHillHeadroom).
   clearHillHeadroom(tiles, terrainHills, width, height);
+  // QS-Fix: über Hügeln von clearHillHeadroom gelöschte Power-Up-Blöcke retten.
+  fixPowerBlocksOverHills({ tiles, hills: terrainHills, width, height, groundRow: ground, powerBlocks });
 
   // Unterirdischer Geheim-Raum (Mario-Stil): Pipe im Boden → Hohlraum mit Münzen.
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 55, roomL: 51 });
@@ -217,6 +227,8 @@ export function createAustraliaLevel(): LevelData {
     terrainHills,
     movingPlatforms: [
       { centerCol: 88, centerRow: ground - 2, widthTiles: 3, amplitudeTiles: 3, path: 'horizontal', speed: 0.8 },
+      // Vertikaler Aufzug (Audit C1): Boden (row 12) hoch zur Terrasse (row 3).
+      { centerCol: 47, centerRow: ground - 5, widthTiles: 3, amplitudeTiles: 4, path: 'vertical', speed: 0.7 },
     ],
     playerStart: { x: 3 * TILE_SIZE, y: (ground - 2) * TILE_SIZE },
     flagPosition: { x: 192 * TILE_SIZE, y: (ground - 10) * TILE_SIZE },

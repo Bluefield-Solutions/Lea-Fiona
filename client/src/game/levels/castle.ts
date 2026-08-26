@@ -93,6 +93,15 @@ export function createSchlossLevel(): LevelData {
   addBlock('magnet', 59, ground - 4);
   addCoinRow(56, 4, ground - 4);
   addCoinArc(62, 4, ground - 5, 3);
+  // Power-Up-gegatete Bonus-Nische (Audit C2): überdachter Feuer-Tunnel, Eingang
+  // durch Feuer-Ranke gesperrt (Feuerblume aus BEAT 2, col 39). Optionale
+  // Sackgasse mit Münzen → nie auf dem Flaggen-Pfad.
+  addBricks(63, 4, ground - 3);            // Decke cols 63–66
+  set(66, ground - 1, TileType.BRICK);     // rechte Wand
+  set(66, ground - 2, TileType.BRICK);
+  addCoinRow(64, 2, ground - 2);
+  addCoinRow(64, 2, ground - 1);
+  entities.push({ type: EntityType.FIRE_BARRIER, x: 63 * TILE_SIZE, y: ground * TILE_SIZE, hTiles: 2 });
 
   // BEAT 4 — Geister-Einführung (69–96): fliegende Geister + Warnschild.
   fillCastle(69, 96);

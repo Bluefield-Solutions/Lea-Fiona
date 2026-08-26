@@ -29,8 +29,6 @@ type Sfx =
   | 'bounceBoost'
   // Theme-Gegner SFX (Task #18)
   | 'monkeyThrow'
-  | 'seagullDive'
-  | 'slimeJump'
   | 'snowballRoll'
   | 'shieldBlock'
   | 'laserShoot'
@@ -297,8 +295,18 @@ class AudioEngine {
       this.master.connect(this.ctx.destination);
       this.applyVolume();
       this.inited = true;
-      this.decodeSamples();
-      this.decodeMusicLoops();
+      // P0 (Touch-Profil): den schweren Base64-Decode (~1,9 MB atob + 19×
+      // decodeAudioData) NICHT synchron im ersten Tap laufen lassen — sonst
+      // „hängt" der erste Klick. In einen Folge-Task verschieben, damit der
+      // Gesture-Handler sofort zurückkehrt. Samples zuerst (klein, früh nötig),
+      // Musik-Loops kurz danach.
+      const w = window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void };
+      const defer = (fn: () => void, delay: number) => {
+        if (w.requestIdleCallback) w.requestIdleCallback(fn, { timeout: 400 });
+        else setTimeout(fn, delay);
+      };
+      defer(() => this.decodeSamples(), 0);
+      defer(() => this.decodeMusicLoops(), 30);
     } catch {
       this.ctx = null;
     }
@@ -581,15 +589,6 @@ class AudioEngine {
       case 'monkeyThrow':
         this.tone(330, 0.06, 'square', 0.14, now);
         this.tone(220, 0.08, 'triangle', 0.16, now + 0.04);
-        break;
-      // Möwen-Sturzflug — schreiender Abwärts-Sweep.
-      case 'seagullDive':
-        this.descend(1320, 660, 0.20, 'sawtooth', 0.16, now);
-        break;
-      // Lava-Slime hüpft — feuchter, kurzer Plopp.
-      case 'slimeJump':
-        this.tone(180, 0.05, 'sine', 0.18, now);
-        this.tone(260, 0.06, 'triangle', 0.14, now + 0.03);
         break;
       // Schneeball rollt — Rauschen mit leichtem Tonfall.
       case 'snowballRoll':

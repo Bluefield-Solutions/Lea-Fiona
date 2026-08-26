@@ -96,6 +96,10 @@ export function createVulkanLevel(): LevelData {
   addBlock('magnet', 57, ground - 4);
   addCoinRow(54, 4, ground - 4);
   addCoinArc(60, 4, ground - 5, 3);
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube — Bodenstampfer
+  // bricht durch, darunter Münzen. Drüberlaufen bleibt normal.
+  for (const c of [51, 52, 53]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(51, 3, ground + 1);
   // Power-Up-gegatete Bonus-Nische (Audit C2): überdachter Feuer-Tunnel, dessen
   // Eingang eine Feuer-Ranke sperrt. Die Feuerblume aus Beat 2 (col 37) brennt
   // sie weg → das Feuer-Power-Up bekommt hier (thematisch im Vulkan) eine echte

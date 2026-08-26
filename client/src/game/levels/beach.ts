@@ -1,5 +1,5 @@
 import { TileType, TILE_SIZE, EntityType } from '../constants';
-import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom } from '../levelHelpers';
+import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom, fixPowerBlocksOverHills } from '../levelHelpers';
 import { smoothGroundY } from '../terrain';
 import type { LevelData, EntitySpawn } from '../level';
 
@@ -88,6 +88,10 @@ export function createBeachLevel(): LevelData {
   addBlock('magnet', 55, ground - 4);
   addCoinRow(52, 4, ground - 4);
   addCoinArc(58, 4, ground - 5, 3);
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube — Bodenstampfer
+  // bricht durch, darunter Münzen. Drüberlaufen bleibt normal.
+  for (const c of [49, 50, 51]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(49, 3, ground + 1);
   // Power-Up-gegatete Bonus-Nische (Audit C2): ein überdachter Tunnel (Decke →
   // nicht überspringbar), dessen Eingang eine Feuer-Ranke sperrt. Die Feuerblume
   // aus Beat 2 (col 38) brennt sie weg → das Feuer-Power-Up bekommt eine echte
@@ -120,6 +124,11 @@ export function createBeachLevel(): LevelData {
   // BEAT 6 — Kombination (119–150): Meer + Krabben + Chuck (Möwen entfernt).
   fillGround(122, 150, ground);
   addWater(119, 121);
+  // Cape-Gleit-Showcase (Audit C2, sichere Variante): direkt nach der Cape-Blume
+  // (col 110) eine Münz-Bahn über der Meer-Lücke. Mit Cape gleitet man elegant
+  // hinüber und sammelt alles ein; ohne Cape springt man die 3-Kachel-Lücke
+  // normal und bekommt die Münzen auch → nichts hängt fest, keine Sackgasse.
+  addCoinArc(117, 6, ground - 4, 3);
   addBricks(127, 3, ground - 4);
   set(128, ground - 4, Q);
   addWater(135, 137);
@@ -207,6 +216,8 @@ export function createBeachLevel(): LevelData {
   // Kopffreiheit über Anstiegen sichern (zentral, korrekte Groß-Figur-Höhe —
   // siehe clearHillHeadroom).
   clearHillHeadroom(tiles, terrainHills, width, height);
+  // QS-Fix: über Hügeln von clearHillHeadroom gelöschte Power-Up-Blöcke retten.
+  fixPowerBlocksOverHills({ tiles, hills: terrainHills, width, height, groundRow: ground, powerBlocks });
 
   // Unterirdischer Geheim-Raum (Mario-Stil): Pipe im Boden → Hohlraum mit Münzen.
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 130, roomL: 126 });

@@ -1683,7 +1683,7 @@ function drawEnemyTelegraph(ctx: CanvasRenderingContext2D, cx: number, topY: num
 // Kuschel-Shop: prozedurale Kosmetik-Hüte über dem Kopf der Figur (F1).
 // (cx, topY) = Kopf-Oberkante-Mitte; w = Spielerbreite (Skalierung); facing = ±1.
 // Alle Hüte zeichnen von topY nach OBEN, sitzen also auf dem Kopf. Keine Assets.
-function drawCosmeticHat(
+export function drawCosmeticHat(
   ctx: CanvasRenderingContext2D, id: string, cx: number, topY: number, w: number, facing: number,
 ): void {
   const u = w / 24; // Referenz: Spielerbreite ~24px
@@ -1801,6 +1801,57 @@ function drawCosmeticHat(
         i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
       }
       ctx.closePath(); ctx.fill(); ctx.stroke();
+      break;
+    }
+    default: break;
+  }
+  ctx.restore();
+}
+
+/**
+ * Kosmetik-Brille über den Augen (Gesichts-Overlay). Anker (cx, eyeY) = Augen-
+ * mitte, Skalierung `w` = Referenz-Körperbreite (u = w/24), analog drawCosmeticHat.
+ */
+export function drawCosmeticGlasses(
+  ctx: CanvasRenderingContext2D, id: string, cx: number, eyeY: number, w: number, _facing: number,
+): void {
+  const u = w / 24;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  switch (id) {
+    case 'sonnenbrille': {
+      const off = 2.6 * u, lw = 2.5 * u, lh = 2.2 * u;
+      // Bügel zu den Ohren.
+      ctx.strokeStyle = '#20242e'; ctx.lineWidth = 1.1 * u;
+      ctx.beginPath(); ctx.moveTo(cx - off - lw * 0.7, eyeY - 0.2 * u); ctx.lineTo(cx - off - lw * 1.5, eyeY - 0.7 * u); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + off + lw * 0.7, eyeY - 0.2 * u); ctx.lineTo(cx + off + lw * 1.5, eyeY - 0.7 * u); ctx.stroke();
+      // Steg.
+      ctx.beginPath(); ctx.moveTo(cx - 0.9 * u, eyeY); ctx.lineTo(cx + 0.9 * u, eyeY); ctx.stroke();
+      for (const s of [-1, 1]) {
+        const lx = cx + s * off;
+        ctx.fillStyle = '#1b2531';
+        ctx.beginPath(); ctx.ellipse(lx, eyeY, lw, lh, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#0e1218'; ctx.lineWidth = 1.0 * u; ctx.stroke();
+        ctx.fillStyle = 'rgba(160,205,255,0.55)';
+        ctx.beginPath(); ctx.ellipse(lx - lw * 0.32, eyeY - lh * 0.34, lw * 0.34, lh * 0.24, -0.5, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'herzbrille': {
+      const off = 2.7 * u, r = 1.5 * u;
+      ctx.strokeStyle = '#e0413f'; ctx.lineWidth = 1.0 * u;
+      ctx.beginPath(); ctx.moveTo(cx - 0.9 * u, eyeY); ctx.lineTo(cx + 0.9 * u, eyeY); ctx.stroke();
+      for (const s of [-1, 1]) {
+        const lx = cx + s * off;
+        ctx.fillStyle = '#ff5fa2';
+        // Herz aus zwei Bögen + Spitze.
+        ctx.beginPath();
+        ctx.arc(lx - r * 0.55, eyeY - r * 0.2, r * 0.7, Math.PI, 0);
+        ctx.arc(lx + r * 0.55, eyeY - r * 0.2, r * 0.7, Math.PI, 0);
+        ctx.lineTo(lx, eyeY + r * 1.3);
+        ctx.closePath(); ctx.fill();
+      }
       break;
     }
     default: break;

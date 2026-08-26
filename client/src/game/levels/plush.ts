@@ -68,6 +68,10 @@ export function createPlushLevel(): LevelData {
   // einem Sprung erreichbar, Spitze (Boden-8) NUR mit Doppelsprung.
   addCoinArc(15, 5, ground - 3, 5);
   addBlock('fire', 20, ground - 4);    // Feuerblume → Elefant (gleich zu Beginn)
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube — Bodenstampfer
+  // (↓ in der Luft) bricht durch → Münzen; Drüberlaufen bleibt normal.
+  for (const c of [24, 25, 26]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(24, 3, ground + 1);
 
   // === BEAT 2 — Kissen-Hüpfer (27–58): weiche Sprungkissen, leicht hoch. ===
   Pillow(30); Pillow(39);

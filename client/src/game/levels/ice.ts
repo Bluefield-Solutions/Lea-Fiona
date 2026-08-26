@@ -1,5 +1,5 @@
 import { TileType, TILE_SIZE, EntityType } from '../constants';
-import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom } from '../levelHelpers';
+import { bindHelpers, bindCoinHelpers, buildUndergroundRoom, clearHillHeadroom, fixPowerBlocksOverHills } from '../levelHelpers';
 import type { LevelData, EntitySpawn } from '../level';
 import { smoothGroundY } from '../terrain';
 
@@ -88,6 +88,11 @@ export function createEisLevel(): LevelData {
   addBlock('magnet', 59, ground - 4);
   addCoinRow(56, 4, ground - 4);
   addCoinArc(62, 4, ground - 5, 3);
+  // Vertikalität (Audit C1): vertikaler Aufzug (cols 65–67, siehe
+  // movingPlatforms) vom Eis-Boden hoch zur Belohnungs-Terrasse. Optionaler
+  // Hochweg, nie auf dem Flaggen-Pfad → 19/19 bleibt.
+  addOneWayRow(64, 4, ground - 10);        // Belohnungs-Terrasse ganz oben (row 3)
+  addCoinRow(64, 4, ground - 11);          // Münzen darüber (row 2)
 
   // BEAT 4 — Yeti-Einführung (69–96): Schneeball-Werfer + Warnschild.
   fillIce(69, 96);
@@ -198,6 +203,8 @@ export function createEisLevel(): LevelData {
   // 4) Hang freiräumen: blockierende Tiles im Hügelkorridor ausbauen (zentral,
   // korrekte Groß-Figur-Kopffreiheit — siehe clearHillHeadroom).
   clearHillHeadroom(tiles, terrainHills, width, height);
+  // QS-Fix: über Hügeln von clearHillHeadroom gelöschte Power-Up-Blöcke retten.
+  fixPowerBlocksOverHills({ tiles, hills: terrainHills, width, height, groundRow: ground, powerBlocks });
 
   // Unterirdischer Geheim-Raum (Mario-Stil): Pipe im Boden → Hohlraum mit Münzen.
   const warpPipes = buildUndergroundRoom({ set, addCoinRow, ground, entryCol: 67, roomL: 63 });
@@ -214,6 +221,8 @@ export function createEisLevel(): LevelData {
     terrainHills,
     movingPlatforms: [
       { centerCol: 96, centerRow: ground - 2, widthTiles: 3, amplitudeTiles: 3, path: 'horizontal', speed: 0.8 },
+      // Vertikaler Aufzug (Audit C1): Boden (row 12) hoch zur Terrasse (row 3).
+      { centerCol: 65, centerRow: ground - 5, widthTiles: 3, amplitudeTiles: 4, path: 'vertical', speed: 0.7 },
     ],
     playerStart: { x: 3 * TILE_SIZE, y: (ground - 2) * TILE_SIZE },
     flagPosition: { x: 212 * TILE_SIZE, y: (ground - 10) * TILE_SIZE },

@@ -44,6 +44,7 @@ import { isCullExempt, isFreezableEnemy } from './engine_internal/blocks';
 import { Compositor } from './engine_internal/compositor';
 import { runShellCollisions, runFlagCollision } from './engine_internal/collisions';
 import { spawnLevelEntities } from './engine_internal/spawn';
+import { liftCoinsOffSolids } from './levelHelpers';
 import { hitBlockAt } from './engine_internal/hit_block';
 import {
   runGroundPoundShockwave, runBombDetonation,
@@ -126,6 +127,18 @@ export class GameEngine {
   // pixel ratio. Public so engine_internal/render.ts can read it.
   renderScaleX = 1;
   renderScaleY = 1;
+  // Barrierefreiheit (Audit E3): OS-Präferenz „Bewegung reduzieren", einmalig
+  // gelesen. motionReduced() = diese ODER die Nutzer-Einstellung reducedMotion.
+  private osReducedMotion = (() => {
+    try { return typeof window !== 'undefined' && !!window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    catch { return false; }
+  })();
+  /** True, wenn Bewegung reduziert werden soll (Screenshake/Impact-Zoom/Partikel
+   *  aus). Greift auf die OS-Präferenz ODER die Nutzer-Einstellung zu. */
+  motionReduced(): boolean {
+    return this.osReducedMotion || getSettings().reducedMotion;
+  }
   // Basis-Renderskalierung/Viewport (ohne dynamischen Zoom). Der Speed-Zoom
   // skaliert diese pro Frame, ohne den Backing-Store neu zu allokieren.
   private baseRenderScaleX = 1;
@@ -472,7 +485,7 @@ export class GameEngine {
    * engine_internal/* can use it.
    */
   shakeCamera(intensity: number, duration: number) {
-    if (!getSettings().screenShake) return;
+    if (this.motionReduced() || !getSettings().screenShake) return;
     this.camera.shake(intensity, duration);
   }
 
@@ -572,6 +585,7 @@ export class GameEngine {
   // Thin wrappers over engine_internal/particles helpers so call-sites
   // (engine + engine_internal/*) all use the same engine method names.
   spawnStompParticles(x: number, y: number) {
+    if (this.motionReduced()) return;    // Barrierefreiheit (E3)
     spawnStompParticles(this.particles, this.acquireParticle.bind(this), x, y);
     this.addImpactZoom(0.032);           // kleiner, befriedigender Stomp-Punch
     // Plüsch-Traumland: besiegte Dinos pusten eine weiche Füllung aus Herzchen
@@ -584,31 +598,38 @@ export class GameEngine {
   // below ~50 FPS we skip half of these flourish bursts so the game can
   // catch up. Game-critical effects (stomp dust, sparks) stay full-rate.
   spawnBlockParticles(x: number, y: number) {
+    if (this.motionReduced()) return;    // Barrierefreiheit (E3)
     if (this.lowFx && Math.random() < 0.5) return;
     spawnBlockParticles(this.particles, this.acquireParticle.bind(this), x, y);
   }
   spawnBrickParticles(x: number, y: number) {
+    if (this.motionReduced()) return;
     spawnBrickParticles(this.particles, this.acquireParticle.bind(this), x, y);
   }
   spawnCoinParticles(x: number, y: number) {
+    if (this.motionReduced()) return;
     if (this.lowFx && Math.random() < 0.5) return;
     spawnCoinParticles(this.particles, this.acquireParticle.bind(this), x, y);
   }
   spawnStarParticles(x: number, y: number) {
+    if (this.motionReduced()) return;
     if (this.lowFx && Math.random() < 0.5) return;
     spawnStarParticles(this.particles, this.acquireParticle.bind(this), x, y);
   }
   spawnHeartParticles(x: number, y: number) {
+    if (this.motionReduced()) return;
     if (this.lowFx && Math.random() < 0.5) return;
     spawnHeartParticles(this.particles, this.acquireParticle.bind(this), x, y);
   }
   // Mario-feel: small puff of greyish dust kicked horizontally in `dir`.
   // Used for skid/slide/wall-jump push-offs.
   spawnDust(x: number, y: number, dir: number) {
+    if (this.motionReduced()) return;
     spawnDust(this.particles, this.acquireParticle.bind(this), x, y, dir, this.dustColors());
   }
   // Feinschliff: leichter Sprint-Staub-Trail hinter den Füßen.
   spawnRunDust(x: number, y: number, dir: number) {
+    if (this.motionReduced()) return;
     spawnRunDust(this.particles, this.acquireParticle.bind(this), x, y, dir, this.dustColors());
   }
   // Feinschliff: welt­getönte Staubfarben, damit aufgewirbelter Staub zum
@@ -643,6 +664,7 @@ export class GameEngine {
   }
   // Mario-feel: gold sparks under the feet while the P-meter is charged.
   spawnSparks(x: number, y: number) {
+    if (this.motionReduced()) return;    // Barrierefreiheit (E3)
     spawnSparks(this.particles, this.acquireParticle.bind(this), x, y);
   }
 
@@ -751,6 +773,17 @@ export class GameEngine {
   private gameLoop = (timestamp: number) => {
     if (!this.running) return;
 
+    // P0 (Touch-Profil): Bei offenem Menü/Modal (uiPaused) oder verstecktem Tab
+    // NICHT updaten/rendern — die Engine gibt den Main-Thread an die UI frei
+    // (kein Konkurrieren → Knöpfe reagieren sofort, WebGL-Post ruht). Timestamp
+    // ist oben schon fortgeschrieben; beim Fortsetzen entsteht kein Catch-up-Burst.
+    if (this.uiPaused || (typeof document !== 'undefined' && document.hidden)) {
+      this.lastTimestamp = timestamp;
+      this.accumulator = 0;
+      this.rafId = requestAnimationFrame(this.gameLoop);
+      return;
+    }
+
     const delta = timestamp - this.lastTimestamp;
     this.lastTimestamp = timestamp;
     // Assist-Modus (AP 1.7): Spieltempo skaliert die akkumulierte Spielzeit
@@ -772,7 +805,7 @@ export class GameEngine {
     // once deltas drop back below 17 ms (~58 FPS).
     this.fpsAccum += delta;
     this.fpsSamples++;
-    if (this.fpsSamples >= 60) {
+    if (this.fpsSamples >= 30) {   // P0: schnellere Reaktion (~0,5 s statt ~1 s)
       const avg = this.fpsAccum / this.fpsSamples;
       this.frameMs = avg;
       this.currentFps = avg > 0 ? Math.min(120, 1000 / avg) : 60;
@@ -784,6 +817,7 @@ export class GameEngine {
       this.fpsSamples = 0;
     }
 
+    let steps = 0;
     while (this.accumulator >= this.fixedDt) {
       // Hit-Stop: consume the tick's time but skip the world update so the
       // frame visibly freezes on impact. Input is also frozen for these
@@ -796,6 +830,10 @@ export class GameEngine {
       this.input.update();
       this.update();
       this.accumulator -= this.fixedDt;
+      // P0: Substep-Cap gegen die „Todesspirale" — bei einem langen Frame nie
+      // mehr als 3 Sim-Ticks nachholen (sonst macht die Sim UNTER Last mehr
+      // Arbeit statt zu entlasten). Rest verwerfen (winziger Zeit-Slip, unsichtbar).
+      if (++steps >= 3) { this.accumulator = 0; break; }
     }
 
     this.render();
@@ -1076,6 +1114,9 @@ export class GameEngine {
     audio.startMusic(this.level.theme);
     this.emit('hud');
 
+    // QS-Invariante: keine Münze in einer Solid-Kachel (sonst „im Block" &
+    // schwer einsammelbar) — betroffene Münzen in die erste freie Zelle heben.
+    liftCoinsOffSolids(this.level);
     spawnLevelEntities(this);
 
     // Sonder-Münzen (Task #30): bereits eingesammelte Slots (per Profil
@@ -1941,6 +1982,7 @@ export class GameEngine {
 
   /** Kleine Staub-/Funken-Wolke beim Auslösen der Sprungfeder. */
   private spawnSpringParticles(e: Spring) {
+    if (this.motionReduced()) return;    // Barrierefreiheit (E3)
     for (let i = 0; i < 8; i++) {
       const ang = Math.PI + (Math.random() - 0.5) * 1.6;
       const spd = 1.5 + Math.random() * 2;
@@ -2218,7 +2260,9 @@ export class GameEngine {
     }
     // Spike / Gate G2: optionaler WebGL-Bloom-Post-Pass über das fertige
     // 2D-Bild. Nur aktiv, wenn eingeschaltet UND WebGL2 verfügbar.
-    if (this.postEnabled && this.post && this.post.available) {
+    // P0: Post-Pass nur im laufenden Spiel — nicht auf Titel/Pause/Overlays
+    // (spart den teuren Per-Frame-Full-Canvas-Upload dort komplett).
+    if (this.postEnabled && this.post && this.post.available && this.state === GameState.PLAYING) {
       this.post.render(this.canvas);
     }
   }
@@ -2231,12 +2275,20 @@ export class GameEngine {
   private ghostRec: number[] = [];
   ghostPlay: number[] | null = null;
   private postEnabled = false;
+  /** P0 (Touch-Profil): true = ein Menü/Modal ist offen → gameLoop hält Update
+   *  UND Render an, damit die UI den Main-Thread bekommt (reaktive Knöpfe). */
+  private uiPaused = false;
+  setUiPaused(paused: boolean): void { this.uiPaused = paused; }
   /** W1.6: gecachter gerichteter Licht-Gradient (nur bei Viewport-Änderung neu). */
   private lightGrad: CanvasGradient | null = null;
   private lightGradKey = '';
 
   private currentDpr(displayW = this.lastDisplayW, displayH = this.lastDisplayH): number {
-    const dprCap = this.effectiveQuality === 'low' ? 1 : this.effectiveQuality === 'mid' ? 1.5 : 2;
+    let dprCap = this.effectiveQuality === 'low' ? 1 : this.effectiveQuality === 'mid' ? 1.5 : 2;
+    // P0: Auf Touch-Geräten (iPad) DPR hart auf 1,5 deckeln — 2× bedeutet 4×
+    // Pixel (Füllrate killt die FPS), 1,5× reicht optisch auf Retina locker.
+    const touch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    if (touch) dprCap = Math.min(dprCap, 1.5);
     const rawDpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
     let dpr = Math.min(rawDpr, dprCap);
     // Füllraten-Deckel: das Backing-Canvas nie über ein Pixel-Budget wachsen
@@ -2395,7 +2447,7 @@ export class GameEngine {
   /** Kurzer Kamera-Punch (Zoom-In, klingt weich ab). `amount` ~0.03–0.09. Über
    *  die Screenshake-Einstellung gated; überlagernde Punches stapeln nicht. */
   addImpactZoom(amount: number) {
-    if (!getSettings().screenShake) return;
+    if (this.motionReduced() || !getSettings().screenShake) return;
     this.impactZoom = Math.min(0.09, Math.max(this.impactZoom, amount));
   }
 
@@ -2518,7 +2570,7 @@ export class GameEngine {
     if (avgMs > 18) {            // < ~55 FPS → herunterstufen
       this.autoBadEvals++;
       this.autoGoodEvals = 0;
-      if (this.autoBadEvals >= 2 && idx > 0) {
+      if (this.autoBadEvals >= 1 && idx > 0) {   // P0: sofort herunterstufen (schnellere Selbstheilung)
         this.autoTier = order[idx - 1];
         this.autoBadEvals = 0;
         this.effectiveQuality = this.autoTier;

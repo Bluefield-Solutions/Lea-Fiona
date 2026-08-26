@@ -34,7 +34,7 @@ import heroHillsNear from '@assets/lyr_hillsnear.webp';
 import heroGround from '@assets/lyr_ground.webp';
 import heroForeground from '@assets/lyr_foreground.webp';
 import { AlbumPanel } from '../components/game/AlbumPanel';
-import { ShopPanel } from '../components/game/ShopPanel';
+import { BoutiquePanel } from '../components/game/BoutiquePanel';
 
 // Height (CSS px) reserved at the bottom of the screen for the touch
 // controls while playing, so they sit below the playfield, not on top of it.
@@ -126,9 +126,10 @@ function HeroCollectibles() {
   };
 
   useEffect(() => {
-    if (typeof window !== 'undefined' &&
-        window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      return; // Bei „Bewegung reduzieren" keine fliegenden Objekte.
+    const osReduce = typeof window !== 'undefined' && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (osReduce || getSettings().reducedMotion) {
+      return; // Bei „Bewegung reduzieren" (OS ODER Einstellung) keine fliegenden Objekte.
     }
     const t = timers.current;
     // Erster Einsammel-Zeitpunkt je Objekt = Startverzögerung + Anteil bis Mitte.
@@ -454,7 +455,10 @@ export default function GamePage() {
     // WebGL-Overlay nur initialisieren, wenn der Effekt eingeschaltet ist
     // (Lazy-Init → bei Default 'aus' bleibt die 2D-Pipeline völlig unberührt).
     handleResize();
-    if (getSettings().webglPost && glCanvasRef.current) {
+    // P0 (Touch-Profil): WebGL-Bloom-Post-Pass auf Touch-Geräten (iPad) NICHT
+    // automatisch einschalten — der Per-Frame-Full-Canvas-Upload ist dort der
+    // teuerste Einzelposten. Auf dem Desktop bleibt der Default (an).
+    if (getSettings().webglPost && !touch && glCanvasRef.current) {
       engine.attachPostCanvas(glCanvasRef.current);
       const active = engine.setPostEnabled(true);
       glCanvasRef.current.style.display = active ? 'block' : 'none';
@@ -536,7 +540,9 @@ export default function GamePage() {
       if (!e) return;
       if (e.state === GameState.PLAYING) {
         setHud(e.getStats());
-        setDebugInfo(e.getDebugInfo());
+        // P0: getDebugInfo() nur pollen, wenn das Debug-Overlay tatsächlich an
+        // ist — sonst löst es 6–12×/s unnötig einen Ganzbaum-Re-Render aus.
+        if (getSettings().showDebug) setDebugInfo(e.getDebugInfo());
         if (lastBonusState === 'active') {
           setBonus(null);
           lastBonusState = 'idle';
@@ -549,7 +555,7 @@ export default function GamePage() {
         setBonus(null);
         lastBonusState = 'idle';
       }
-    }, 80);
+    }, 150);   // P0: 80→150 ms — ~7×/s statt 12,5×/s HUD-Re-Renders
 
     return () => {
       offState();
@@ -564,6 +570,16 @@ export default function GamePage() {
       try { delete (window as unknown as { __game?: GameEngine }).__game; } catch { /* ignore */ }
     };
   }, [handleResize]);
+
+  // P0 (Touch-Profil): Wenn ein Menü/Modal offen ist, die Engine anhalten
+  // (kein Update/Render/Post → Main-Thread frei für reaktive Knöpfe) und alle
+  // Keyframe-Animationen pausieren (Compositor-Entlastung genau beim Bedienen).
+  // Zusätzlich: „Bewegung reduzieren" (In-App) blendet CSS-Animationen ganz aus.
+  useEffect(() => {
+    const open = modal !== null || showQuickSettings;
+    engineRef.current?.setUiPaused?.(open);
+    document.documentElement.classList.toggle('lf-reduce-motion', !!settings.reducedMotion);
+  }, [modal, showQuickSettings, settings.reducedMotion]);
 
   // Auto-dismiss the head toast after 3s. Chain via length-dep effect so
   // backed-up toasts each get their own 3s window.
@@ -1246,7 +1262,9 @@ export default function GamePage() {
             // Großes Finale (alle Welten) fällt spürbar größer aus als ein
             // Zwischen-Meilenstein: mehr Konfetti, größeres Banner, goldener Rahmen.
             const isFinal = celebrateMilestone >= LEVELS.length;
-            const pieces = isFinal ? 60 : 26;
+            // Barrierefreiheit (E3): „Bewegung reduzieren" → kein Konfetti-Regen
+            // (das Banner bleibt, damit der Meilenstein trotzdem gefeiert wird).
+            const pieces = settings.reducedMotion ? 0 : (isFinal ? 60 : 26);
             const emojis = isFinal ? ['🎉','🏆','⭐','🎈','💛','🌈','✨','🍬','🎊','👑'] : ['🎉','⭐','🎈','💛','🌈','✨','🍬'];
             return (
             <div data-testid="milestone-celebration" data-final={isFinal ? 'true' : 'false'} aria-live="polite" style={{
@@ -1450,6 +1468,12 @@ export default function GamePage() {
               <QuickToggle
                 label="📳 Wackeln" value={settings.screenShake}
                 onChange={(on) => applySettingsPatch({ screenShake: on })}
+              />
+              {/* Barrierefreiheit (E3): Bewegung reduzieren — kein Wackeln,
+                  kein Impact-Zoom, keine kosmetischen Partikel/Konfetti. */}
+              <QuickToggle
+                label="🧘 Bewegung reduzieren" value={settings.reducedMotion}
+                onChange={(on) => applySettingsPatch({ reducedMotion: on })}
               />
               {/* Alle Welten */}
               <QuickToggle
@@ -2293,10 +2317,10 @@ export default function GamePage() {
         </ModalOverlay>
       )}
 
-      {/* Kuschel-Shop modal (F1 Münz-Senke). */}
+      {/* Boutique-Shop modal (Shop & Ankleide, E2). */}
       {modal === 'shop' && (
-        <ModalOverlay testId="shop-overlay" title="🛍️ Kuschel-Shop" onClose={() => { refreshProfileState(); setModal(null); }}>
-          <ShopPanel />
+        <ModalOverlay testId="shop-overlay" title="🛍️ Boutique" onClose={() => { refreshProfileState(); setModal(null); }}>
+          <BoutiquePanel character={character} />
           <PrimaryButton testId="button-shop-close" onClick={() => { refreshProfileState(); setModal(null); }}>Schließen</PrimaryButton>
         </ModalOverlay>
       )}

@@ -65,6 +65,10 @@ export function createTrampolineLevel(): LevelData {
   // === Beat 2: Foam Pit — Sprung über die Schaumstoffgrube ===
   Tramp(42); Run(15); Run(38);
   addBlock('super', 32, ground - 4);
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube — Bodenstampfer
+  // (↓ in der Luft) bricht durch → Münzen; Drüberlaufen bleibt normal.
+  for (const c of [34, 35, 36]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(34, 3, ground + 1);
   addCoinRow(43, 4, ground - 6);
 
   // === Beat 3: Flying Dunk — hoher Sprung zum Korb ===
@@ -92,6 +96,11 @@ export function createTrampolineLevel(): LevelData {
   addCoinRow(110, 2, ground - 5);
   addCoinRow(122, 2, ground - 5);
   Shell(114); Shell(126); // Helm-Kids patrouillieren den Balance-Boden
+  // Vertikaler Aufzug (Audit C1 · Rollout): Hebebühne vom Boden hoch zu einer
+  // Belohnungs-Terrasse (cols 130–133, siehe movingPlatforms). Optionaler
+  // Hochweg mit Münzen — nie auf dem Flaggen-Pfad.
+  addOneWayRow(130, 4, ground - 10);
+  addCoinRow(130, 4, ground - 11);
 
   // === Beat 6: Dodgeball — fliegende Bälle + Trampoline ===
   Tramp(138);
@@ -149,6 +158,10 @@ export function createTrampolineLevel(): LevelData {
     groundRow: ground,
     tiles,
     entities,
+    movingPlatforms: [
+      // Vertikaler Aufzug (Audit C1): Boden hoch zur Belohnungs-Terrasse (row 3).
+      { centerCol: 130, centerRow: ground - 5, widthTiles: 3, amplitudeTiles: 4, path: 'vertical', speed: 0.7 },
+    ],
     playerStart: { x: 3 * TILE_SIZE, y: (ground - 2) * TILE_SIZE },
     flagPosition: { x: 197 * TILE_SIZE, y: (ground - 9) * TILE_SIZE },
     checkpoint: { col: 100, row: ground },

@@ -1,6 +1,6 @@
 import { TileType, TILE_SIZE, EntityType } from '../constants';
 import { smoothGroundY } from '../terrain';
-import { bindHelpers, bindCoinHelpers, clearHillHeadroom } from '../levelHelpers';
+import { bindHelpers, bindCoinHelpers, clearHillHeadroom, fixPowerBlocksOverHills } from '../levelHelpers';
 import type { LevelData, EntitySpawn } from '../level';
 
 const _ = TileType.EMPTY;
@@ -111,6 +111,20 @@ export function createForestLevel(): LevelData {
 
   // ── Münzen ──
   const { addCoinRow, addCoinArc } = bindCoinHelpers(entities);
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube (BEAT 3, Lichtung).
+  // Bodenstampfer (↓ in der Luft) bricht durch → Münzen; Drüberlaufen bleibt normal.
+  for (const c of [74, 75, 76]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(74, 3, ground + 1);
+  // Feuer-Tunnel (Audit C1 · Rollout): überdachte Bonus-Nische im flachen BEAT 4,
+  // Eingang durch eine Feuer-Ranke gesperrt. Die Feuerblume aus BEAT 2 (col 45)
+  // brennt sie weg → das Feuer-Power-Up bekommt eine echte Aufgabe. Optionale
+  // Sackgasse (Münzen), nie auf dem Flaggen-Pfad; drüber läuft der Weg fair weiter.
+  addBricks(113, 4, ground - 3);           // Decke cols 113–116 (drüber laufbar)
+  set(116, ground - 1, TileType.BRICK);    // rechte Wand
+  set(116, ground - 2, TileType.BRICK);
+  addCoinRow(114, 2, ground - 2);          // Belohnung im Tunnel
+  addCoinRow(114, 2, ground - 1);
+  entities.push({ type: EntityType.FIRE_BARRIER, x: 113 * TILE_SIZE, y: ground * TILE_SIZE, hTiles: 2 });
   addCoinRow(9, 4, ground - 3);
   addCoinArc(31, 3, ground - 2, 2);
   addCoinRow(38, 4, ground - 5);
@@ -162,6 +176,8 @@ export function createForestLevel(): LevelData {
   }
 
   clearHillHeadroom(tiles, terrainHills, width, height);
+  // QS-Fix: über Hügeln von clearHillHeadroom gelöschte Power-Up-Blöcke retten.
+  fixPowerBlocksOverHills({ tiles, hills: terrainHills, width, height, groundRow: ground, powerBlocks });
 
   return {
     name: 'Wald der Dämmerung',

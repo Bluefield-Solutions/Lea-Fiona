@@ -86,6 +86,15 @@ export function createWeltraumLevel(): LevelData {
   addBlock('magnet', 69, ground - 4);
   addCoinRow(66, 4, ground - 4);
   addCoinArc(72, 4, ground - 5, 3);
+  // Power-Up-gegatete Bonus-Nische (Audit C2): überdachter Feuer-Tunnel, Eingang
+  // durch Feuer-Ranke gesperrt (Feuerblume aus BEAT 2, col 41). Optionale
+  // Sackgasse mit Münzen → nie auf dem Flaggen-Pfad.
+  addBricks(76, 4, ground - 3);            // Decke cols 76–79
+  set(79, ground - 1, TileType.BRICK);     // rechte Wand
+  set(79, ground - 2, TileType.BRICK);
+  addCoinRow(77, 2, ground - 2);
+  addCoinRow(77, 2, ground - 1);
+  entities.push({ type: EntityType.FIRE_BARRIER, x: 76 * TILE_SIZE, y: ground * TILE_SIZE, hTiles: 2 });
 
   // BEAT 4 — Alien-Einführung (83–112): schwebende Aliens + Warnschild.
   fillSpace(83, 112);

@@ -75,6 +75,10 @@ export function createTurnenLevel(): LevelData {
   // BEVOR es über die erste echte Grube geht. Belohnungs-Bogen im Schwung.
   set(19, ground - 1, SIGN);           // Hinweis direkt am Übungs-Seil
   addCoinArc(22, 4, ground - 6, 3);    // Münzen im Schwungbogen (Belohnung fürs Üben)
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube — Bodenstampfer
+  // (↓ in der Luft) bricht durch → Münzen; Drüberlaufen bleibt normal.
+  for (const c of [24, 25, 26]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(24, 3, ground + 1);
 
   // === BEAT 2 — Reck-Reihe (25–52): über die Recks springen. ===
   Reck(30); Reck(38); HochReck(46);
@@ -83,6 +87,11 @@ export function createTurnenLevel(): LevelData {
   addCoinArc(30, 3, ground - 3, 2);
   addCoinArc(38, 3, ground - 3, 2);
   Run(50);
+  // Vertikaler Aufzug (Audit C1 · Rollout): Hebebühne (Geräte-Lift) vom Boden hoch
+  // zu einer Belohnungs-Terrasse (cols 52–55, siehe movingPlatforms). Optionaler
+  // Hochweg mit Münzen — nie auf dem Flaggen-Pfad.
+  addOneWayRow(52, 4, ground - 10);
+  addCoinRow(52, 4, ground - 11);
 
   // === BEAT 3 — Barren (53–82): parallele Holme traversieren. ===
   addOneWayRow(56, 8, ground - 3);   // unterer Holm
@@ -188,6 +197,10 @@ export function createTurnenLevel(): LevelData {
     groundRow: ground,
     tiles,
     entities,
+    movingPlatforms: [
+      // Vertikaler Aufzug (Audit C1): Geräte-Lift vom Boden hoch zur Terrasse (row 3).
+      { centerCol: 52, centerRow: ground - 5, widthTiles: 3, amplitudeTiles: 4, path: 'vertical', speed: 0.7 },
+    ],
     playerStart: { x: 3 * TILE_SIZE, y: (ground - 2) * TILE_SIZE },
     flagPosition: { x: 230 * TILE_SIZE, y: (ground - 4) * TILE_SIZE },
     // Checkpoint an der Schwelle zum Schwing-Parcours (Beat 6): teilt das jetzt

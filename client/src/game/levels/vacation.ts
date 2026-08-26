@@ -55,7 +55,7 @@ export function createVacationLevel(): LevelData {
   addBlock('super', 52, ground - 4);
   addBlock('shield', 108, ground - 4);
   addBlock('heart', 146, ground - 4);
-  addBlock('super', 200, ground - 4);
+  addBlock('super', 200, ground - 7);   // QS-Fix: über die Brücke C (198–201, ground-4) gehoben — sonst überschrieb die Einweg-Plattform den Block (Item erschien nie).
   addBlock('shield', 232, ground - 4);
 
   // ── Dezente Stufen: einzelne Plattformen ÜBER dem durchgehenden Weg für etwas

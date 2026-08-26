@@ -30,6 +30,10 @@ export interface Settings {
   musicVolume: number;
   sfxVolume: number;
   screenShake: boolean;
+  /** Barrierefreiheit (Audit E3): „Bewegung reduzieren". An = kein Screenshake,
+   *  kein Impact-Zoom, keine kosmetischen Partikel/Konfetti. Default folgt der
+   *  OS-Einstellung `prefers-reduced-motion` (siehe engine.motionReduced()). */
+  reducedMotion: boolean;
   /** Stadt-Welt: Blitze & Donner (Gewitter-Effekte). Aus = nur ruhiger Regen. */
   stadtGewitter: boolean;
   vibration: boolean;
@@ -82,6 +86,15 @@ export interface Settings {
   mathUnlocked: number;
 }
 
+/**
+ * Garderobe (Shop & Ankleide, E1): Kleidungs-/Kosmetik-Slots. Ein getragenes
+ * Teil je Slot. Die im Spiel sichtbaren Slots (Overlay am Kopf/Gesicht/Rücken)
+ * sind kopf/brille/accessoire; oberteil/jacke/hose/schuhe erscheinen (v1) nur
+ * auf der Ankleide-Vorschau. IDs sind stabil & append-only.
+ */
+export type WardrobeSlot = 'kopf' | 'brille' | 'accessoire' | 'outfit' | 'oberteil' | 'jacke' | 'hose' | 'schuhe';
+export const WARDROBE_SLOTS: WardrobeSlot[] = ['kopf', 'brille', 'accessoire', 'outfit', 'oberteil', 'jacke', 'hose', 'schuhe'];
+
 export interface Profile {
   id: string;
   name: string;
@@ -119,6 +132,15 @@ export interface Profile {
   ownedCosmetics: string[];
   /** Aktuell angelegter Hut (ID) oder null = kein Hut. */
   equippedCosmetic: string | null;
+  /**
+   * Garderobe (E1) — Nachfolger von ownedCosmetics/equippedCosmetic:
+   * `wardrobeOwned` = alle gekauften Teile (append-only, account-/profilweit),
+   * `wardrobeEquipped` = getragenes Teil je Slot. Migriert aus den Hut-Feldern.
+   * Der Slot `kopf` wird mit equippedCosmetic gespiegelt, damit das In-Game-
+   * Hut-Rendering (Legacy-Pfad) bis zur Umstellung weiterläuft.
+   */
+  wardrobeOwned: string[];
+  wardrobeEquipped: Partial<Record<WardrobeSlot, string>>;
 }
 
 export interface SaveData {
@@ -131,6 +153,7 @@ const DEFAULT_SETTINGS: Settings = {
   musicVolume: 0.45,
   sfxVolume: 0.8,
   screenShake: true,
+  reducedMotion: false,
   stadtGewitter: true,
   vibration: true,
   muted: false,
@@ -177,8 +200,30 @@ function makeProfile(name: string, overrides?: Partial<Profile>): Profile {
     doubleJumpUnlocked: false,
     ownedCosmetics: [],
     equippedCosmetic: null,
+    wardrobeOwned: [],
+    wardrobeEquipped: {},
     ...overrides,
   };
+}
+
+/** Garderobe-Migration/Sanitisierung: baut owned/equipped robust auf und zieht
+ *  Alt-Felder (ownedCosmetics/equippedCosmetic) additiv hinein. */
+function sanitizeWardrobe(o: Record<string, unknown>, legacyOwned: string[], legacyEquipped: string | null):
+  { owned: string[]; equipped: Partial<Record<WardrobeSlot, string>> } {
+  const ownedIn = Array.isArray(o.wardrobeOwned)
+    ? (o.wardrobeOwned.filter(s => typeof s === 'string') as string[]) : [];
+  // Besitz ist Vereinigung aus neuer Garderobe + Alt-Hüten (append-only, kein Verlust).
+  const owned = Array.from(new Set([...ownedIn, ...legacyOwned]));
+  const equipped: Partial<Record<WardrobeSlot, string>> = {};
+  const eqIn = (o.wardrobeEquipped && typeof o.wardrobeEquipped === 'object')
+    ? o.wardrobeEquipped as Record<string, unknown> : {};
+  for (const slot of WARDROBE_SLOTS) {
+    const v = eqIn[slot];
+    if (typeof v === 'string' && owned.includes(v)) equipped[slot] = v;
+  }
+  // Migration: falls noch kein Kopf-Slot, aber ein alter Hut angelegt war → übernehmen.
+  if (!equipped.kopf && legacyEquipped && owned.includes(legacyEquipped)) equipped.kopf = legacyEquipped;
+  return { owned, equipped };
 }
 
 function sanitizeSpecialCoins(v: unknown): Record<string, [boolean, boolean, boolean]> {
@@ -216,6 +261,7 @@ function sanitizeSettings(s: unknown): Settings {
     musicVolume: clamp01(o.musicVolume, DEFAULT_SETTINGS.musicVolume),
     sfxVolume: clamp01(o.sfxVolume, DEFAULT_SETTINGS.sfxVolume),
     screenShake: typeof o.screenShake === 'boolean' ? o.screenShake : DEFAULT_SETTINGS.screenShake,
+    reducedMotion: typeof o.reducedMotion === 'boolean' ? o.reducedMotion : DEFAULT_SETTINGS.reducedMotion,
     stadtGewitter: typeof o.stadtGewitter === 'boolean' ? o.stadtGewitter : DEFAULT_SETTINGS.stadtGewitter,
     vibration: typeof o.vibration === 'boolean' ? o.vibration : DEFAULT_SETTINGS.vibration,
     muted: typeof o.muted === 'boolean' ? o.muted : DEFAULT_SETTINGS.muted,
@@ -271,6 +317,13 @@ function sanitizeProfile(p: unknown, fallbackName: string): Profile {
       ? Array.from(new Set(o.ownedCosmetics.filter(s => typeof s === 'string') as string[]))
       : [],
     equippedCosmetic: typeof o.equippedCosmetic === 'string' ? o.equippedCosmetic : null,
+    ...(() => {
+      const legacyOwned = Array.isArray(o.ownedCosmetics)
+        ? (o.ownedCosmetics.filter(s => typeof s === 'string') as string[]) : [];
+      const legacyEquipped = typeof o.equippedCosmetic === 'string' ? o.equippedCosmetic : null;
+      const w = sanitizeWardrobe(o, legacyOwned, legacyEquipped);
+      return { wardrobeOwned: w.owned, wardrobeEquipped: w.equipped };
+    })(),
   };
 }
 
@@ -387,6 +440,8 @@ function cloneProfile(p: Profile): Profile {
     specialCoinsCollected: sc,
     levelStars: { ...p.levelStars },
     ownedCosmetics: [...p.ownedCosmetics],
+    wardrobeOwned: [...p.wardrobeOwned],
+    wardrobeEquipped: { ...p.wardrobeEquipped },
   };
 }
 
@@ -562,6 +617,64 @@ export function setEquippedCosmetic(id: string | null): void {
   const p = active();
   if (id !== null && !p.ownedCosmetics.includes(id)) return; // nur Besessenes
   p.equippedCosmetic = id;
+  scheduleWrite();
+}
+
+// ---- Garderobe / Shop & Ankleide (E1) — Multi-Slot ----
+// Besitz ist profilweit (einmal kaufen); getragen wird je Slot. Der Slot `kopf`
+// wird mit dem Legacy-Feld equippedCosmetic gespiegelt, damit das In-Game-
+// Hut-Rendering bis zur vollständigen Umstellung (E3) unverändert weiterläuft.
+
+/** Spiegelt den Kopf-Slot in die Alt-Felder (für den bestehenden Render-Pfad). */
+function mirrorKopfToLegacy(p: Profile): void {
+  const kopf = p.wardrobeEquipped.kopf ?? null;
+  p.equippedCosmetic = kopf;
+  if (kopf && !p.ownedCosmetics.includes(kopf)) p.ownedCosmetics.push(kopf);
+}
+
+export function getWardrobeOwned(): string[] {
+  return [...active().wardrobeOwned];
+}
+
+export function ownsItem(id: string): boolean {
+  return active().wardrobeOwned.includes(id);
+}
+
+/** Kopie der aktuell getragenen Teile je Slot. */
+export function getEquippedSlots(): Partial<Record<WardrobeSlot, string>> {
+  return { ...active().wardrobeEquipped };
+}
+
+export function getEquippedInSlot(slot: WardrobeSlot): string | null {
+  return active().wardrobeEquipped[slot] ?? null;
+}
+
+/**
+ * Kauft ein Garderobe-Teil: prüft Besitz, Kontostand UND (optional) Sterne,
+ * bucht Münzen ab, legt das Teil sofort im angegebenen Slot an. Sterne werden
+ * NICHT verbraucht (Schwelle, keine Währung). Rückgabe wie buyCosmetic.
+ */
+export function buyItem(id: string, price: number, slot: WardrobeSlot, starReq = 0):
+  'ok' | 'owned' | 'poor' | 'stars' {
+  const p = active();
+  if (p.wardrobeOwned.includes(id)) return 'owned';
+  if (starReq > 0 && getTotalStars() < starReq) return 'stars';
+  if (p.totalCoins < price) return 'poor';
+  p.totalCoins -= price;
+  p.wardrobeOwned.push(id);
+  p.wardrobeEquipped[slot] = id; // frisch Gekauftes gleich anlegen
+  if (slot === 'kopf') mirrorKopfToLegacy(p);
+  scheduleWrite();
+  return 'ok';
+}
+
+/** Legt ein (besessenes) Teil im Slot an (id) oder nimmt es ab (null). */
+export function setEquippedInSlot(slot: WardrobeSlot, id: string | null): void {
+  const p = active();
+  if (id !== null && !p.wardrobeOwned.includes(id)) return; // nur Besessenes
+  if (id === null) delete p.wardrobeEquipped[slot];
+  else p.wardrobeEquipped[slot] = id;
+  if (slot === 'kopf') mirrorKopfToLegacy(p);
   scheduleWrite();
 }
 

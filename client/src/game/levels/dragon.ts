@@ -66,6 +66,10 @@ export function createDragonLevel(): LevelData {
   addCoinArc(35, 5, ground - 8, 2);         // Belohnung oben
   addFossil('super', 43, ground - 8);       // Superkraft-Fossil hoch oben (Doppelsprung)
   Egg(48);
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube (BEAT 2, flach).
+  // Bodenstampfer (↓ in der Luft) bricht durch → Münzen; Drüberlaufen bleibt normal.
+  for (const c of [51, 52, 53]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(51, 3, ground + 1);
   Baby(52);                                 // erster aktiver Baby-Drache
   set(56, ground - 1, DP);
 

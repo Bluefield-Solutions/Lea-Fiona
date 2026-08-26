@@ -27,6 +27,12 @@ export function SettingsPanel({
         onChange={(v) => onChange({ screenShake: v })}
       />
       <ToggleRow
+        testId="toggle-reduced-motion"
+        label="Bewegung reduzieren (ruhiger)"
+        checked={settings.reducedMotion}
+        onChange={(v) => onChange({ reducedMotion: v })}
+      />
+      <ToggleRow
         testId="toggle-stadt-gewitter"
         label="Stadt: Blitze & Donner"
         checked={settings.stadtGewitter}

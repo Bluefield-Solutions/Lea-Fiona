@@ -47,6 +47,11 @@ export function createSchoolLevel(): LevelData {
     set(c, ground, TileType.GROUND_TOP);
     for (let r = ground + 1; r < height; r++) set(c, r, TileType.GROUND);
   }
+  // Bodenstampf-Tor (Audit C2): Ziegel über einer Münz-Grube (Klassenzimmer,
+  // flach). Bodenstampfer (↓ in der Luft) bricht durch → Münzen; Drüberlaufen
+  // bleibt normal (kein Softlock).
+  for (const c of [22, 23, 24]) { set(c, ground, TileType.BRICK); set(c, ground + 1, TileType.EMPTY); }
+  addCoinRow(22, 3, ground + 1);
 
   const Rad = (col: number, row = ground - 2) => entities.push({ type: EntityType.GOOMBA, x: col * TILE_SIZE, y: row * TILE_SIZE });
   const Ball = (col: number, row = ground - 2) => entities.push({ type: EntityType.SPIKE_BALL, x: col * TILE_SIZE, y: row * TILE_SIZE });
@@ -87,6 +92,11 @@ export function createSchoolLevel(): LevelData {
   addCoinRow(102, 4, ground - 4);
   addBlock('heart', 98, ground - 7);
   Spinne(90); // Spinne über der Bibliothek
+  // Vertikaler Aufzug (Audit C1 · Rollout): Hebebühne vom Boden hoch zu einer
+  // Belohnungs-Terrasse (cols 110–113, siehe movingPlatforms). Optionaler
+  // Hochweg mit Münzen — nie auf dem Flaggen-Pfad (Flagge bleibt am Boden erreichbar).
+  addOneWayRow(110, 4, ground - 10);
+  addCoinRow(110, 4, ground - 11);
 
   // BEAT 5 — Turnhalle (111-142): Trampoline + rollende Bälle.
   set(118, ground - 1, SIGN);
@@ -151,6 +161,10 @@ export function createSchoolLevel(): LevelData {
     groundRow: ground,
     tiles,
     entities,
+    movingPlatforms: [
+      // Vertikaler Aufzug (Audit C1): Boden hoch zur Belohnungs-Terrasse (row 3).
+      { centerCol: 110, centerRow: ground - 5, widthTiles: 3, amplitudeTiles: 4, path: 'vertical', speed: 0.7 },
+    ],
     playerStart: { x: 3 * TILE_SIZE, y: (ground - 2) * TILE_SIZE },
     flagPosition: { x: 209 * TILE_SIZE, y: (ground - 9) * TILE_SIZE },
     checkpoint: { col: 106, row: ground },
