@@ -184,6 +184,32 @@ function getCachedGoomba(this: Renderer, w: number, h: number, isDead: boolean):
  * direction===1 (nach rechts) spiegeln. Gibt false zurück, wenn Sprites noch
  * nicht geladen sind (Aufrufer zeichnet dann einen Platzhalter).
  */
+// P1-3: Aus dem einen orangen Dino werden grüne/blaue Arten per hue-rotate
+// abgeleitet. `ctx.filter` ist auf Safari/iOS pro Draw überproportional teuer
+// (Filter-Pipeline je Zeichnung). Wir backen jede (hue,sat)-Variante EINMAL in
+// Offscreen-Frames und blitten sie ungefiltert — pixelgleich, aber ohne
+// Per-Frame-Filter. Orange (hue=0) nutzt weiterhin das Original ungefiltert.
+const _dinoTintCache = new Map<string, (HTMLCanvasElement | null)[]>();
+function getTintedDinoFrames(
+  frames: (HTMLImageElement | HTMLCanvasElement | null)[], hue: number, sat: number,
+): (HTMLCanvasElement | null)[] {
+  const key = `${hue}_${sat}`;
+  let baked = _dinoTintCache.get(key);
+  if (baked) return baked;
+  baked = frames.map((f) => {
+    if (!f || !f.width || !f.height) return null;
+    const c = document.createElement('canvas');
+    c.width = f.width; c.height = f.height;
+    const g = c.getContext('2d');
+    if (!g) return null;
+    g.filter = `hue-rotate(${hue}deg) saturate(${sat})`;
+    g.drawImage(f, 0, 0);
+    return c;
+  });
+  _dinoTintCache.set(key, baked);
+  return baked;
+}
+
 export function drawDinoSprite(
   r: Renderer, x: number, y: number, w: number, h: number,
   frame: number, direction: number,
@@ -200,10 +226,14 @@ export function drawDinoSprite(
   let drawW = drawH * (ref.width / ref.height);
   if (stretch) { drawH *= 1 + stretch; drawW *= 1 - stretch * 0.5; }
   const idx = isDead ? 0 : Math.floor(frame * 0.28) % 6;
-  const f = frames[idx] || ref;
+  // Gebackene Tint-Variante statt Live-Filter (Safari-Hotpath).
+  let f: HTMLImageElement | HTMLCanvasElement = frames[idx] || ref;
+  if (hue) {
+    const tinted = getTintedDinoFrames(frames, hue, sat);
+    f = tinted[idx] || tinted[0] || f;
+  }
   ctx.translate(cx, y + h);
   if (direction === 1) ctx.scale(-1, 1);
-  if (hue) ctx.filter = `hue-rotate(${hue}deg) saturate(${sat})`;
   if (isDead) { ctx.translate(0, drawH * 0.3); ctx.scale(1, -1); ctx.translate(0, -drawH); }
   ctx.drawImage(f, -drawW / 2, -drawH, drawW, drawH);
   ctx.restore();

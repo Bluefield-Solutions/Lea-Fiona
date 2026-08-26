@@ -114,6 +114,14 @@ export class WebGLPostProcessor {
   private srcTex: WebGLTexture | null = null;
   private fboA: Fbo | null = null;
   private fboB: Fbo | null = null;
+  // P1-4: Uniform-Locations EINMAL beim Linken auflösen statt pro Frame
+  // (getUniformLocation ist ein GL-Roundtrip; hier 8× pro Frame vermeidbar).
+  private uL: {
+    brightSrc: WebGLUniformLocation | null; brightThr: WebGLUniformLocation | null;
+    blurTex: WebGLUniformLocation | null; blurDir: WebGLUniformLocation | null;
+    compSrc: WebGLUniformLocation | null; compBloom: WebGLUniformLocation | null;
+    compInt: WebGLUniformLocation | null;
+  } | null = null;
   private dispW = 0;
   private dispH = 0;
   /** Bloom-Stärke und Schwelle — dezent justiert nach iPhone-Validierung
@@ -143,6 +151,17 @@ export class WebGLPostProcessor {
     this.progBlur = link(gl, vs, fsBlur);
     this.progComposite = link(gl, vs, fsComp);
     if (!this.progBright || !this.progBlur || !this.progComposite) return;
+
+    // Uniform-Locations einmalig cachen (P1-4).
+    this.uL = {
+      brightSrc: gl.getUniformLocation(this.progBright, 'u_src'),
+      brightThr: gl.getUniformLocation(this.progBright, 'u_threshold'),
+      blurTex: gl.getUniformLocation(this.progBlur, 'u_tex'),
+      blurDir: gl.getUniformLocation(this.progBlur, 'u_dir'),
+      compSrc: gl.getUniformLocation(this.progComposite, 'u_src'),
+      compBloom: gl.getUniformLocation(this.progComposite, 'u_bloom'),
+      compInt: gl.getUniformLocation(this.progComposite, 'u_intensity'),
+    };
 
     // Fullscreen-Quad (zwei Dreiecke).
     this.quad = gl.createBuffer();
@@ -213,7 +232,8 @@ export class WebGLPostProcessor {
     if (!this.available || !this.gl || !this.fboA || !this.fboB) return;
     const gl = this.gl;
     const pBright = this.progBright, pBlur = this.progBlur, pComp = this.progComposite;
-    if (!pBright || !pBlur || !pComp) return;
+    if (!pBright || !pBlur || !pComp || !this.uL) return;
+    const uL = this.uL;
 
     // Quelle hochladen.
     gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
@@ -226,8 +246,8 @@ export class WebGLPostProcessor {
     gl.viewport(0, 0, this.fboA.w, this.fboA.h);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
-    gl.uniform1i(gl.getUniformLocation(pBright, 'u_src'), 0);
-    gl.uniform1f(gl.getUniformLocation(pBright, 'u_threshold'), this.threshold);
+    gl.uniform1i(uL.brightSrc, 0);
+    gl.uniform1f(uL.brightThr, this.threshold);
     this.drawQuad();
 
     // 2) Blur horizontal (fboA → fboB) und vertikal (fboB → fboA).
@@ -238,14 +258,14 @@ export class WebGLPostProcessor {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboB.fb);
     gl.viewport(0, 0, this.fboB.w, this.fboB.h);
     gl.bindTexture(gl.TEXTURE_2D, this.fboA.tex);
-    gl.uniform1i(gl.getUniformLocation(pBlur, 'u_tex'), 0);
-    gl.uniform2f(gl.getUniformLocation(pBlur, 'u_dir'), texelW, 0);
+    gl.uniform1i(uL.blurTex, 0);
+    gl.uniform2f(uL.blurDir, texelW, 0);
     this.drawQuad();
     // V
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fboA.fb);
     gl.viewport(0, 0, this.fboA.w, this.fboA.h);
     gl.bindTexture(gl.TEXTURE_2D, this.fboB.tex);
-    gl.uniform2f(gl.getUniformLocation(pBlur, 'u_dir'), 0, texelH);
+    gl.uniform2f(uL.blurDir, 0, texelH);
     this.drawQuad();
 
     // 3) Composite → Bildschirm.
@@ -254,11 +274,11 @@ export class WebGLPostProcessor {
     gl.viewport(0, 0, this.dispW, this.dispH);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.srcTex);
-    gl.uniform1i(gl.getUniformLocation(pComp, 'u_src'), 0);
+    gl.uniform1i(uL.compSrc, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.fboA.tex);
-    gl.uniform1i(gl.getUniformLocation(pComp, 'u_bloom'), 1);
-    gl.uniform1f(gl.getUniformLocation(pComp, 'u_intensity'), this.intensity);
+    gl.uniform1i(uL.compBloom, 1);
+    gl.uniform1f(uL.compInt, this.intensity);
     this.drawQuad();
   }
 

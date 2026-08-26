@@ -1723,19 +1723,42 @@ function drawLightPools(
   ctx.restore();
 }
 
+// P1-3: Der Lava-Glow-Verlauf ist formkonstant (transparent oben → warm unten
+// über 22px); nur die End-Alpha pulsiert. Statt pro Lava-Tile pro Frame einen
+// createLinearGradient zu allokieren (messbarer GC-Druck in volcano/cave),
+// backen wir den Verlauf EINMAL bei voller Alpha in ein Offscreen-Sprite und
+// blitten ihn mit globalAlpha = 0.5*pulse. Ergebnis pixelgleich (screen-Composite
+// skaliert linear mit Alpha), aber ohne Per-Tile-Allokation.
+let _lavaGlowSprite: HTMLCanvasElement | null = null;
+const LAVA_GLOW_H = 22;
+function getLavaGlowSprite(): HTMLCanvasElement | null {
+  if (_lavaGlowSprite) return _lavaGlowSprite;
+  const c = document.createElement('canvas');
+  c.width = TILE_SIZE + 4;
+  c.height = LAVA_GLOW_H;
+  const g2 = c.getContext('2d');
+  if (!g2) return null;
+  const grad = g2.createLinearGradient(0, 0, 0, LAVA_GLOW_H);
+  grad.addColorStop(0, 'rgba(255,90,20,0)');
+  grad.addColorStop(1, 'rgba(255,140,40,1)');
+  g2.fillStyle = grad;
+  g2.fillRect(0, 0, c.width, LAVA_GLOW_H);
+  _lavaGlowSprite = c;
+  return c;
+}
+
 function drawLavaGlow(this: Renderer, screenX: number, screenY: number) {
   // Punkt 3: emissives, pulsierendes Glühen über der Lava-Oberkante. Additiv
   // (screen). Verbindet Optik mit Gefahren-Lesbarkeit. Nur ab 'mid'.
   const ctx = this.ctx;
   const t = this.time;
   const pulse = 0.6 + Math.sin(t * 0.06 + screenX * 0.1) * 0.4;
+  const sprite = getLavaGlowSprite();
+  if (!sprite) return;
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
-  const grad = ctx.createLinearGradient(0, screenY - 14, 0, screenY + 8);
-  grad.addColorStop(0, 'rgba(255,90,20,0)');
-  grad.addColorStop(1, `rgba(255,140,40,${0.5 * pulse})`);
-  ctx.fillStyle = grad;
-  ctx.fillRect(screenX - 2, screenY - 14, TILE_SIZE + 4, 22);
+  ctx.globalAlpha = 0.5 * pulse;
+  ctx.drawImage(sprite, screenX - 2, screenY - 14);
   ctx.restore();
 }
 

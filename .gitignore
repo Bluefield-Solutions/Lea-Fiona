@@ -25,3 +25,4 @@ lea-fiona-iphone-github.zip
 # iPhone-Webapp Build-Artefakte (via tools/build-webapp.mjs)
 webapp/
 lea-fiona-webapp.zip
+bundle-*.b64
