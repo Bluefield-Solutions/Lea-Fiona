@@ -43,6 +43,11 @@ export class Player extends Entity {
   // Gewählte Spielfigur: 'fiona' (Standard) oder 'lea'. Bestimmt das Sprite-Set
   // unabhängig von der Power-Größe (isPoweredUp). Wird aus dem Speicher gesetzt.
   character: 'fiona' | 'lea' | 'stephan' = 'fiona';
+  // Boutique (E3): angelegte Brille (Slot 'brille') oder null — als Gesichts-
+  // Overlay auch im Spiel getragen.
+  cosmeticGlasses: string | null = null;
+  // Boutique (E3): angelegtes Hals-Accessoire (Slot 'accessoire') oder null.
+  cosmeticAccessory: string | null = null;
   // Kuschel-Shop: angelegter Kosmetik-Hut (ID aus cosmetics.ts) oder null.
   // Rein visuell; wird beim Levelstart aus dem Speicher gesetzt.
   cosmetic: string | null = null;

@@ -931,23 +931,29 @@ export default function GamePage() {
         fontFamily: 'monospace',
       }}
     >
-      {debugInfo && settings.showDebug && gameState === GameState.PLAYING && (
-        <div
-          data-testid="debug-overlay"
-          style={{
-            position: 'absolute', top: 52, right: 10, zIndex: 25,
-            font: '10px/1.4 ui-monospace, Menlo, Consolas, monospace',
-            color: debugInfo.fps >= 55 ? 'rgba(150,240,170,0.82)'
-                 : debugInfo.fps >= 45 ? 'rgba(255,214,123,0.9)'
-                 : 'rgba(255,120,120,0.95)',
-            background: 'rgba(0,0,0,0.32)', padding: '2px 6px', borderRadius: 5,
-            pointerEvents: 'none', whiteSpace: 'pre', letterSpacing: '0.2px',
-            textAlign: 'right',
-          }}
-        >
-          {`${debugInfo.fps} FPS · ${debugInfo.frameMs} ms\n${debugInfo.auto ? 'auto·' : ''}${debugInfo.quality}${debugInfo.lowFx ? ' ⚠' : ''}`}
-        </div>
-      )}
+      {debugInfo && settings.showDebug && gameState === GameState.PLAYING && (() => {
+        const col = debugInfo.fps >= 55 ? '#7cf29b' : debugInfo.fps >= 45 ? '#ffd67b' : '#ff7676';
+        return (
+          <div
+            data-testid="debug-overlay"
+            style={{
+              position: 'absolute', top: 56, right: 12, zIndex: 40,
+              padding: '6px 12px 7px', borderRadius: 12,
+              background: 'rgba(0,0,0,0.62)', border: `2px solid ${col}`,
+              boxShadow: '0 4px 14px rgba(0,0,0,0.45)',
+              fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
+              pointerEvents: 'none', textAlign: 'right',
+            }}
+          >
+            <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1, color: col }}>
+              {debugInfo.fps}<span style={{ fontSize: 12, fontWeight: 700, marginLeft: 4 }}>FPS</span>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.85)', marginTop: 3, whiteSpace: 'nowrap' }}>
+              {debugInfo.frameMs} ms · {debugInfo.auto ? 'auto·' : ''}{debugInfo.quality}{debugInfo.lowFx ? ' ⚠' : ''}
+            </div>
+          </div>
+        );
+      })()}
       {/* Global focus-ring style for keyboard users. Pointer interactions
           stay clean; only :focus-visible (keyboard) shows the gold outline. */}
       <style>{`

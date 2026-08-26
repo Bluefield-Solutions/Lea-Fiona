@@ -31,7 +31,7 @@ import {
   getSettings, addLifetimeCoins, unlockSticker, hasSticker,
   getSpecialCoinsCollected, recordLevelStars,
   isDoubleJumpUnlocked,
-  getEquippedCosmetic,
+  getEquippedCosmetic, getEquippedInSlot,
   safeLocalGet, safeLocalSet,
 } from './storage';
 import {
@@ -1103,6 +1103,8 @@ export class GameEngine {
     this.player.character = this.selectedCharacter;
     // Kuschel-Shop: angelegten Hut aus dem Profil übernehmen (rein visuell).
     this.player.cosmetic = getEquippedCosmetic();
+    this.player.cosmeticGlasses = getEquippedInSlot('brille'); // Boutique E3: Brille im Spiel
+    this.player.cosmeticAccessory = getEquippedInSlot('accessoire'); // Boutique E3: Accessoire im Spiel
     // Doppelsprung (Paket 2): nur wenn die Flügel-Fähigkeit freigeschaltet ist.
     this.player.doubleJumpUnlocked = isDoubleJumpUnlocked();
     this.player.coins = this.carryStats.coins;

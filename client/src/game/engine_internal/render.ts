@@ -702,6 +702,29 @@ function renderWorldLayer(engine: GameEngine): void {
       drawCosmeticHat(engine.renderer.ctx, engine.player.cosmetic, cx, headTop + bob, pw, facing);
     }
 
+    // Boutique (E3): angelegte Brille als Gesichts-Overlay über den Augen.
+    if (engine.player.cosmeticGlasses && !engine.player.isDead) {
+      const pw = engine.player.width, ph = engine.player.height;
+      const facing = engine.player.direction >= 0 ? 1 : -1;
+      // Augen-Höhe (beim Ducken sitzt der Kopf tiefer); leichte Idle-Wippe wie beim Hut.
+      const eyeY = playerScreen.y + ph * (engine.player.isDucking ? 0.52 : 0.20);
+      const cx = playerScreen.x + pw / 2;
+      const bob = engine.player.onGround && !engine.player.isRunning
+        ? Math.sin(engine.renderer.time * 0.08) * 0.6 : 0;
+      drawCosmeticGlasses(engine.renderer.ctx, engine.player.cosmeticGlasses, cx, eyeY + bob, pw, facing);
+    }
+
+    // Boutique (E3): angelegtes Hals-Accessoire (Schal/Kette) am Hals.
+    if (engine.player.cosmeticAccessory && !engine.player.isDead) {
+      const pw = engine.player.width, ph = engine.player.height;
+      const facing = engine.player.direction >= 0 ? 1 : -1;
+      const neckY = playerScreen.y + ph * (engine.player.isDucking ? 0.62 : 0.34);
+      const cx = playerScreen.x + pw / 2;
+      const bob = engine.player.onGround && !engine.player.isRunning
+        ? Math.sin(engine.renderer.time * 0.08) * 0.6 : 0;
+      drawCosmeticAccessory(engine.renderer.ctx, engine.player.cosmeticAccessory, cx, neckY + bob, pw, facing);
+    }
+
     // Stadt: Regenschirm-Figur — bei kräftigem Regen öffnet die Spielerin im
     // Stehen automatisch einen kleinen Schirm (rein visuell). Der Öffnungsgrad
     // wird weich geführt, damit der Schirm sanft auf-/zugeht statt zu poppen.
@@ -1852,6 +1875,49 @@ export function drawCosmeticGlasses(
         ctx.lineTo(lx, eyeY + r * 1.3);
         ctx.closePath(); ctx.fill();
       }
+      break;
+    }
+    default: break;
+  }
+  ctx.restore();
+}
+
+/**
+ * Kosmetik-Accessoire am Hals (Front-Overlay). Anker (cx, neckY) = Halsmitte,
+ * Skalierung `w` = Referenz-Körperbreite (u = w/24).
+ */
+export function drawCosmeticAccessory(
+  ctx: CanvasRenderingContext2D, id: string, cx: number, neckY: number, w: number, facing: number,
+): void {
+  const u = w / 24;
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  switch (id) {
+    case 'schal': {
+      const band = 4.4 * u, h = 1.9 * u;
+      ctx.fillStyle = '#e0413f';
+      ctx.fillRect(cx - band, neckY - h / 2, band * 2, h);
+      ctx.strokeStyle = '#9e2b28'; ctx.lineWidth = 1 * u;
+      ctx.strokeRect(cx - band, neckY - h / 2, band * 2, h);
+      const ex = cx + facing * 1.6 * u; // hängendes Ende vorne, Blickrichtung
+      ctx.fillStyle = '#e0413f';
+      ctx.fillRect(ex - 1.2 * u, neckY + h / 2, 2.4 * u, 5 * u);
+      ctx.strokeRect(ex - 1.2 * u, neckY + h / 2, 2.4 * u, 5 * u);
+      ctx.fillStyle = '#fff3b0'; // Streifen + Fransen
+      ctx.fillRect(cx - band, neckY - 0.3 * u, band * 2, 0.6 * u);
+      ctx.fillRect(ex - 1.2 * u, neckY + h / 2 + 3.6 * u, 2.4 * u, 0.7 * u);
+      break;
+    }
+    case 'kette': {
+      ctx.strokeStyle = '#ffcf33'; ctx.lineWidth = 1.1 * u; // Goldkette
+      ctx.beginPath(); ctx.arc(cx, neckY - 2.5 * u, 4 * u, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke();
+      const py = neckY + 2.2 * u, r = 1.6 * u; // Herz-Anhänger
+      ctx.fillStyle = '#ff5fa2';
+      ctx.beginPath();
+      ctx.arc(cx - r * 0.5, py - r * 0.2, r * 0.55, Math.PI, 0);
+      ctx.arc(cx + r * 0.5, py - r * 0.2, r * 0.55, Math.PI, 0);
+      ctx.lineTo(cx, py + r); ctx.closePath(); ctx.fill();
       break;
     }
     default: break;

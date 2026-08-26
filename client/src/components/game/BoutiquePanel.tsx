@@ -7,7 +7,7 @@ import {
   getWalletCoins, getTotalStars, ownsItem, getEquippedInSlot, getEquippedSlots,
   buyItem, setEquippedInSlot,
 } from '../../game/storage';
-import { drawCosmeticHat, drawCosmeticGlasses } from '../../game/engine_internal/render';
+import { drawCosmeticHat, drawCosmeticGlasses, drawCosmeticAccessory } from '../../game/engine_internal/render';
 import { audio } from '../../game/audio';
 
 type Character = 'fiona' | 'lea' | 'stephan';
@@ -16,10 +16,10 @@ type Filter = 'alle' | 'bezahlbar' | 'besessen';
 // Ankleide-Vorschau je Figur: Basis-Stand-Sprite + Hut-Anker (proportional wie
 // im Spiel: headTop ~6 % von oben, Skalierung = Körperbreite). Die Werte sind je
 // Sprite fein justiert, damit Hüte sauber sitzen.
-const PREVIEW: Record<Character, { src: string; aspect: number; headTopFrac: number; wFrac: number; eyeYFrac: number; glassesWFrac: number }> = {
-  lea: { src: leaStand, aspect: 204 / 240, headTopFrac: 0.05, wFrac: 0.60, eyeYFrac: 0.165, glassesWFrac: 0.44 },
-  fiona: { src: fionaStand, aspect: 144 / 220, headTopFrac: 0.06, wFrac: 0.72, eyeYFrac: 0.185, glassesWFrac: 0.52 },
-  stephan: { src: STEPHAN_FRAME_URLS[0], aspect: 157 / 176, headTopFrac: 0.07, wFrac: 0.62, eyeYFrac: 0.205, glassesWFrac: 0.46 },
+const PREVIEW: Record<Character, { src: string; aspect: number; headTopFrac: number; wFrac: number; eyeYFrac: number; glassesWFrac: number; neckYFrac: number; accWFrac: number }> = {
+  lea: { src: leaStand, aspect: 204 / 240, headTopFrac: 0.05, wFrac: 0.60, eyeYFrac: 0.165, glassesWFrac: 0.44, neckYFrac: 0.30, accWFrac: 0.52 },
+  fiona: { src: fionaStand, aspect: 144 / 220, headTopFrac: 0.06, wFrac: 0.72, eyeYFrac: 0.185, glassesWFrac: 0.52, neckYFrac: 0.32, accWFrac: 0.60 },
+  stephan: { src: STEPHAN_FRAME_URLS[0], aspect: 157 / 176, headTopFrac: 0.07, wFrac: 0.62, eyeYFrac: 0.205, glassesWFrac: 0.46, neckYFrac: 0.36, accWFrac: 0.52 },
 };
 
 const PREVIEW_H = 210;
@@ -84,6 +84,8 @@ export function BoutiquePanel({ character }: { character: Character }) {
         drawCosmeticHat(ctx, id, cx, PREVIEW_H * cfg.headTopFrac, previewW * cfg.wFrac, 1);
       } else if (sm.slot === 'brille') {
         drawCosmeticGlasses(ctx, id, cx, PREVIEW_H * cfg.eyeYFrac, previewW * cfg.glassesWFrac, 1);
+      } else if (sm.slot === 'accessoire') {
+        drawCosmeticAccessory(ctx, id, cx, PREVIEW_H * cfg.neckYFrac, previewW * cfg.accWFrac, 1);
       }
     }
   }, [equippedSig, character, previewW, cfg, imgTick]);
