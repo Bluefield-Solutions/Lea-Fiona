@@ -96,9 +96,13 @@ export const WARDROBE: WardrobeItem[] = [
   // Brillen (E4-Muster, prozedural gezeichnet — In-Game-tauglicher Gesichts-Overlay).
   { id: 'sonnenbrille', slot: 'brille', name: 'Sonnenbrille', price: 30, fit: 'both', emoji: '🕶️', hint: 'Coole dunkle Gläser.', ingame: true, layer: 8 },
   { id: 'herzbrille', slot: 'brille', name: 'Herz-Brille', price: 45, fit: 'both', emoji: '😍', hint: 'Herzchen-Gläser zum Verlieben.', ingame: true, layer: 8 },
+  { id: 'nerdbrille', slot: 'brille', name: 'Nerd-Brille', price: 40, fit: 'both', emoji: '🤓', hint: 'Runde Gläser zum Schlaumeiern.', ingame: true, layer: 8 },
+  { id: 'sternbrille', slot: 'brille', name: 'Stern-Brille', price: 55, fit: 'both', emoji: '🤩', hint: 'Funkelnde Sternen-Gläser.', ingame: true, layer: 8 },
   // Accessoires (E4-Muster, prozedural — Hals-/Front-Overlay, auch im Spiel getragen).
   { id: 'schal', slot: 'accessoire', name: 'Schal', price: 35, fit: 'both', emoji: '🧣', hint: 'Ein kuscheliger roter Schal.', ingame: true, layer: 7 },
   { id: 'kette', slot: 'accessoire', name: 'Herz-Kette', price: 50, fit: 'both', emoji: '💛', hint: 'Goldkette mit Herz-Anhänger.', ingame: true, layer: 7 },
+  { id: 'schleife', slot: 'accessoire', name: 'Fliege', price: 40, fit: 'both', emoji: '🎀', hint: 'Schicke lila Fliege.', ingame: true, layer: 7 },
+  { id: 'blume', slot: 'accessoire', name: 'Blüte', price: 45, fit: 'both', emoji: '🌸', hint: 'Fröhliche Blüte für die Brust.', ingame: true, layer: 7 },
 ];
 
 const BY_ID = new Map<string, WardrobeItem>(WARDROBE.map(i => [i.id, i]));

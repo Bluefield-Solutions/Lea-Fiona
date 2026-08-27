@@ -1877,6 +1877,47 @@ export function drawCosmeticGlasses(
       }
       break;
     }
+    case 'nerdbrille': {
+      // Runde schwarze Nerd-Gläser mit dickem Rahmen + hellem Glas.
+      const off = 2.5 * u, rr = 1.9 * u;
+      // Bügel zu den Ohren.
+      ctx.strokeStyle = '#20242e'; ctx.lineWidth = 1.0 * u;
+      ctx.beginPath(); ctx.moveTo(cx - off - rr, eyeY - 0.2 * u); ctx.lineTo(cx - off - rr * 1.7, eyeY - 0.7 * u); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + off + rr, eyeY - 0.2 * u); ctx.lineTo(cx + off + rr * 1.7, eyeY - 0.7 * u); ctx.stroke();
+      // Steg.
+      ctx.beginPath(); ctx.moveTo(cx - 0.7 * u, eyeY - 0.3 * u); ctx.lineTo(cx + 0.7 * u, eyeY - 0.3 * u); ctx.stroke();
+      for (const s of [-1, 1]) {
+        const lx = cx + s * off;
+        ctx.fillStyle = 'rgba(200,230,255,0.6)';
+        ctx.beginPath(); ctx.arc(lx, eyeY, rr, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#1a1d24'; ctx.lineWidth = 1.4 * u;
+        ctx.beginPath(); ctx.arc(lx, eyeY, rr, 0, Math.PI * 2); ctx.stroke();
+        // Glanzpunkt.
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath(); ctx.arc(lx - rr * 0.35, eyeY - rr * 0.35, rr * 0.28, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
+    case 'sternbrille': {
+      // Verspielte Stern-Gläser (fünfzackig), sonnengelb mit Rahmen.
+      const off = 2.7 * u, R = 2.2 * u;
+      ctx.strokeStyle = '#f5a623'; ctx.lineWidth = 1.0 * u;
+      ctx.beginPath(); ctx.moveTo(cx - 0.9 * u, eyeY); ctx.lineTo(cx + 0.9 * u, eyeY); ctx.stroke();
+      for (const s of [-1, 1]) {
+        const lx = cx + s * off;
+        ctx.beginPath();
+        for (let k = 0; k < 10; k++) {
+          const ang = -Math.PI / 2 + k * Math.PI / 5;
+          const rad = k % 2 === 0 ? R : R * 0.45;
+          const px = lx + Math.cos(ang) * rad, py = eyeY + Math.sin(ang) * rad;
+          if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fillStyle = '#ffd23f'; ctx.fill();
+        ctx.strokeStyle = '#c8871a'; ctx.lineWidth = 0.9 * u; ctx.stroke();
+      }
+      break;
+    }
     default: break;
   }
   ctx.restore();
@@ -1918,6 +1959,37 @@ export function drawCosmeticAccessory(
       ctx.arc(cx - r * 0.5, py - r * 0.2, r * 0.55, Math.PI, 0);
       ctx.arc(cx + r * 0.5, py - r * 0.2, r * 0.55, Math.PI, 0);
       ctx.lineTo(cx, py + r); ctx.closePath(); ctx.fill();
+      break;
+    }
+    case 'schleife': {
+      // Elegante Fliege am Hals: zwei Dreiecks-Flügel + Mittelknoten.
+      const wing = 3.0 * u, hh = 1.9 * u;
+      ctx.fillStyle = '#7b3ff2'; ctx.strokeStyle = '#5326b0'; ctx.lineWidth = 0.9 * u;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx, neckY);
+        ctx.lineTo(cx + s * wing, neckY - hh);
+        ctx.lineTo(cx + s * wing, neckY + hh);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+      // Mittelknoten.
+      ctx.fillStyle = '#4a1f9e';
+      ctx.fillRect(cx - 0.9 * u, neckY - 1.3 * u, 1.8 * u, 2.6 * u);
+      break;
+    }
+    case 'blume': {
+      // Blüte auf der Brust: fünf Blütenblätter + gelbe Mitte.
+      const py = neckY + 1.2 * u, pr = 1.35 * u, ring = 1.9 * u;
+      ctx.fillStyle = '#ff7eb6';
+      for (let k = 0; k < 5; k++) {
+        const ang = -Math.PI / 2 + k * (Math.PI * 2 / 5);
+        const bx = cx + Math.cos(ang) * ring, by = py + Math.sin(ang) * ring;
+        ctx.beginPath(); ctx.arc(bx, by, pr, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath(); ctx.arc(cx, py, 1.35 * u, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#e0a800'; ctx.lineWidth = 0.6 * u; ctx.stroke();
       break;
     }
     default: break;
