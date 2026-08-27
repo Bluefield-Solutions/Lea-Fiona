@@ -1542,7 +1542,10 @@ function drawBeachBackground(this: Renderer, camera: Camera) {
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, waveY);
-    for (let wx = 0; wx <= W; wx += 3) {
+    // P1-1: Vertex-Dichte reduziert (war +=3). Sinus-Periode ≈314px → auch bei
+    // +=8 noch ~39 Stützpunkte/Periode, für eine 1px-Wellenlinie optisch
+    // identisch, aber ~⅓ der lineTo-Last.
+    for (let wx = 0; wx <= W; wx += 8) {
       ctx.lineTo(wx, waveY + Math.sin(wx * 0.02 + wavePhase) * 3);
     }
     ctx.stroke();
@@ -1550,7 +1553,9 @@ function drawBeachBackground(this: Renderer, camera: Camera) {
 
   ctx.beginPath();
   ctx.moveTo(0, H * 0.85);
-  for (let dx = 0; dx <= W; dx += 5) {
+  // P1-1: gröbere Abtastung (war +=5). Niedrige Frequenzen (0.005/0.012) →
+  // bei +=10 noch ~52 Stützpunkte/Periode, Dünen-Silhouette optisch gleich.
+  for (let dx = 0; dx <= W; dx += 10) {
     const duneH = Math.sin(dx * 0.005 - camera.x * 0.01) * 15 + Math.sin(dx * 0.012) * 8;
     ctx.lineTo(dx, H * 0.85 + duneH);
   }
@@ -2357,7 +2362,9 @@ function drawIceBackground(this: Renderer, camera: Camera) {
     ctx.strokeStyle = `hsla(${hue}, 80%, 70%, ${0.16 - band * 0.04})`;
     ctx.lineWidth = 8;
     ctx.beginPath();
-    for (let x = 0; x <= W; x += 6) {
+    // P1-1: gröber (war +=6). Freq 0.012 → bei +=12 ~44 Stützpunkte/Periode,
+    // weiche Aurora-Bänder (8px, alpha 0.16) optisch identisch.
+    for (let x = 0; x <= W; x += 12) {
       const ny = baseY + Math.sin(x * 0.012 + t * 0.01 + band * 1.7) * 14;
       if (x === 0) ctx.moveTo(x, ny);
       else ctx.lineTo(x, ny);
@@ -2419,7 +2426,7 @@ function drawIceBackground(this: Renderer, camera: Camera) {
   ctx.fillStyle = 'rgba(220, 235, 250, 0.95)';
   ctx.beginPath();
   ctx.moveTo(0, H);
-  for (let x = 0; x <= W + 20; x += 6) {
+  for (let x = 0; x <= W + 20; x += 9) {   // P1-1: gröber (war +=6), Grate optisch gleich
     const wx = x + camera.x * 0.14;
     const ridgeY = H * 0.83 + Math.sin(wx * 0.014) * 18 + Math.sin(wx * 0.05) * 6;
     ctx.lineTo(x, ridgeY);
@@ -2431,7 +2438,7 @@ function drawIceBackground(this: Renderer, camera: Camera) {
   ctx.fillStyle = 'rgba(120, 170, 220, 0.35)';
   ctx.beginPath();
   ctx.moveTo(0, H);
-  for (let x = 0; x <= W + 20; x += 6) {
+  for (let x = 0; x <= W + 20; x += 9) {   // P1-1: gröber (war +=6), Grate optisch gleich
     const wx = x + camera.x * 0.14;
     const ridgeY = H * 0.83 + Math.sin(wx * 0.014) * 18 + Math.sin(wx * 0.05) * 6;
     ctx.lineTo(x, ridgeY + 4);
