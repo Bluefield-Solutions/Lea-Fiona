@@ -4,19 +4,25 @@ import runSheetLea from '@assets/run_sheet_lea.webp';
 import { STEPHAN_FRAME_URLS } from '../../game/assets/stephanSprites';
 import { audio } from '../../game/audio';
 
-// Mathe-Modus: nach jedem Level 3 Rechenaufgaben (Plus/Minus, keine negativen
-// Ergebnisse). Zahlenraum je Figur: Lea → bis 50, Fiona → bis 10.
-// Eingabe über einen großen Ziffern-Rechner (0–9) oder echte Tastatur, dann
-// „Committen" (Enter). 3 Fehler INSGESAMT → onFail (Reset auf Level 1). Alle 3
-// richtig → onPass. Diese Version: freundliches, helles Lern-Design mit
-// Maskottchen, taktilen Tasten und weichen Rückmeldungen.
-const MAX_WRONG = 3;
+// Mathe-Modus: Rechenaufgaben nach jedem Level (oder als reiner Übungsmodus vom
+// Startbildschirm). Pro Figur eigener Aufgaben-Typ:
+//   • Fiona → Plus/Minus bis 10, deutlich mehr Plus (80:20), 3 Aufgaben.
+//   • Lea   → Mal/Geteilt, Reihen 6–10 (70:30 Mal:Geteilt), 10 Aufgaben,
+//             tolerant: bei zu vielen Fehlern wird die Runde wiederholt (kein
+//             Reset auf Level 1).
+//   • Stephan → Plus/Minus bis 50 (unverändert), 3 Aufgaben.
+//   • Übungsmodus (Lea, Direktstart) → 30 Aufgaben, erste 25 wie Lea (6–10),
+//             letzte 5 schwerer (Reihen 11–13, reine Multiplikation); reiner
+//             Übungsmodus ohne Konsequenzen, am Ende Ergebnis-Anzeige.
+// Eingabe über den Ziffern-Rechner (0–9) oder echte Tastatur, dann „Committen".
 
 type Q = { text: string; answer: number };
 
-function makeQuestion(maxN: number): Q {
-  const sub = Math.random() < 0.5;
-  if (sub) {
+const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+// Plus/Minus ohne negative Ergebnisse. subChance = Anteil Minus-Aufgaben.
+function makeAddSub(maxN: number, subChance: number): Q {
+  if (Math.random() < subChance) {
     const a = 1 + Math.floor(Math.random() * maxN);        // 1..maxN
     const b = Math.floor(Math.random() * (a + 1));          // 0..a → Ergebnis ≥ 0
     return { text: `${a} − ${b}`, answer: a - b };
@@ -24,6 +30,80 @@ function makeQuestion(maxN: number): Q {
   const a = Math.floor(Math.random() * (maxN + 1));         // 0..maxN
   const b = Math.floor(Math.random() * (maxN - a + 1));     // a+b ≤ maxN
   return { text: `${a} + ${b}`, answer: a + b };
+}
+
+// Mal/Geteilt aus den Reihen `rows`. divShare = Anteil Geteilt-Aufgaben.
+// Geteilt bleibt sauber teilbar: (Reihe · x) : Reihe = x.
+function makeMulDiv(rows: number[], divShare: number): Q {
+  const row = pick(rows);
+  const other = 1 + Math.floor(Math.random() * 10);         // 1..10
+  if (Math.random() < divShare) {
+    return { text: `${row * other} : ${row}`, answer: other };
+  }
+  return { text: `${row} · ${other}`, answer: row * other };
+}
+
+// Reine Multiplikation (für die schwereren letzten Aufgaben im Übungsmodus).
+// minOther hebt die untere Grenze des zweiten Faktors an (schwerer, kein „·1").
+function makeMul(rows: number[], minOther = 1): Q {
+  const row = pick(rows);
+  const span = 10 - minOther + 1;
+  const other = minOther + Math.floor(Math.random() * span);
+  return { text: `${row} · ${other}`, answer: row * other };
+}
+
+export type MathMode = 'game' | 'practice';
+
+interface MathCfg {
+  count: number;
+  maxDigits: number;
+  maxWrong: number;                  // erlaubte Fehler-Versuche (game)
+  roundFail: 'reset' | 'repeat';     // bei zu vielen Fehlern: Level-Reset oder Runde wiederholen
+  mode: MathMode;
+  gen: (index: number) => Q;
+}
+
+function configFor(character: string, mode: MathMode): MathCfg {
+  if (mode === 'practice') {
+    // Lea-Übung: 30 Aufgaben, erste 25 Reihen 6–10 (70:30), letzte 5 schwerer.
+    return {
+      count: 30, maxDigits: 3, maxWrong: 0, roundFail: 'repeat', mode: 'practice',
+      // Letzte 5 schwerer: Reihen 11–13, zweiter Faktor ≥3 (kein triviales ·1/·2).
+      gen: (i) => (i >= 25 ? makeMul([11, 12, 13], 3) : makeMulDiv([6, 7, 8, 9, 10], 0.3)),
+    };
+  }
+  if (character === 'lea') {
+    return {
+      count: 10, maxDigits: 3, maxWrong: 5, roundFail: 'repeat', mode: 'game',
+      gen: () => makeMulDiv([6, 7, 8, 9, 10], 0.3),
+    };
+  }
+  if (character === 'fiona') {
+    return {
+      count: 3, maxDigits: 2, maxWrong: 3, roundFail: 'reset', mode: 'game',
+      gen: () => makeAddSub(10, 0.2),   // 80 % Plus
+    };
+  }
+  // Stephan (unverändert): Plus/Minus bis 50, 50:50.
+  return {
+    count: 3, maxDigits: 2, maxWrong: 3, roundFail: 'reset', mode: 'game',
+    gen: () => makeAddSub(50, 0.5),
+  };
+}
+
+// Aufgaben bauen — mit bestem-Bemühen-Dedup, damit sich innerhalb einer Runde
+// nicht dieselbe Aufgabe direkt wiederholt (nach ein paar Versuchen wird eine
+// Kollision akzeptiert, falls der Aufgabenraum knapp ist).
+function buildQuestions(cfg: MathCfg): Q[] {
+  const out: Q[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < cfg.count; i++) {
+    let q = cfg.gen(i);
+    for (let t = 0; t < 8 && seen.has(q.text); t++) q = cfg.gen(i);
+    seen.add(q.text);
+    out.push(q);
+  }
+  return out;
 }
 
 // Für Lea/Fiona ist sheetW = 4×fw (Streifen; die Anzeige zeigt statisch das
@@ -36,43 +116,65 @@ const MASCOT: Record<string, { sheet: string; fw: number; fh: number; sheetW: nu
 };
 
 export function MathQuiz(
-  { onPass, onFail, character }: { onPass: () => void; onFail: () => void; character: string },
+  { onPass, onFail, character, mode = 'game' }:
+  { onPass: () => void; onFail: () => void; character: string; mode?: MathMode },
 ) {
-  const maxN = character === 'fiona' ? 10 : 50;
-  const [questions] = React.useState<Q[]>(() => [makeQuestion(maxN), makeQuestion(maxN), makeQuestion(maxN)]);
+  const cfg = React.useMemo(() => configFor(character, mode), [character, mode]);
+  const [questions, setQuestions] = React.useState<Q[]>(() => buildQuestions(cfg));
   const [qi, setQi] = React.useState(0);
   const [wrong, setWrong] = React.useState(0);
+  const [correct, setCorrect] = React.useState(0);   // Übungsmodus: richtig beim ersten Versuch
   const [input, setInput] = React.useState('');
   const [flash, setFlash] = React.useState<null | 'ok' | 'bad'>(null);
   const [locked, setLocked] = React.useState(false);
   const [celebrate, setCelebrate] = React.useState(false);
+  const [roundReset, setRoundReset] = React.useState(false);   // tolerante Runde neu gestartet
   const done = React.useRef(false);
+  const isPractice = cfg.mode === 'practice';
   const q = questions[qi];
   const mascot = MASCOT[character] ?? MASCOT.lea;
 
   const press = (d: string) => {
     if (locked || done.current) return;
-    setInput((s) => (s.length >= 2 ? s : (s === '0' ? d : s + d)));  // max 2 Ziffern (0..99)
+    setInput((s) => (s.length >= cfg.maxDigits ? s : (s === '0' ? d : s + d)));  // Stellen aus Config
   };
   const backspace = () => { if (!locked) setInput((s) => s.slice(0, -1)); };
 
   // useRef auf die aktuellen Werte, damit der Tastatur-Listener nicht bei jedem
   // Tastendruck neu gebunden werden muss.
-  const stateRef = React.useRef({ locked, input, qi, wrong });
-  stateRef.current = { locked, input, qi, wrong };
+  const stateRef = React.useRef({ locked, input, qi, wrong, correct });
+  stateRef.current = { locked, input, qi, wrong, correct };
 
   const commit = React.useCallback(() => {
     const s = stateRef.current;
     if (s.locked || done.current || s.input === '') return;
     const val = parseInt(s.input, 10);
-    if (val === questions[s.qi].answer) {
+    const isRight = val === questions[s.qi].answer;
+    const last = s.qi + 1 >= questions.length;
+
+    // Übungsmodus: EIN Versuch pro Aufgabe, dann weiter — keine Konsequenzen.
+    if (isPractice) {
+      setLocked(true);
+      setFlash(isRight ? 'ok' : 'bad');
+      if (isRight) setCorrect(s.correct + 1);
+      try {
+        if (isRight) audio.playSfx('quizCorrect', 0, 1 + (s.qi % 8) * 0.06);
+        else audio.playSfx('blockHit', 0, 0.7);
+      } catch { /* egal */ }
+      window.setTimeout(() => {
+        setFlash(null); setLocked(false); setInput('');
+        if (last) setCelebrate(true);   // Ergebnis-Anzeige
+        else setQi(s.qi + 1);
+      }, 700);
+      return;
+    }
+
+    // Spielmodus: bis richtig wiederholen; Fehler zählen.
+    if (isRight) {
       setFlash('ok'); setLocked(true);
-      const last = s.qi + 1 >= questions.length;
-      // Fröhlicher Ton: heller Coin-Klang, mit jeder richtigen Aufgabe höher;
-      // beim Bestehen der letzten Aufgabe die Sieg-Fanfare.
       try {
         if (last) audio.playSfx('fanfare');
-        else audio.playSfx('quizCorrect', 0, 1 + s.qi * 0.09);
+        else audio.playSfx('quizCorrect', 0, 1 + (s.qi % 8) * 0.09);
       } catch { /* Audio evtl. noch nicht initialisiert – egal */ }
       if (last) setCelebrate(true);
       window.setTimeout(() => {
@@ -87,10 +189,21 @@ export function MathQuiz(
       try { audio.playSfx('blockHit', 0, 0.85); } catch { /* s.o. */ }
       window.setTimeout(() => {
         setFlash(null); setLocked(false); setInput('');
-        if (w >= MAX_WRONG) { done.current = true; onFail(); }
+        if (w >= cfg.maxWrong) {
+          if (cfg.roundFail === 'reset') { done.current = true; onFail(); }
+          else {
+            // Tolerant (Lea): Runde neu würfeln & wiederholen statt Reset auf Level 1.
+            // Kurze, ermutigende Rückmeldung, damit der Rücksprung auf Aufgabe 1
+            // nicht verwirrt.
+            setQuestions(buildQuestions(cfg));
+            setQi(0); setWrong(0);
+            setRoundReset(true);
+            window.setTimeout(() => setRoundReset(false), 1600);
+          }
+        }
       }, 700);
     }
-  }, [questions, onPass, onFail]);
+  }, [questions, onPass, onFail, cfg, isPractice]);
 
   // Echte Tastatur (Laptop): 0–9 tippen, Backspace löschen, Enter = Committen.
   React.useEffect(() => {
@@ -106,7 +219,7 @@ export function MathQuiz(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commit]);
 
-  const hearts = MAX_WRONG - wrong;
+  const hearts = cfg.maxWrong - wrong;
   const dispBg = flash === 'ok' ? 'linear-gradient(180deg,#e7ffef,#c8f7d6)' : flash === 'bad' ? 'linear-gradient(180deg,#ffe6e2,#ffd0c8)' : '#ffffff';
   const dispBd = flash === 'ok' ? '#3fbf6a' : flash === 'bad' ? '#e8654e' : '#e9dcf0';
   const dispColor = flash === 'ok' ? '#177a3b' : flash === 'bad' ? '#b23a26' : '#3a2b57';
@@ -236,7 +349,7 @@ export function MathQuiz(
               fontSize: 26, fontWeight: 900, letterSpacing: '0.01em',
               background: 'linear-gradient(90deg,#2fae5a,#22a556,#5be08a)',
               WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'transparent',
-            }}>Geschafft! 🎉</div>
+            }}>{isPractice ? 'Super geübt! 🎉' : 'Geschafft! 🎉'}</div>
             {/* Jubelndes Maskottchen */}
             <div aria-hidden style={{
               width: mascot.fw * 1.7, height: mascot.fh * 1.7, margin: '6px 0 2px',
@@ -245,15 +358,45 @@ export function MathQuiz(
               filter: 'drop-shadow(0 8px 10px rgba(0,0,0,0.28))',
               animation: 'lf-win-hop 0.66s ease-in-out infinite',
             }} />
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#7a5a2a' }}>
-              Alle 3 Aufgaben richtig!
+            <div data-testid="mathquiz-score" style={{ fontSize: isPractice ? 20 : 15, fontWeight: 800, color: '#7a5a2a' }}>
+              {isPractice ? `${correct} / ${questions.length} richtig!` : `Alle ${questions.length} Aufgaben richtig!`}
             </div>
-            <div style={{
-              marginTop: 6, padding: '9px 22px', borderRadius: 999,
-              background: 'linear-gradient(180deg,#ffd166,#ff9f5a)', color: '#5a3a12',
-              fontWeight: 900, fontSize: 17, boxShadow: '0 4px 0 #e08a3d',
-            }}>Weiter geht's! →</div>
+            {isPractice ? (
+              <button
+                type="button"
+                data-testid="mathquiz-done"
+                onPointerDown={(e) => { e.preventDefault(); if (!done.current) { done.current = true; onPass(); } }}
+                onClick={(e) => { if (e.detail === 0 && !done.current) { done.current = true; onPass(); } }}
+                style={{
+                  marginTop: 8, padding: '11px 26px', borderRadius: 999, border: 'none', cursor: 'pointer',
+                  background: 'linear-gradient(180deg,#ffd166,#ff9f5a)', color: '#5a3a12',
+                  fontWeight: 900, fontSize: 17, boxShadow: '0 4px 0 #e08a3d', touchAction: 'manipulation',
+                }}
+              >Fertig ✓</button>
+            ) : (
+              <div style={{
+                marginTop: 6, padding: '9px 22px', borderRadius: 999,
+                background: 'linear-gradient(180deg,#ffd166,#ff9f5a)', color: '#5a3a12',
+                fontWeight: 900, fontSize: 17, boxShadow: '0 4px 0 #e08a3d',
+              }}>Weiter geht's! →</div>
+            )}
           </div>
+        )}
+
+        {/* Tolerante Runde neu gestartet: kurze, ermutigende Einblendung. */}
+        {roundReset && (
+          <div
+            data-testid="mathquiz-roundreset"
+            role="status"
+            style={{
+              position: 'absolute', top: 9, left: '50%', transform: 'translateX(-50%)', zIndex: 7,
+              maxWidth: '86%', textAlign: 'center',
+              padding: '7px 16px', borderRadius: 999,
+              background: 'linear-gradient(180deg,#7fe0a2,#3fbf6a)', color: '#06351d',
+              fontWeight: 900, fontSize: 13.5, boxShadow: '0 6px 16px rgba(20,10,50,0.35)',
+              animation: 'lf-quiz-in 220ms cubic-bezier(.2,.8,.3,1) both',
+            }}
+          >🔁 Nochmal von vorn!</div>
         )}
 
         {/* Farbiger Kopf mit Titel + Maskottchen (Flex-Reihe, damit der Text
@@ -269,7 +412,9 @@ export function MathQuiz(
               🧮 Rechen-Zeit!
             </div>
             <div className="lf-mq-sub" style={{ fontSize: 12.5, fontWeight: 600, color: 'rgba(255,255,255,0.94)', marginTop: 3, lineHeight: 1.25 }}>
-              Löse 3 Aufgaben — dann geht's ins nächste Level.
+              {isPractice
+                ? `Übe ${questions.length} Aufgaben — nur zum Spaß! 💪`
+                : `Löse ${questions.length} Aufgaben — dann geht's ins nächste Level.`}
             </div>
           </div>
           {/* Maskottchen — die gewählte Figur feuert an. */}
@@ -285,23 +430,34 @@ export function MathQuiz(
         {/* Karten-Körper — im flachen Querformat zweispaltig (Info links, Rechner rechts) */}
         <div className="lf-mq-body" style={{ padding: '14px 20px 20px', display: 'flex', flexDirection: 'column' }}>
          <div className="lf-mq-info">
-          {/* Fortschritt (3 Segmente) + Versuche (Herzen) */}
-          <div className="lf-mq-progress-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div data-testid="mathquiz-progress" style={{ display: 'flex', gap: 5 }} aria-label={`Aufgabe ${qi + 1} von ${questions.length}`}>
-              {[0, 1, 2].map(i => (
-                <span key={i} style={{
-                  width: 26, height: 8, borderRadius: 999,
-                  background: i < qi ? 'linear-gradient(90deg,#5be08a,#2fae5a)' : i === qi ? 'linear-gradient(90deg,#ffce54,#ff9f5a)' : '#e7dbef',
-                  boxShadow: i === qi ? '0 0 0 2px rgba(255,159,90,0.28)' : 'none',
-                  transition: 'background 200ms',
-                }} />
-              ))}
-            </div>
-            <div data-testid="mathquiz-hearts" aria-label={`Versuche übrig: ${hearts}`} style={{ fontSize: 17, letterSpacing: 2 }}>
-              {[0, 1, 2].map(i => (
-                <span key={i} style={{ color: i < hearts ? '#ff5a7a' : '#e6ccd4' }}>{i < hearts ? '♥' : '♡'}</span>
-              ))}
-            </div>
+          {/* Fortschritt (Segmente bei wenigen, sonst Balken + Zähler) + Versuche (Herzen) */}
+          <div className="lf-mq-progress-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 12 }}>
+            {questions.length <= 6 ? (
+              <div data-testid="mathquiz-progress" style={{ display: 'flex', gap: 5 }} aria-label={`Aufgabe ${qi + 1} von ${questions.length}`}>
+                {Array.from({ length: questions.length }).map((_, i) => (
+                  <span key={i} style={{
+                    width: 26, height: 8, borderRadius: 999,
+                    background: i < qi ? 'linear-gradient(90deg,#5be08a,#2fae5a)' : i === qi ? 'linear-gradient(90deg,#ffce54,#ff9f5a)' : '#e7dbef',
+                    boxShadow: i === qi ? '0 0 0 2px rgba(255,159,90,0.28)' : 'none',
+                    transition: 'background 200ms',
+                  }} />
+                ))}
+              </div>
+            ) : (
+              <div data-testid="mathquiz-progress" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }} aria-label={`Aufgabe ${qi + 1} von ${questions.length}`}>
+                <div style={{ flex: 1, height: 8, borderRadius: 999, background: '#e7dbef', overflow: 'hidden' }}>
+                  <div style={{ width: `${(qi / questions.length) * 100}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg,#5be08a,#2fae5a)', transition: 'width 220ms' }} />
+                </div>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: '#7a5a97', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{qi + 1}/{questions.length}</span>
+              </div>
+            )}
+            {!isPractice && (
+              <div data-testid="mathquiz-hearts" aria-label={`Versuche übrig: ${hearts}`} style={{ fontSize: 17, letterSpacing: 2, whiteSpace: 'nowrap' }}>
+                {Array.from({ length: cfg.maxWrong }).map((_, i) => (
+                  <span key={i} style={{ color: i < hearts ? '#ff5a7a' : '#e6ccd4' }}>{i < hearts ? '♥' : '♡'}</span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Aufgaben-Blase */}
@@ -344,7 +500,11 @@ export function MathQuiz(
               color: flash === 'ok' ? '#22a556' : flash === 'bad' ? '#e0533b' : 'transparent',
             }}
           >
-            {flash === 'ok' ? (celebrate ? 'Super — geschafft! 🎉' : 'Richtig! ✅') : flash === 'bad' ? 'Nochmal! ❌' : ' '}
+            {flash === 'ok'
+              ? (celebrate ? 'Super — geschafft! 🎉' : 'Richtig! ✅')
+              : flash === 'bad'
+                ? (isPractice ? `Weiter → richtig: ${q.answer}` : 'Nochmal! ❌')
+                : ' '}
           </div>
          </div>{/* /lf-mq-info */}
 

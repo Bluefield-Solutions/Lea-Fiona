@@ -378,6 +378,8 @@ export default function GamePage() {
   // Mathe-Modus: Quiz-Overlay nach Levelende + kurze Ergebnis-Meldung.
   const [showQuiz, setShowQuiz] = useState<boolean>(false);
   const [mathMsg, setMathMsg] = useState<string | null>(null);
+  // Direktstart-Übung: reiner Mathe-Übungsmodus (Lea, Mal/Geteilt) vom Startbildschirm.
+  const [mathPractice, setMathPractice] = useState<boolean>(false);
   // Debug-Overlay-Telemetrie (AP 0.3) — alle 80 ms aus der Engine gepollt.
   const [debugInfo, setDebugInfo] = useState<ReturnType<GameEngine['getDebugInfo']> | null>(null);
   // Floating Virtual Stick (AP 1.8): Sicht-State + Ref auf den aktiven Finger.
@@ -1663,6 +1665,19 @@ export default function GamePage() {
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, width: '100%', pointerEvents: 'auto', position: 'relative', zIndex: 1 }}>
               <CharacterChooser value={character} variant="hero" noSelection onChange={(c) => { handleCharacterChange(c); setCharPicked(true); }} />
               <span style={{ color: 'rgba(255,255,255,0.72)', fontSize: 'clamp(11px,2vw,13px)', letterSpacing: '0.04em', background: 'rgba(16,12,34,0.55)', padding: '3px 12px', borderRadius: 999 }}>Tippe eine Figur, um zu starten</span>
+              {/* Kleiner, dezenter Direktstart in Leas Mathe-Übung (Mal/Geteilt). */}
+              <button
+                type="button"
+                data-testid="button-math-practice"
+                onClick={() => { try { audio.playSfx('albumOpen'); } catch { /* egal */ } setMathPractice(true); }}
+                aria-label="Mathe üben mit Lea (Mal und Geteilt)"
+                style={{
+                  marginTop: 2, padding: '5px 12px', minHeight: 32, borderRadius: 999,
+                  background: 'rgba(16,12,34,0.4)', border: '1px solid rgba(255,255,255,0.18)',
+                  color: 'rgba(255,255,255,0.78)', fontSize: 'clamp(10px,1.7vw,12px)', fontWeight: 700,
+                  cursor: 'pointer', touchAction: 'manipulation', pointerEvents: 'auto',
+                }}
+              >🔢 Mathe üben (Lea)</button>
             </div>
           ) : (
           <>
@@ -2251,6 +2266,17 @@ export default function GamePage() {
       {/* Mathe-Quiz nach dem Levelende (nur im Mathe-Modus). */}
       {showQuiz && settings.mathMode && (
         <MathQuiz onPass={onQuizPass} onFail={onQuizFail} character={character} />
+      )}
+
+      {/* Direktstart-Übung: Leas Mal/Geteilt-Übung (30 Aufgaben), reiner
+          Übungsmodus ohne Konsequenzen. Vom Startbildschirm aus erreichbar. */}
+      {mathPractice && (
+        <MathQuiz
+          mode="practice"
+          character="lea"
+          onPass={() => setMathPractice(false)}
+          onFail={() => setMathPractice(false)}
+        />
       )}
 
       {/* Kurze Ergebnis-Meldung des Mathe-Modus (bestanden zum Schluss / Reset). */}
